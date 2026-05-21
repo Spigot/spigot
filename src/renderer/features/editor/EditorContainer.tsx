@@ -4,7 +4,8 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 
 export const EditorContainer: React.FC = () => {
   const { 
-    activeTabPath, fileBuffers, updateFileBuffer, saveActiveFile, selectWorkspace, workspacePath 
+    activeTabPath, fileBuffers, updateFileBuffer, saveActiveFile, selectWorkspace, workspacePath,
+    pendingSelection, setPendingSelection
   } = useWorkspaceStore();
 
   const editorRef = useRef<any>(null);
@@ -110,6 +111,23 @@ export const EditorContainer: React.FC = () => {
       tabSize: 2,
     });
   };
+
+  // Listen for pending selection events (e.g. from Sidebar search matches)
+  useEffect(() => {
+    if (editorRef.current && pendingSelection && pendingSelection.filePath === activeTabPath) {
+      const editor = editorRef.current;
+      editor.revealLineInCenter(pendingSelection.line);
+      editor.setSelection({
+        startLineNumber: pendingSelection.line,
+        startColumn: pendingSelection.column,
+        endLineNumber: pendingSelection.line,
+        endColumn: pendingSelection.column + pendingSelection.length
+      });
+      editor.focus();
+      // Reset after applying
+      setPendingSelection(null);
+    }
+  }, [activeTabPath, pendingSelection, setPendingSelection]);
 
   // Setup Keyboard Shortcuts (Ctrl+S / Cmd+S to Save)
   useEffect(() => {

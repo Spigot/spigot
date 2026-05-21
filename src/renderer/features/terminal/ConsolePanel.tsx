@@ -8,9 +8,32 @@ import { Trash2, Plus, Terminal as TermIcon, Minimize2, Maximize2 } from 'lucide
 import 'xterm/css/xterm.css'; // Make sure styling imports exist
 
 export const ConsolePanel: React.FC = () => {
-  const { isConsoleOpen, isConsoleMaximized, toggleConsole, toggleConsoleMaximize } = useLayoutStore();
+  const { 
+    isConsoleOpen, isConsoleMaximized, toggleConsole, toggleConsoleMaximize,
+    consoleHeight, setConsoleHeight 
+  } = useLayoutStore();
   const { sessions, activeSessionId, createSession, closeSession, setActiveSession } = useTerminalStore();
   const { workspacePath } = useWorkspaceStore();
+
+  const handleResizeMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startHeight = consoleHeight;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaY = moveEvent.clientY - startY;
+      const newHeight = Math.max(100, Math.min(600, startHeight - deltaY));
+      setConsoleHeight(newHeight);
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
 
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermInstances = useRef<Record<string, { term: XTerm; fit: FitAddon; disposeData: () => void }>>({});
@@ -163,9 +186,17 @@ export const ConsolePanel: React.FC = () => {
   if (!isConsoleOpen) return null;
 
   return (
-    <div className={`bg-editor-panel border-t border-editor-border flex flex-col z-20 ${
-      isConsoleMaximized ? 'h-full' : 'h-64'
-    }`}>
+    <div 
+      style={isConsoleMaximized ? { height: '100%' } : { height: `${consoleHeight}px` }}
+      className="bg-editor-panel border-t border-editor-border flex flex-col z-20 relative"
+    >
+      {/* Drag Resize Handle */}
+      {!isConsoleMaximized && (
+        <div
+          onMouseDown={handleResizeMouseDown}
+          className="absolute top-0 left-0 right-0 h-1.5 cursor-ns-resize bg-transparent hover:bg-editor-accent/30 z-30 transition-colors"
+        />
+      )}
       {/* Console panel Header menu */}
       <div className="h-8 bg-editor-sidebar border-b border-editor-border px-4 flex items-center justify-between select-none">
         {/* Left: Console tabs */}

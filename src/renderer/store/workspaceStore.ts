@@ -14,6 +14,7 @@ interface WorkspaceState {
   activeTabPath: string | null; // Focused tab path
   fileBuffers: Record<string, string>; // Unsaved/edited content: path -> content
   dirtyFiles: string[]; // List of paths with unsaved changes
+  pendingSelection: { filePath: string; line: number; column: number; length: number } | null;
 
   selectWorkspace: () => Promise<void>;
   setWorkspacePath: (path: string) => Promise<void>;
@@ -25,6 +26,7 @@ interface WorkspaceState {
   saveActiveFile: () => Promise<void>;
   createItem: (name: string, type: 'file' | 'directory', parentPath?: string) => Promise<void>;
   deleteItem: (itemPath: string) => Promise<void>;
+  setPendingSelection: (selection: { filePath: string; line: number; column: number; length: number } | null) => void;
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
@@ -34,6 +36,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   activeTabPath: null,
   fileBuffers: {},
   dirtyFiles: [],
+  pendingSelection: null,
+
+  setPendingSelection: (selection) => set({ pendingSelection: selection }),
 
   selectWorkspace: async () => {
     try {

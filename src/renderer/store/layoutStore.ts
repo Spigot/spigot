@@ -7,6 +7,8 @@ interface LayoutState {
   isSidebarOpen: boolean;
   isConsoleOpen: boolean;
   isConsoleMaximized: boolean;
+  sidebarWidth: number;
+  consoleHeight: number;
   
   setSidebarTab: (tab: SidebarTab) => void;
   toggleSidebar: () => void;
@@ -14,6 +16,8 @@ interface LayoutState {
   toggleConsole: () => void;
   setConsoleOpen: (open: boolean) => void;
   toggleConsoleMaximize: () => void;
+  setSidebarWidth: (width: number) => void;
+  setConsoleHeight: (height: number) => void;
 }
 
 export const useLayoutStore = create<LayoutState>((set) => ({
@@ -21,6 +25,8 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   isSidebarOpen: true,
   isConsoleOpen: false,
   isConsoleMaximized: false,
+  sidebarWidth: 240,
+  consoleHeight: 250,
 
   setSidebarTab: (tab) => set((state) => ({
     activeSidebarTab: tab,
@@ -37,4 +43,8 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   setConsoleOpen: (open) => set({ isConsoleOpen: open }),
 
   toggleConsoleMaximize: () => set((state) => ({ isConsoleMaximized: !state.isConsoleMaximized })),
+
+  setSidebarWidth: (width) => set({ sidebarWidth: width }),
+
+  setConsoleHeight: (height) => set({ consoleHeight: height }),
 }));
