@@ -205,3 +205,259 @@ ipcMain.on('terminal:write', (_event, sessionId, data) => {
 ipcMain.on('terminal:resize', (_event, sessionId, cols, rows) => {
   terminalManager.resize(sessionId, cols, rows);
 });
+
+// ==========================================
+// AI AGENT STORE AND STREAMING IPC HANDLERS
+// ==========================================
+
+const storeFilePath = join(app.getPath('userData'), 'electron-store-config.json');
+
+async function readStore(): Promise<Record<string, any>> {
+  try {
+    const content = await fsPromises.readFile(storeFilePath, 'utf-8');
+    return JSON.parse(content);
+  } catch (err) {
+    return {};
+  }
+}
+
+async function writeStore(data: Record<string, any>): Promise<void> {
+  try {
+    await fsPromises.writeFile(storeFilePath, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error writing config store:', err);
+  }
+}
+
+// 1. Storage Handlers (electron-store simulation)
+ipcMain.handle('store:get-keys', async () => {
+  const data = await readStore();
+  return data.apiKeys || {};
+});
+
+ipcMain.handle('store:set-key', async (_event, provider: string, key: string) => {
+  const data = await readStore();
+  if (!data.apiKeys) data.apiKeys = {};
+  data.apiKeys[provider] = key;
+  await writeStore(data);
+  return true;
+});
+
+ipcMain.handle('store:get-selected-models', async () => {
+  const data = await readStore();
+  return data.selectedModels || {};
+});
+
+ipcMain.handle('store:set-selected-model', async (_event, provider: string, model: string) => {
+  const data = await readStore();
+  if (!data.selectedModels) data.selectedModels = {};
+  data.selectedModels[provider] = model;
+  await writeStore(data);
+  return true;
+});
+
+// 2. Fetch Models Dynamically from Provider endpoints
+ipcMain.handle('ai:fetch-models', async (_event, provider: string, apiKey: string) => {
+  try {
+    if (provider === 'openai') {
+      const res = await fetch('https://api.openai.com/v1/models', {
+        headers: { 'Authorization': `Bearer ${apiKey}` }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json() as any;
+      return json.data.map((m: any) => m.id).filter((id: string) => id.includes('gpt') || id.includes('o1') || id.includes('o3'));
+    } else if (provider === 'deepseek') {
+      const res = await fetch('https://api.deepseek.com/models', {
+        headers: { 'Authorization': `Bearer ${apiKey}` }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json() as any;
+      return json.data.map((m: any) => m.id);
+    } else if (provider === 'gemini') {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json() as any;
+      return json.models
+        .map((m: any) => m.name.replace('models/', ''))
+        .filter((id: string) => id.includes('gemini'));
+    } else if (provider === 'kimi') {
+      const res = await fetch('https://api.moonshot.cn/v1/models', {
+        headers: { 'Authorization': `Bearer ${apiKey}` }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json() as any;
+      return json.data.map((m: any) => m.id);
+    }
+    return [];
+  } catch (err) {
+    console.error(`Error querying dynamic models for ${provider}:`, err);
+    return [];
+  }
+});
+
+// 3. Unified Stream Chat SSE Handler
+let activeAbortController: AbortController | null = null;
+
+ipcMain.on('ai:abort-chat', () => {
+  if (activeAbortController) {
+    activeAbortController.abort();
+    activeAbortController = null;
+  }
+});
+
+ipcMain.handle('ai:stream-chat', async (
+  _event, 
+  { provider, model, apiKey, prompt, contextText, history }
+): Promise<boolean> => {
+  if (activeAbortController) {
+    activeAbortController.abort();
+  }
+  activeAbortController = new AbortController();
+  const signal = activeAbortController.signal;
+
+  try {
+    let url = '';
+    let headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    let body: any = {};
+
+    // Standardize conversation history format for API calls
+    const formattedMessages = (history || []).map((msg: any) => ({
+      role: msg.role,
+      content: msg.content
+    }));
+
+    // Prepend active project context to the latest message
+    const fullUserPrompt = contextText 
+      ? `=== CONTEXTO DEL PROYECTO ===\n${contextText}\n\n=== FIN CONTEXTO ===\n\nPregunta / Instrucción del usuario:\n${prompt}`
+      : prompt;
+
+    formattedMessages.push({ role: 'user', content: fullUserPrompt });
+
+    if (provider === 'openai') {
+      url = 'https://api.openai.com/v1/chat/completions';
+      headers['Authorization'] = `Bearer ${apiKey}`;
+      body = { model, messages: formattedMessages, stream: true };
+    } else if (provider === 'deepseek') {
+      url = 'https://api.deepseek.com/chat/completions';
+      headers['Authorization'] = `Bearer ${apiKey}`;
+      body = { model, messages: formattedMessages, stream: true };
+    } else if (provider === 'kimi') {
+      url = 'https://api.moonshot.cn/v1/chat/completions';
+      headers['Authorization'] = `Bearer ${apiKey}`;
+      body = { model, messages: formattedMessages, stream: true };
+    } else if (provider === 'qwen') {
+      url = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
+      headers['Authorization'] = `Bearer ${apiKey}`;
+      body = { model, messages: formattedMessages, stream: true };
+    } else if (provider === 'anthropic') {
+      url = 'https://api.anthropic.com/v1/messages';
+      headers['x-api-key'] = apiKey;
+      headers['anthropic-version'] = '2023-06-01';
+      body = { 
+        model, 
+        messages: formattedMessages, 
+        max_tokens: 4000, 
+        stream: true 
+      };
+    } else if (provider === 'gemini') {
+      url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`;
+      // Gemini expects contents list
+      const geminiContents = (history || []).map((msg: any) => ({
+        role: msg.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: msg.content }]
+      }));
+      geminiContents.push({
+        role: 'user',
+        parts: [{ text: fullUserPrompt }]
+      });
+      body = { contents: geminiContents };
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`API returned HTTP ${response.status}: ${errText}`);
+    }
+
+    if (!response.body) {
+      throw new Error('Response body is empty');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        if (provider === 'anthropic') {
+          // Anthropic SSE format
+          if (trimmed.startsWith('data: ')) {
+            try {
+              const dataStr = trimmed.slice(6);
+              if (dataStr.trim() === '[DONE]') continue;
+              const parsed = JSON.parse(dataStr);
+              if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+                mainWindow?.webContents.send('ai:stream-chunk', parsed.delta.text);
+              }
+            } catch (e) {}
+          }
+        } else if (provider === 'gemini') {
+          // Gemini returns JSON array stream, each chunk is a candidates node
+          try {
+            // Gemini stream can send lines starting with "data: " or direct JSON objects
+            const cleanLine = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed;
+            const parsed = JSON.parse(cleanLine);
+            const content = parsed.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            if (content) {
+              mainWindow?.webContents.send('ai:stream-chunk', content);
+            }
+          } catch (e) {}
+        } else {
+          // OpenAI, DeepSeek, Qwen, Kimi compatible format
+          if (trimmed.startsWith('data: ')) {
+            const dataStr = trimmed.slice(6);
+            if (dataStr.trim() === '[DONE]') continue;
+            try {
+              const parsed = JSON.parse(dataStr);
+              const content = parsed.choices?.[0]?.delta?.content || '';
+              if (content) {
+                mainWindow?.webContents.send('ai:stream-chunk', content);
+              }
+            } catch (e) {}
+          }
+        }
+      }
+    }
+
+    mainWindow?.webContents.send('ai:stream-end');
+    activeAbortController = null;
+    return true;
+
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      mainWindow?.webContents.send('ai:stream-end', true); // Send true to signify aborted
+    } else {
+      console.error('Error during AI chat completion:', err);
+      mainWindow?.webContents.send('ai:stream-error', err.message || 'Error desconocido.');
+    }
+    activeAbortController = null;
+    return false;
+  }
+});
+

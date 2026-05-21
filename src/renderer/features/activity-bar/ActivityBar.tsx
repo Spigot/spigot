@@ -1,9 +1,13 @@
 import React from 'react';
 import { useLayoutStore, SidebarTab } from '../../store/layoutStore';
-import { Files, Search, Blocks, Settings, Terminal } from 'lucide-react';
+import { Files, Search, Blocks, Settings, Terminal, Sparkles } from 'lucide-react';
 
 export const ActivityBar: React.FC = () => {
-  const { activeSidebarTab, setSidebarTab, isSidebarOpen, isConsoleOpen, toggleConsole } = useLayoutStore();
+  const { 
+    activeSidebarTab, setSidebarTab, isSidebarOpen, 
+    isConsoleOpen, toggleConsole,
+    isAIPanelOpen, toggleAIPanel
+  } = useLayoutStore();
 
   const menuItems = [
     { id: 'explorer' as SidebarTab, icon: Files, label: 'Explorador' },
@@ -39,6 +43,20 @@ export const ActivityBar: React.FC = () => {
 
       {/* Bottom Option Triggers */}
       <div className="flex flex-col gap-2 w-full items-center">
+        {/* Toggle right AI Agent Panel quick button */}
+        <button
+          onClick={toggleAIPanel}
+          className={`relative w-12 h-11 flex items-center justify-center transition-all-custom group ${
+            isAIPanelOpen ? 'text-white' : 'text-editor-textDark hover:text-editor-text'
+          }`}
+          title="Panel Agente de IA"
+        >
+          {isAIPanelOpen && (
+            <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-editor-accent" />
+          )}
+          <Sparkles className="w-5 h-5" />
+        </button>
+
         {/* Toggle integrated terminal console quick button */}
         <button
           onClick={toggleConsole}
@@ -69,3 +87,4 @@ export const ActivityBar: React.FC = () => {
   );
 };
 export default ActivityBar;
+

@@ -6,7 +6,8 @@ import {
 
 export const FileTree: React.FC = () => {
   const { 
-    workspacePath, fileTree, selectWorkspace, openFile, activeTabPath, createItem, deleteItem 
+    workspacePath, fileTree, selectWorkspace, openFile, activeTabPath, createItem, deleteItem,
+    explorerSelectedPath, setExplorerSelectedPath
   } = useWorkspaceStore();
 
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
@@ -31,16 +32,28 @@ export const FileTree: React.FC = () => {
     const isFolder = node.isDirectory;
     const isExpanded = !!expandedFolders[node.path];
     const isFileActive = activeTabPath === node.path;
+    const isExplorerSelected = explorerSelectedPath === node.path;
 
     return (
       <div key={node.path} className="flex flex-col">
         {/* Row element */}
         <div 
           style={{ paddingLeft: `${depth * 12 + 8}px` }}
-          className={`group flex items-center justify-between py-1 pr-2 hover:bg-editor-hover cursor-pointer text-xs transition-all-custom ${
-            isFileActive ? 'bg-editor-active text-white' : 'text-editor-text'
+          className={`group flex items-center justify-between py-1 pr-2 hover:bg-editor-hover cursor-pointer text-xs transition-all-custom border-l-2 relative ${
+            isExplorerSelected 
+              ? 'bg-zinc-800/60 border-white text-white font-medium' 
+              : isFileActive 
+                ? 'bg-editor-active border-transparent text-white' 
+                : 'border-transparent text-editor-text'
           }`}
-          onClick={() => isFolder ? toggleExpand(node.path) : openFile(node.path)}
+          onClick={() => {
+            setExplorerSelectedPath(node.path);
+            if (isFolder) {
+              toggleExpand(node.path);
+            } else {
+              openFile(node.path);
+            }
+          }}
         >
           <div className="flex items-center gap-1.5 min-w-0">
             {isFolder ? (

@@ -9,6 +9,8 @@ interface LayoutState {
   isConsoleMaximized: boolean;
   sidebarWidth: number;
   consoleHeight: number;
+  isAIPanelOpen: boolean;
+  aiPanelWidth: number;
   
   setSidebarTab: (tab: SidebarTab) => void;
   toggleSidebar: () => void;
@@ -18,6 +20,9 @@ interface LayoutState {
   toggleConsoleMaximize: () => void;
   setSidebarWidth: (width: number) => void;
   setConsoleHeight: (height: number) => void;
+  toggleAIPanel: () => void;
+  setAIPanelOpen: (open: boolean) => void;
+  setAIPanelWidth: (width: number) => void;
 }
 
 export const useLayoutStore = create<LayoutState>((set) => ({
@@ -27,6 +32,8 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   isConsoleMaximized: false,
   sidebarWidth: 240,
   consoleHeight: 250,
+  isAIPanelOpen: true,
+  aiPanelWidth: 320,
 
   setSidebarTab: (tab) => set((state) => ({
     activeSidebarTab: tab,
@@ -47,4 +54,11 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   setSidebarWidth: (width) => set({ sidebarWidth: width }),
 
   setConsoleHeight: (height) => set({ consoleHeight: height }),
+
+  toggleAIPanel: () => set((state) => ({ isAIPanelOpen: !state.isAIPanelOpen })),
+
+  setAIPanelOpen: (open) => set({ isAIPanelOpen: open }),
+
+  setAIPanelWidth: (width) => set({ aiPanelWidth: width }),
 }));
+

@@ -15,6 +15,7 @@ interface WorkspaceState {
   fileBuffers: Record<string, string>; // Unsaved/edited content: path -> content
   dirtyFiles: string[]; // List of paths with unsaved changes
   pendingSelection: { filePath: string; line: number; column: number; length: number } | null;
+  explorerSelectedPath: string | null;
 
   selectWorkspace: () => Promise<void>;
   setWorkspacePath: (path: string) => Promise<void>;
@@ -27,6 +28,7 @@ interface WorkspaceState {
   createItem: (name: string, type: 'file' | 'directory', parentPath?: string) => Promise<void>;
   deleteItem: (itemPath: string) => Promise<void>;
   setPendingSelection: (selection: { filePath: string; line: number; column: number; length: number } | null) => void;
+  setExplorerSelectedPath: (path: string | null) => void;
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
@@ -37,8 +39,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   fileBuffers: {},
   dirtyFiles: [],
   pendingSelection: null,
+  explorerSelectedPath: null,
 
   setPendingSelection: (selection) => set({ pendingSelection: selection }),
+  setExplorerSelectedPath: (path) => set({ explorerSelectedPath: path }),
+
 
   selectWorkspace: async () => {
     try {

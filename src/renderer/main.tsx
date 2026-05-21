@@ -6,6 +6,7 @@ import Sidebar from './features/sidebar/Sidebar';
 import EditorTabs from './features/editor/EditorTabs';
 import EditorContainer from './features/editor/EditorContainer';
 import ConsolePanel from './features/terminal/ConsolePanel';
+import AIPanel from './features/ai-panel/AIPanel';
 import StatusBar from './features/status-bar/StatusBar';
 import './index.css';
 
@@ -35,6 +36,9 @@ const App: React.FC = () => {
           {/* Integrated terminal console drawer panel */}
           <ConsolePanel />
         </main>
+
+        {/* Rightmost AI Agent Panel (with dynamic resizer) */}
+        <AIPanel />
       </div>
 
       {/* 3. Bottom Status Bar */}
@@ -42,6 +46,7 @@ const App: React.FC = () => {
     </div>
   );
 };
+
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

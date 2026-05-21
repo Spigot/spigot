@@ -33,5 +33,33 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.removeListener(`terminal:close:${sessionId}`, subscription);
       };
     }
+  },
+  store: {
+    getKeys: () => ipcRenderer.invoke('store:get-keys'),
+    setKey: (provider: string, key: string) => ipcRenderer.invoke('store:set-key', provider, key),
+    getSelectedModels: () => ipcRenderer.invoke('store:get-selected-models'),
+    setSelectedModel: (provider: string, model: string) => ipcRenderer.invoke('store:set-selected-model', provider, model),
+  },
+  ai: {
+    fetchModels: (provider: string, apiKey: string) => ipcRenderer.invoke('ai:fetch-models', provider, apiKey),
+    streamChat: (args: { provider: string; model: string; apiKey: string; prompt: string; contextText: string | null; history: any[] }) => 
+      ipcRenderer.invoke('ai:stream-chat', args),
+    abortChat: () => ipcRenderer.send('ai:abort-chat'),
+    onChunk: (callback: (chunk: string) => void) => {
+      const listener = (_event: any, chunk: string) => callback(chunk);
+      ipcRenderer.on('ai:stream-chunk', listener);
+      return () => ipcRenderer.removeListener('ai:stream-chunk', listener);
+    },
+    onEnd: (callback: (aborted?: boolean) => void) => {
+      const listener = (_event: any, aborted?: boolean) => callback(aborted);
+      ipcRenderer.on('ai:stream-end', listener);
+      return () => ipcRenderer.removeListener('ai:stream-end', listener);
+    },
+    onError: (callback: (err: string) => void) => {
+      const listener = (_event: any, err: string) => callback(err);
+      ipcRenderer.on('ai:stream-error', listener);
+      return () => ipcRenderer.removeListener('ai:stream-error', listener);
+    }
   }
 });
+
