@@ -10,8 +10,8 @@
 
   /* Custom Scrollbar styled for IDEs */
   ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
   }
 
   ::-webkit-scrollbar-track {
@@ -19,12 +19,12 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #424242;
-    border-radius: 0px;
+    background: #27272a;
+    border-radius: 4px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #4f4f4f;
+    background: #3f3f46;
   }
 }
 

@@ -34,7 +34,7 @@ export const Sidebar: React.FC = () => {
               placeholder="Reemplazar..."
               className="bg-editor-bg border border-editor-border text-xs px-2.5 py-1.5 rounded outline-none text-white focus:border-editor-accent transition-all-custom"
             />
-            <button className="bg-editor-accent text-white text-xs py-1.5 rounded font-medium hover:bg-blue-600 transition-all-custom">
+            <button className="bg-white text-black text-xs py-1.5 rounded font-semibold hover:bg-zinc-200 transition-all-custom">
               Reemplazar todo
             </button>
           </div>
@@ -61,7 +61,7 @@ export const Sidebar: React.FC = () => {
                     <p className="text-[10px] text-editor-textDark font-medium">por {ext.author}</p>
                   </div>
                   <button className={`text-[10px] font-semibold px-2 py-0.5 rounded transition-all-custom ${
-                    ext.inst ? 'bg-zinc-700 text-zinc-300' : 'bg-editor-accent text-white hover:bg-blue-600'
+                    ext.inst ? 'bg-zinc-700 text-zinc-300' : 'bg-white text-black hover:bg-zinc-200'
                   }`}>
                     {ext.inst ? 'Instalado' : 'Instalar'}
                   </button>

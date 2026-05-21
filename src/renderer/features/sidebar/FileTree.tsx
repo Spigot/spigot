@@ -160,7 +160,7 @@ export const FileTree: React.FC = () => {
         </p>
         <button
           onClick={selectWorkspace}
-          className="bg-editor-accent text-white text-xs font-semibold px-4 py-2 rounded shadow hover:bg-blue-600 active:scale-95 transition-all-custom"
+          className="bg-white text-black text-xs font-semibold px-4 py-2 rounded shadow hover:bg-zinc-200 active:scale-95 transition-all-custom"
         >
           Abrir Carpeta
         </button>

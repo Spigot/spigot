@@ -1,7 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import MonacoEditor from '@monaco-editor/react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
-import { Compass } from 'lucide-react';
 
 export const EditorContainer: React.FC = () => {
   const { 
@@ -43,8 +42,53 @@ export const EditorContainer: React.FC = () => {
     }
   };
 
-  const handleEditorDidMount = (editor: any) => {
+  const handleEditorDidMount = (editor: any, monaco: any) => {
     editorRef.current = editor;
+
+    // Configure TypeScript IntelliSense features and compilation environment
+    monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
+      target: monaco.languages.typescript.ScriptTarget.ESNext,
+      moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+      module: monaco.languages.typescript.ModuleKind.CommonJS,
+      noLib: false,
+      allowJs: true,
+      checkJs: true,
+      jsx: monaco.languages.typescript.JsxEmit.React,
+      allowNonTsExtensions: true,
+      resolveJsonModule: true,
+      esModuleInterop: true,
+    });
+
+    monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+      noSemanticValidation: false,
+      noSyntaxValidation: false,
+    });
+
+    // Define premium Cursor-like Pitch-Black theme
+    monaco.editor.defineTheme('cursor-dark', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [
+        { token: '', background: '0a0a0a' },
+      ],
+      colors: {
+        'editor.background': '#0a0a0a',
+        'editor.lineHighlightBackground': '#18181b',
+        'editorLineNumber.foreground': '#52525b',
+        'editorLineNumber.activeForeground': '#ffffff',
+        'editor.selectionBackground': '#27272a',
+        'editor.inactiveSelectionBackground': '#1c1c1e',
+        'minimap.background': '#070708',
+        'editorWidget.background': '#0e0e0f',
+        'editorWidget.border': '#1c1c1e',
+        'editorSuggestWidget.background': '#0e0e0f',
+        'editorSuggestWidget.border': '#1c1c1e',
+        'editorSuggestWidget.selectedBackground': '#27272a',
+        'editorSuggestWidget.highlightForeground': '#ffffff',
+      }
+    });
+
+    monaco.editor.setTheme('cursor-dark');
 
     // Apply specific VS Code editor settings
     editor.updateOptions({
@@ -56,10 +100,14 @@ export const EditorContainer: React.FC = () => {
       scrollBeyondLastLine: false,
       readOnly: false,
       automaticLayout: true, // Auto resizes when sidebar panel collapses!
-      theme: 'vs-dark',
       cursorBlinking: 'smooth',
       cursorSmoothCaretAnimation: 'on',
       padding: { top: 8, bottom: 8 },
+      quickSuggestions: { other: true, comments: true, strings: true },
+      parameterHints: { enabled: true },
+      suggestOnTriggerCharacters: true,
+      acceptSuggestionOnEnter: "on",
+      tabSize: 2,
     });
   };
 
@@ -90,7 +138,7 @@ export const EditorContainer: React.FC = () => {
     return (
       <div className="flex-1 flex flex-col justify-center items-center bg-editor-bg select-none h-full border-r border-editor-border p-8">
         <div className="max-w-md w-full flex flex-col items-center text-center">
-          <Compass className="w-16 h-16 text-editor-accent mb-6 animate-pulse" />
+          <img src="/logoSpigot.png" alt="Spigot Logo" width="64" height="64" className="w-16 h-16 mb-6 select-none pointer-events-none object-contain" />
           
           <h1 className="text-xl font-bold text-white mb-2 tracking-wide uppercase">Spigot Editor</h1>
           <p className="text-xs text-editor-textDark mb-8 leading-relaxed">
@@ -125,7 +173,7 @@ export const EditorContainer: React.FC = () => {
           {!workspacePath && (
             <button
               onClick={selectWorkspace}
-              className="mt-8 bg-editor-accent text-white text-xs font-semibold px-5 py-2.5 rounded shadow hover:bg-blue-600 active:scale-95 transition-all-custom"
+              className="mt-8 bg-white text-black text-xs font-semibold px-5 py-2.5 rounded shadow hover:bg-zinc-200 active:scale-95 transition-all-custom"
             >
               Cargar Proyecto
             </button>
@@ -144,8 +192,9 @@ export const EditorContainer: React.FC = () => {
         height="100%"
         width="100%"
         language={language}
+        path={activeTabPath} // This enables URI path-aware models in monaco react!
         value={activeContent}
-        theme="vs-dark"
+        theme="cursor-dark"
         onChange={handleEditorChange}
         onMount={handleEditorDidMount}
         loading={

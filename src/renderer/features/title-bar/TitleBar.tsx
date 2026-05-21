@@ -1,6 +1,6 @@
 import React from 'react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
-import { Minus, Square, X, Compass } from 'lucide-react';
+import { Minus, Square, X } from 'lucide-react';
 
 export const TitleBar: React.FC = () => {
   const { activeTabPath } = useWorkspaceStore();
@@ -26,8 +26,8 @@ export const TitleBar: React.FC = () => {
     <header className="h-9 bg-editor-titleBar flex items-center justify-between border-b border-editor-border select-none app-draggable z-50">
       {/* Left: Brand Icon and menus */}
       <div className="flex items-center gap-3 px-3 h-full app-non-draggable">
-        <div className="flex items-center gap-1.5 text-editor-accent">
-          <Compass className="w-4 h-4 animate-spin-slow" />
+        <div className="flex items-center gap-2 text-editor-accent">
+          <img src="/logoSpigot.png" alt="Spigot" width="16" height="16" className="w-4 h-4 select-none pointer-events-none object-contain" />
           <span className="font-semibold text-xs tracking-wider text-white">SPIGOT</span>
         </div>
         

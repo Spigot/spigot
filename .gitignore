@@ -47,3 +47,7 @@ coverage/
 
 # Additional build folders
 out/
+
+# Root-level user mock screenshots
+/*.png
+!public/*.png

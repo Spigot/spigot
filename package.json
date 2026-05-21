@@ -9,7 +9,8 @@
     "build": "tsc && vite build && electron-builder",
     "build:electron": "vite build",
     "postinstall": "electron-builder install-app-deps",
-    "rebuild": "electron-rebuild -f -w node-pty"
+    "rebuild": "electron-rebuild -f -w node-pty",
+    "test": "vitest run"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",
@@ -35,7 +36,11 @@
     "typescript": "^5.4.5",
     "vite": "^5.2.10",
     "vite-plugin-electron": "^0.28.6",
-    "vite-plugin-electron-renderer": "^0.14.5"
+    "vite-plugin-electron-renderer": "^0.14.5",
+    "vitest": "^1.5.0",
+    "@testing-library/react": "^14.2.2",
+    "@testing-library/jest-dom": "^6.4.2",
+    "jsdom": "^24.0.0"
   },
   "build": {
     "appId": "com.gentleman.spigot",
@@ -50,9 +55,17 @@
       "package.json"
     ],
     "win": {
+      "icon": "logoSpigot.ico",
       "target": [
         "nsis"
       ]
+    },
+    "nsis": {
+      "installerIcon": "logoSpigot.ico",
+      "uninstallerIcon": "logoSpigot.ico",
+      "shortcutIcon": "logoSpigot.ico",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
     },
     "mac": {
       "target": [

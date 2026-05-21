@@ -11,14 +11,20 @@ function createWindow() {
     height: 720,
     minWidth: 800,
     minHeight: 600,
-    fullscreen: true, // Start in fullscreen mode as requested
+    show: false, // Start hidden to prevent raw white flashes
     frame: false, // Frameless window for premium custom title bar
     titleBarStyle: 'hidden',
+    icon: join(__dirname, '../../logoSpigot.ico'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show();
+    mainWindow?.maximize();
   });
 
   // Load Vite Dev Server URL in development
