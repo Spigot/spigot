@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-editor-bg text-editor-text font-sans m-0 p-0 overflow-hidden select-none;
+    height: 100vh;
+  }
+
+  /* Custom Scrollbar styled for IDEs */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #424242;
+    border-radius: 0px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #4f4f4f;
+  }
+}
+
+/* Glassmorphic panel styling for overlays and modals */
+.glass-panel {
+  background: rgba(30, 30, 30, 0.7);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Micro-animations */
+.transition-all-custom {
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Monaco container adjustments */
+.monaco-editor-wrapper {
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden;
+}
+
+/* Draggable app region for title bar */
+.app-draggable {
+  -webkit-app-region: drag;
+}
+
+.app-non-draggable {
+  -webkit-app-region: no-drag;
+}
