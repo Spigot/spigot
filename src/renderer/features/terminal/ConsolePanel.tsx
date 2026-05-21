@@ -18,11 +18,14 @@ export const ConsolePanel: React.FC = () => {
   // Track terminal mount state
   const [mountedSession, setMountedSession] = useState<string | null>(null);
 
-  // Initialize a terminal session if none exist on open
+  // Initialize a terminal session if none exist on open (transition lock)
+  const prevConsoleOpen = useRef(isConsoleOpen);
+
   useEffect(() => {
-    if (isConsoleOpen && sessions.length === 0) {
+    if (isConsoleOpen && !prevConsoleOpen.current && sessions.length === 0) {
       handleAddNewTerminal();
     }
+    prevConsoleOpen.current = isConsoleOpen;
   }, [isConsoleOpen, sessions.length]);
 
   const handleAddNewTerminal = async () => {
@@ -45,6 +48,11 @@ export const ConsolePanel: React.FC = () => {
     // Call backend destroy session
     (window as any).api.terminal.write(id, '\u0003'); // send Ctrl+C to PTY to quit shell gracefully
     closeSession(id);
+
+    // If this was the last terminal session, close the console panel automatically
+    if (sessions.length === 1) {
+      toggleConsole();
+    }
   };
 
   // Setup actual XTerm.js bindings for active session
