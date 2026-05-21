@@ -8,7 +8,7 @@ export const TitleBar: React.FC = () => {
   // Extract active file name for title text
   const activeFileName = activeTabPath 
     ? activeTabPath.split(/[/\\]/).pop() 
-    : 'Sin título';
+    : 'editor - spigot';
 
   const handleMinimize = () => {
     (window as any).api.app.minimize();
@@ -46,8 +46,14 @@ export const TitleBar: React.FC = () => {
 
       {/* Center: File name indicator */}
       <div className="text-[11px] text-editor-text font-normal flex items-center gap-1.5">
-        <span className="font-semibold">{activeFileName}</span>
-        <span className="text-editor-textDark">- Spigot Code</span>
+        {activeTabPath ? (
+          <>
+            <span className="font-semibold text-white">{activeFileName}</span>
+            <span className="text-editor-textDark">- Spigot Code</span>
+          </>
+        ) : (
+          <span className="font-semibold text-editor-textDark">editor - spigot</span>
+        )}
       </div>
 
       {/* Right: Window Controls */}

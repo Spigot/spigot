@@ -8,8 +8,12 @@ on:
 
 jobs:
   test:
-    name: Type Check and Test
-    runs-on: ubuntu-latest
+    name: Validate on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+      fail-fast: false
 
     steps:
       - name: Checkout repository

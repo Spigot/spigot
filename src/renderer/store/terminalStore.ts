@@ -8,6 +8,7 @@ export interface TerminalSession {
 interface TerminalState {
   sessions: TerminalSession[];
   activeSessionId: string | null;
+  isCreating: boolean;
 
   createSession: (cols: number, rows: number, cwd: string) => Promise<string | null>;
   closeSession: (id: string) => void;
@@ -17,8 +18,11 @@ interface TerminalState {
 export const useTerminalStore = create<TerminalState>((set, get) => ({
   sessions: [],
   activeSessionId: null,
+  isCreating: false,
 
   createSession: async (cols: number, rows: number, cwd: string) => {
+    if (get().isCreating) return null;
+    set({ isCreating: true });
     try {
       const sessionId = await (window as any).api.terminal.create(cols, rows, cwd);
       if (sessionId) {
@@ -34,6 +38,8 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
       }
     } catch (err) {
       console.error('Error creating terminal session:', err);
+    } finally {
+      set({ isCreating: false });
     }
     return null;
   },

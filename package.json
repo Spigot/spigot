@@ -2,11 +2,15 @@
   "name": "spigot",
   "version": "1.0.0",
   "description": "Premium multi-platform code editor inspired by VS Code using screaming architecture.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Spigot/spigot.git"
+  },
   "main": "dist-electron/main/index.js",
   "type": "commonjs",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && electron-builder",
+    "build": "tsc && vite build && electron-builder --publish never",
     "build:electron": "vite build",
     "postinstall": "electron-builder install-app-deps",
     "rebuild": "electron-rebuild -f -w node-pty",
@@ -43,6 +47,7 @@
     "jsdom": "^24.0.0"
   },
   "build": {
+    "publish": null,
     "appId": "com.gentleman.spigot",
     "productName": "Spigot",
     "asar": true,
@@ -63,7 +68,6 @@
     "nsis": {
       "installerIcon": "logoSpigot.ico",
       "uninstallerIcon": "logoSpigot.ico",
-      "shortcutIcon": "logoSpigot.ico",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     },

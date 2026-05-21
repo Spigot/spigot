@@ -19,7 +19,7 @@ interface LayoutState {
 export const useLayoutStore = create<LayoutState>((set) => ({
   activeSidebarTab: 'explorer',
   isSidebarOpen: true,
-  isConsoleOpen: true,
+  isConsoleOpen: false,
   isConsoleMaximized: false,
 
   setSidebarTab: (tab) => set((state) => ({
