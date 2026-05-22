@@ -488,7 +488,7 @@ export const TitleBar: React.FC = () => {
                       className="fixed inset-0 z-40 cursor-default"
                       onClick={() => setActiveDropdown(null)}
                     />
-                    <div className="absolute right-0 mt-1 w-80 bg-zinc-950/95 backdrop-blur-md border border-zinc-800/80 rounded-md shadow-2xl py-2 z-50 text-[12px] text-zinc-300 animate-in fade-in slide-in-from-top-1 duration-100 ease-out font-sans">
+                    <div className="fixed right-3 top-11 w-80 bg-zinc-950/95 backdrop-blur-md border border-zinc-800/80 rounded-md shadow-2xl py-2 z-50 text-[12px] text-zinc-300 animate-in fade-in slide-in-from-top-1 duration-100 ease-out font-sans">
                       <div className="px-3 pb-2 border-b border-zinc-800/60 flex items-center gap-2">
                         <HelpCircle className="w-4 h-4 text-indigo-400" />
                         <div>
@@ -610,8 +610,8 @@ export const TitleBar: React.FC = () => {
       </div>
 
       {isSshFormOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 app-non-draggable">
-          <form onSubmit={handleSaveSSHConnection} className="w-[420px] rounded-xl border border-zinc-800 bg-zinc-950 p-4 shadow-2xl text-sm text-zinc-200">
+        <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/60 pt-14 app-non-draggable">
+          <form onSubmit={handleSaveSSHConnection} className="w-[420px] max-h-[calc(100vh-72px)] overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-950 p-4 shadow-2xl text-sm text-zinc-200">
             <div className="flex items-center gap-2 mb-3">
               <Server className="w-4 h-4 text-emerald-400" />
               <div>
