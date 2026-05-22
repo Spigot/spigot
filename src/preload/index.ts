@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('api', {
     zoomIn: () => ipcRenderer.send('app:zoom-in'),
     zoomOut: () => ipcRenderer.send('app:zoom-out'),
     zoomReset: () => ipcRenderer.send('app:zoom-reset'),
+    openShell: (folderPath: string) => ipcRenderer.send('app:open-shell', folderPath),
   },
   fs: {
     selectWorkspace: () => ipcRenderer.invoke('fs:select-workspace'),

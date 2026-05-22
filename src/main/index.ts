@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import { join, relative } from 'path';
 import { promises as fsPromises, watch, FSWatcher } from 'fs';
 import { exec } from 'child_process';
@@ -48,6 +48,9 @@ mainWindow.on('closed', () => {
 }
 
 app.whenReady().then(() => {
+  // Mitigate "Request Autofill.enable failed" error in devtools by disabling Autofill feature
+  app.commandLine.appendSwitch('disable-features', 'AutofillServerCommunication,AutofillShowTypePredictions');
+
   createWindow();
 
   app.on('activate', () => {
@@ -66,6 +69,12 @@ app.on('window-all-closed', () => {
 // App Window IPC Controls
 ipcMain.on('app:minimize', () => {
   mainWindow?.minimize();
+});
+
+ipcMain.on('app:open-shell', (_event, folderPath: string) => {
+  if (folderPath) {
+    shell.openPath(folderPath);
+  }
 });
 
 ipcMain.on('app:maximize', () => {
