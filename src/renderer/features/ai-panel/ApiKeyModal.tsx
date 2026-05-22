@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAIStore } from '../../store/aiStore';
-import { X, Key, Check, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { X, Key, Check, AlertCircle, Eye, EyeOff, Settings } from 'lucide-react';
+import { StyledSelect } from './StyledSelect';
 
 interface ApiKeyModalProps {
   isOpen: boolean;
@@ -15,6 +16,11 @@ const PROVIDERS = [
   { id: 'qwen', name: 'Qwen' },
   { id: 'kimi', name: 'Kimi' },
 ];
+
+const PROVIDER_OPTIONS = PROVIDERS.map((provider) => ({
+  value: provider.id,
+  label: provider.name,
+}));
 
 export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => {
   const { providers, setApiKey } = useAIStore();
@@ -63,8 +69,8 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-editor-border bg-editor-titleBar">
           <div className="flex items-center gap-2 text-white">
-            <Key className="w-4 h-4 text-editor-accent" />
-            <span className="font-semibold text-sm">Configurar Proveedores de IA</span>
+            <Settings className="w-4 h-4 text-editor-accent" />
+            <span className="font-semibold text-sm">Ajustes del Agente</span>
           </div>
           <button 
             onClick={onClose}
@@ -76,21 +82,22 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
 
         {/* Content */}
         <form onSubmit={handleSave} className="p-5 flex flex-col gap-4">
+          <div className="flex items-center gap-2 rounded-lg border border-editor-border bg-editor-hover/30 px-3 py-2 text-[11px] text-editor-textDark">
+            <Key className="w-3.5 h-3.5 text-editor-accent" />
+            <span>Proveedores y claves API</span>
+          </div>
+
           <div className="flex flex-col gap-1.5">
             <label className="text-[11px] text-editor-textDark font-bold uppercase tracking-wider">
               Proveedor
             </label>
-            <select
+            <StyledSelect
               value={selectedProvider}
-              onChange={(e) => setSelectedProvider(e.target.value)}
-              className="bg-editor-hover border border-editor-border text-xs rounded-lg px-3 py-2 text-white outline-none focus:border-editor-accent transition-all-custom cursor-pointer"
-            >
-              {PROVIDERS.map((p) => (
-                <option key={p.id} value={p.id} className="bg-editor-bg">
-                  {p.name}
-                </option>
-              ))}
-            </select>
+              options={PROVIDER_OPTIONS}
+              onChange={setSelectedProvider}
+              placeholder="Seleccionar proveedor"
+              buttonClassName="px-3 py-2 text-xs"
+            />
           </div>
 
           <div className="flex flex-col gap-1.5 relative">
