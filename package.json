@@ -1,6 +1,6 @@
 {
   "name": "spigot",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Premium multi-platform code editor inspired by VS Code using screaming architecture.",
   "repository": {
     "type": "git",
@@ -26,6 +26,7 @@
     "@monaco-editor/react": "^4.6.0",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-tooltip": "^1.2.8",
+    "electron-updater": "^6.8.3",
     "framer-motion": "^12.38.0",
     "lucide-react": "^0.378.0",
     "node-pty": "^1.1.0",

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useLayoutStore } from '../../store/layoutStore';
 import logoSpigotUrl from '../../assets/logoSpigot.png';
@@ -29,6 +29,17 @@ export const TitleBar: React.FC = () => {
   
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [recentProjects, setRecentProjects] = useState<string[]>([]);
+  const [updateReady, setUpdateReady] = useState<{ version?: string } | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = (window as any).api.updater?.onUpdateReady?.((payload: { version?: string }) => {
+      setUpdateReady(payload || {});
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
 
   const loadRecentProjects = async () => {
     try {
@@ -103,6 +114,10 @@ export const TitleBar: React.FC = () => {
 
   const handleClose = () => {
     (window as any).api.app.close();
+  };
+
+  const handleInstallUpdate = async () => {
+    await (window as any).api.updater.installUpdate();
   };
 
   const handleNewFile = async () => {
@@ -429,6 +444,16 @@ export const TitleBar: React.FC = () => {
 
       {/* Right: Premium Actions & Window Controls */}
       <div className="flex items-center h-full app-non-draggable">
+        {updateReady && (
+          <button
+            onClick={handleInstallUpdate}
+            className="h-7 px-3 mr-2 rounded-md bg-emerald-500 text-black text-[12px] font-semibold hover:bg-emerald-400 transition-all-custom shadow-lg shadow-emerald-950/30"
+            title={updateReady.version ? `Instalar versi?n ${updateReady.version}` : 'Instalar actualizaci?n descargada'}
+          >
+            Actualizar versi?n
+          </button>
+        )}
+
         {/* Quick Drawer Toggles */}
         <div className="flex items-center border-r border-zinc-800/60 pr-1.5 mr-1 text-zinc-400">
           <button 

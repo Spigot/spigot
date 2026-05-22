@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import { join, relative } from 'path';
 import { promises as fsPromises, watch, FSWatcher } from 'fs';
 import { exec } from 'child_process';
@@ -12,6 +13,53 @@ function getWindowIconPath() {
   return app.isPackaged
     ? join(__dirname, '../../dist/logoSpigot.ico')
     : join(__dirname, '../../logoSpigot.ico');
+}
+
+
+function sendUpdateStatus(channel: string, payload?: unknown) {
+  mainWindow?.webContents.send(channel, payload);
+}
+
+function startUpdateService() {
+  if (!app.isPackaged) {
+    console.log('[updater] Skipping update checks outside packaged app.');
+    return;
+  }
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = false;
+
+  autoUpdater.on('checking-for-update', () => {
+    console.log('[updater] Checking for updates...');
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    console.log(`[updater] Update available: ${info.version}. Downloading in background...`);
+    sendUpdateStatus('updater:download-started', { version: info.version });
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    console.log('[updater] No update available.');
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log(`[updater] Update downloaded: ${info.version}. Waiting for user confirmation.`);
+    sendUpdateStatus('updater:update-ready', { version: info.version });
+  });
+
+  autoUpdater.on('error', (error) => {
+    console.error('[updater] Update error:', error);
+    sendUpdateStatus('updater:error', error instanceof Error ? error.message : String(error));
+  });
+
+  const checkForUpdates = () => {
+    autoUpdater.checkForUpdates().catch((error) => {
+      console.error('[updater] Failed to check for updates:', error);
+    });
+  };
+
+  setTimeout(checkForUpdates, 3000);
+  setInterval(checkForUpdates, 30 * 60 * 1000);
 }
 
 
@@ -59,6 +107,7 @@ app.whenReady().then(() => {
   app.commandLine.appendSwitch('disable-features', 'AutofillServerCommunication,AutofillShowTypePredictions');
 
   createWindow();
+  startUpdateService();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -115,6 +164,17 @@ ipcMain.on('app:zoom-reset', () => {
   if (mainWindow) {
     mainWindow.webContents.setZoomLevel(0);
   }
+});
+
+ipcMain.handle('updater:install-update', () => {
+  if (!app.isPackaged) {
+    return { ok: false, error: 'Updates are only available in the packaged app.' };
+  }
+
+  terminalManager.clearAll();
+  lspManager.shutdownAll();
+  autoUpdater.quitAndInstall(false, true);
+  return { ok: true };
 });
 
 // Workspace selection IPC

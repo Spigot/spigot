@@ -11,6 +11,19 @@ contextBridge.exposeInMainWorld('api', {
     zoomReset: () => ipcRenderer.send('app:zoom-reset'),
     openShell: (folderPath: string) => ipcRenderer.send('app:open-shell', folderPath),
   },
+  updater: {
+    installUpdate: () => ipcRenderer.invoke('updater:install-update'),
+    onUpdateReady: (callback: (payload: { version?: string }) => void) => {
+      const listener = (_event: any, payload: { version?: string }) => callback(payload);
+      ipcRenderer.on('updater:update-ready', listener);
+      return () => ipcRenderer.removeListener('updater:update-ready', listener);
+    },
+    onError: (callback: (message: string) => void) => {
+      const listener = (_event: any, message: string) => callback(message);
+      ipcRenderer.on('updater:error', listener);
+      return () => ipcRenderer.removeListener('updater:error', listener);
+    },
+  },
   fs: {
     selectWorkspace: () => ipcRenderer.invoke('fs:select-workspace'),
     readDir: (dirPath: string) => ipcRenderer.invoke('fs:read-dir', dirPath),

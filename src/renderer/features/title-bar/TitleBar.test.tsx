@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import TitleBar from './TitleBar';
 
 const mockSelectWorkspace = vi.fn();
@@ -29,6 +29,8 @@ const mockGetSSHServers = vi.fn().mockResolvedValue([
   { id: '2', name: 'test-server-beta', host: '10.0.0.2', user: 'root' },
 ]);
 const mockAddSSHServer = vi.fn();
+const mockInstallUpdate = vi.fn();
+let updateReadyCallback: ((payload: { version?: string }) => void) | null = null;
 
 (global.window as any).api = {
   app: {
@@ -39,6 +41,13 @@ const mockAddSSHServer = vi.fn();
     zoomOut: mockZoomOut,
     zoomReset: mockZoomReset,
   },
+  updater: {
+    installUpdate: mockInstallUpdate,
+    onUpdateReady: vi.fn((callback: (payload: { version?: string }) => void) => {
+      updateReadyCallback = callback;
+      return vi.fn();
+    }),
+  },
   store: {
     getSSHServers: mockGetSSHServers,
     addSSHServer: mockAddSSHServer,
@@ -47,6 +56,11 @@ const mockAddSSHServer = vi.fn();
 };
 
 describe('TitleBar Component', () => {
+  beforeEach(() => {
+    updateReadyCallback = null;
+    mockInstallUpdate.mockClear();
+  });
+
   it('renders the brand title correctly', () => {
     render(<TitleBar />);
     expect(screen.getByAltText('Spigot')).toBeDefined();
@@ -154,6 +168,21 @@ describe('TitleBar Component', () => {
     const zoomResetBtn = screen.getByText('Reset Zoom');
     fireEvent.click(zoomResetBtn);
     expect(mockZoomReset).toHaveBeenCalled();
+  });
+
+  it('shows update button after update is downloaded and installs on click', async () => {
+    render(<TitleBar />);
+
+    expect(screen.queryByText('Actualizar versi?n')).toBeNull();
+
+    act(() => {
+      updateReadyCallback?.({ version: '1.0.4' });
+    });
+
+    const updateButton = await screen.findByText('Actualizar versi?n');
+    fireEvent.click(updateButton);
+
+    expect(mockInstallUpdate).toHaveBeenCalled();
   });
 
   it('toggles SSH dropdown and displays servers from store when clicked', async () => {
