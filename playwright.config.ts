@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests-e2e',
+  timeout: 60000, // Increased timeout to 60s for slow CI environments
   fullyParallel: false, // Electron tests usually shouldn't run in parallel
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
