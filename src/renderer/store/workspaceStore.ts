@@ -18,6 +18,7 @@ interface WorkspaceState {
   explorerSelectedPath: string | null;
   activeDiffFile: { filePath: string; original: string; modified: string } | null;
   gitChangedFiles: string[]; // Absolute paths of files changed in Git
+  imageBuffers: Record<string, string>; // Base64 image previews: path -> base64
 
   selectWorkspace: () => Promise<void>;
   setWorkspacePath: (path: string) => Promise<void>;
@@ -43,6 +44,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   openTabs: [],
   activeTabPath: null,
   fileBuffers: {},
+  imageBuffers: {},
   dirtyFiles: [],
   pendingSelection: null,
   explorerSelectedPath: null,
@@ -78,7 +80,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   setWorkspacePath: async (path: string) => {
-    set({ workspacePath: path, openTabs: [], activeTabPath: null, fileBuffers: {}, dirtyFiles: [] });
+    set({ workspacePath: path, openTabs: [], activeTabPath: null, fileBuffers: {}, imageBuffers: {}, dirtyFiles: [] });
     await get().refreshWorkspace();
     await (window as any).api?.store?.setLastWorkspace?.(path);
   },
@@ -106,7 +108,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   openFile: async (filePath: string) => {
-    const { openTabs, fileBuffers } = get();
+    const { openTabs, fileBuffers, imageBuffers } = get();
     
     // Add tab if not already present
     if (!openTabs.includes(filePath)) {
@@ -114,6 +116,22 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
     
     set({ activeTabPath: filePath });
+
+    const isImageFile = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i.test(filePath);
+
+    if (isImageFile) {
+      if (imageBuffers[filePath] === undefined) {
+        try {
+          const base64 = await (window as any).api.fs.readBinaryFile(filePath);
+          set((state) => ({
+            imageBuffers: { ...state.imageBuffers, [filePath]: base64 },
+          }));
+        } catch (err) {
+          console.error(`Failed to load image preview for ${filePath}:`, err);
+        }
+      }
+      return;
+    }
 
     // Load file from disk if not already cached in memory buffer
     if (fileBuffers[filePath] === undefined) {

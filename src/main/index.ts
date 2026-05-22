@@ -151,10 +151,21 @@ ipcMain.handle('fs:read-dir', async (_event, dirPath: string): Promise<FileNode[
 // File System CRUD Handlers
 ipcMain.handle('fs:read-file', async (_event, filePath: string) => {
   try {
-    return await fsPromises.readFile(filePath, 'utf-8');
+    const content = await fsPromises.readFile(filePath, 'utf-8');
+    return content.replace(/^\uFEFF/, '').replace(/^\uFFFD/, '');
   } catch (err: any) {
     console.error(`Error reading file ${filePath}:`, err);
     throw new Error(`Failed to read file: ${err.message}`);
+  }
+});
+
+ipcMain.handle('fs:read-binary-file', async (_event, filePath: string) => {
+  try {
+    const buffer = await fsPromises.readFile(filePath);
+    return buffer.toString('base64');
+  } catch (err: any) {
+    console.error(`Error reading binary file ${filePath}:`, err);
+    throw new Error(`Failed to read binary file: ${err.message}`);
   }
 });
 

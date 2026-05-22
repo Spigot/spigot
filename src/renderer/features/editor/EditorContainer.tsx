@@ -44,7 +44,7 @@ loader.init().then((monaco) => {
 export const EditorContainer: React.FC = () => {
   const { 
     activeTabPath, fileBuffers, updateFileBuffer, selectWorkspace, workspacePath,
-    pendingSelection, setPendingSelection, activeDiffFile, clearDiffFile
+    pendingSelection, setPendingSelection, activeDiffFile, clearDiffFile, imageBuffers
   } = useWorkspaceStore();
 
   const editorRef = useRef<any>(null);
@@ -225,13 +225,38 @@ export const EditorContainer: React.FC = () => {
 
   const activeContent = activeTabPath ? fileBuffers[activeTabPath] ?? '' : '';
   const language = getLanguage(activeTabPath);
+  const isImageActive = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i.test(activeTabPath ?? '');
+  const getImageMimeType = (path: string) => {
+    const extension = path.split('.').pop()?.toLowerCase();
+    switch (extension) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'bmp':
+        return 'image/bmp';
+      case 'svg':
+        return 'image/svg+xml';
+      case 'ico':
+        return 'image/x-icon';
+      case 'avif':
+        return 'image/avif';
+      default:
+        return 'application/octet-stream';
+    }
+  };
 
   useEffect(() => {
-    if (!activeTabPath || !monacoRef.current) return;
+    if (!activeTabPath || !monacoRef.current || isImageActive) return;
 
     registerLspCompletionProvider(monacoRef.current, language, workspacePath);
     openLspDocument(workspacePath, activeTabPath, language, activeContent);
-  }, [activeContent, activeTabPath, language, workspacePath]);
+  }, [activeContent, activeTabPath, isImageActive, language, workspacePath]);
 
   // If no tab is active, show the editor welcome screen
   if (!activeTabPath) {
@@ -285,6 +310,43 @@ export const EditorContainer: React.FC = () => {
 
   const isDiffActive = activeDiffFile !== null && activeDiffFile.filePath === activeTabPath;
 
+  if (isImageActive && activeTabPath) {
+    const imageName = activeTabPath.split(/[/\\]/).pop() || activeTabPath;
+    const base64 = imageBuffers[activeTabPath];
+    const src = base64 ? `data:${getImageMimeType(activeTabPath)};base64,${base64}` : null;
+
+    return (
+      <div className="flex-1 flex flex-col h-full bg-editor-bg border-r border-editor-border relative overflow-hidden">
+        <div className="h-9 border-b border-editor-border bg-editor-sidebar flex items-center justify-between px-3 select-none">
+          <div className="min-w-0 flex items-center gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Preview</span>
+            <span className="text-xs text-zinc-200 font-semibold truncate">{imageName}</span>
+          </div>
+          <span className="text-[10px] text-zinc-500 font-mono uppercase">
+            {activeTabPath.split('.').pop()}
+          </span>
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-auto bg-[radial-gradient(circle_at_center,rgba(39,39,42,0.55)_0,rgba(10,10,10,1)_58%)] p-8">
+          <div className="h-full w-full flex items-center justify-center">
+            {src ? (
+              <div className="max-w-full max-h-full rounded-2xl border border-zinc-800/90 bg-zinc-950/50 p-4 shadow-2xl shadow-black/40">
+                <img
+                  src={src}
+                  alt={imageName}
+                  className="max-w-full max-h-[calc(100vh-180px)] object-contain rounded-lg select-none"
+                  draggable={false}
+                />
+              </div>
+            ) : (
+              <div className="text-xs text-zinc-500 font-medium">Cargando imagen...</div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (isDiffActive) {
     return (
       <div className="flex-1 flex flex-col h-full bg-editor-bg border-r border-editor-border relative overflow-hidden">
@@ -336,6 +398,13 @@ export const EditorContainer: React.FC = () => {
         beforeMount={defineMonacoTheme}
         onChange={handleEditorChange}
         onMount={handleEditorDidMount}
+        options={{
+          unicodeHighlight: {
+            ambiguousCharacters: false,
+            invisibleCharacters: false,
+            nonBasicASCII: false,
+          },
+        }}
         loading={
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-editor-bg gap-3 z-50">
             <div className="w-8 h-8 border-2 border-editor-accent border-t-transparent rounded-full animate-spin" />

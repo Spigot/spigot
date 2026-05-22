@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('api', {
     selectWorkspace: () => ipcRenderer.invoke('fs:select-workspace'),
     readDir: (dirPath: string) => ipcRenderer.invoke('fs:read-dir', dirPath),
     readFile: (filePath: string) => ipcRenderer.invoke('fs:read-file', filePath),
+    readBinaryFile: (filePath: string) => ipcRenderer.invoke('fs:read-binary-file', filePath),
     writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:write-file', filePath, content),
     createItem: (itemPath: string, type: 'file' | 'directory') => ipcRenderer.invoke('fs:create-item', itemPath, type),
     deleteItem: (itemPath: string) => ipcRenderer.invoke('fs:delete-item', itemPath),
