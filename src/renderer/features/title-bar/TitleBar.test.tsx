@@ -24,6 +24,7 @@ const mockClose = vi.fn();
 const mockZoomIn = vi.fn();
 const mockZoomOut = vi.fn();
 const mockZoomReset = vi.fn();
+const mockOpenExternal = vi.fn();
 const mockGetInfo = vi.fn().mockResolvedValue({
   name: 'Spigot',
   version: '1.0.4',
@@ -50,6 +51,7 @@ let updateReadyCallback: ((payload: { version?: string }) => void) | null = null
     zoomOut: mockZoomOut,
     zoomReset: mockZoomReset,
     getInfo: mockGetInfo,
+    openExternal: mockOpenExternal,
   },
   updater: {
     installUpdate: mockInstallUpdate,
@@ -74,6 +76,7 @@ describe('TitleBar Component', () => {
     mockInstallUpdate.mockClear();
     mockCreateSSH.mockClear();
     mockGetInfo.mockClear();
+    mockOpenExternal.mockClear();
   });
 
   it('renders the brand title correctly', () => {

@@ -6,7 +6,7 @@ import logoSpigotUrl from '../../assets/logoSpigot.png';
 import { 
   Minus, Square, X, Plus, Folder, Save, LogOut,
   Sparkles, Terminal, Settings, LayoutGrid,
-  ZoomIn, ZoomOut, RefreshCw, Server, Key, HelpCircle
+  ZoomIn, ZoomOut, RefreshCw, Server, Key, HelpCircle, Github
 } from 'lucide-react';
 
 
@@ -501,25 +501,19 @@ export const TitleBar: React.FC = () => {
                         <div className="rounded-md bg-zinc-900/60 border border-zinc-800 p-2">
                           <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold mb-1">Sistema</div>
                           <div>App: {appInfo?.name || 'Spigot'}</div>
-                          <div>Modo: {appInfo?.isPackaged ? 'Instalada' : 'Desarrollo'}</div>
-                          <div>Plataforma: {appInfo ? `${appInfo.platform} ${appInfo.arch}` : '...'}</div>
-                          <div>Electron: {appInfo?.electron || '...'}</div>
+                          <div>Versi?n: {appInfo?.version || '...'}</div>
                         </div>
 
-                        <div className="rounded-md bg-zinc-900/60 border border-zinc-800 p-2">
-                          <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold mb-1">Funciones</div>
-                          <ul className="space-y-1 list-disc list-inside text-zinc-400">
-                            <li>Explorador de archivos, editor y vista de imágenes.</li>
-                            <li>Terminal local y conexiones SSH reales con OpenSSH.</li>
-                            <li>Git: estado, diff, commits y push.</li>
-                            <li>Actualizaciones: descarga en segundo plano y bot?n para instalar.</li>
-                          </ul>
-                        </div>
-
-                        <div className="rounded-md bg-zinc-900/60 border border-zinc-800 p-2">
-                          <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold mb-1">SSH</div>
-                          <p className="text-zinc-400">Usa OpenSSH del sistema. Soporta password interactivo, ssh-agent y clave privada opcional.</p>
-                        </div>
+                        <button
+                          onClick={() => {
+                            setActiveDropdown(null);
+                            (window as any).api.app.openExternal('https://github.com/Spigot/spigot');
+                          }}
+                          className="w-full rounded-md bg-zinc-900/60 border border-zinc-800 p-2 hover:bg-zinc-800 hover:text-white transition-colors flex items-center gap-2 text-left"
+                        >
+                          <Github className="w-4 h-4 text-zinc-400" />
+                          <span>GitHub</span>
+                        </button>
                       </div>
                     </div>
                   </>

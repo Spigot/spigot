@@ -133,6 +133,12 @@ ipcMain.on('app:open-shell', (_event, folderPath: string) => {
   }
 });
 
+ipcMain.on('app:open-external', (_event, url: string) => {
+  if (url?.startsWith('https://github.com/Spigot/spigot')) {
+    shell.openExternal(url);
+  }
+});
+
 ipcMain.on('app:maximize', () => {
   if (mainWindow?.isMaximized()) {
     mainWindow.unmaximize();
