@@ -1,6 +1,6 @@
 {
   "name": "spigot",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Premium multi-platform code editor inspired by VS Code using screaming architecture.",
   "repository": {
     "type": "git",

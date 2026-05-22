@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useLayoutStore } from '../../store/layoutStore';
+import logoSpigotUrl from '../../assets/logoSpigot.png';
 import { 
   Minus, Square, X, Plus, Folder, Save, LogOut,
   Sparkles, Terminal, Settings, LayoutGrid,
@@ -122,7 +123,7 @@ export const TitleBar: React.FC = () => {
       <div className="flex items-center gap-2.5 h-full app-non-draggable">
         {/* Brand Icon */}
         <div className="flex items-center text-editor-accent pl-1">
-          <img src="/logoSpigot.png" alt="Spigot" width="16" height="16" className="w-4.5 h-4.5 select-none pointer-events-none object-contain opacity-80" />
+          <img src={logoSpigotUrl} alt="Spigot" width="16" height="16" className="w-4.5 h-4.5 select-none pointer-events-none object-contain opacity-80" />
         </div>
 
 

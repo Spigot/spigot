@@ -8,6 +8,13 @@ import { lspManager } from './lspManager';
 let mainWindow: BrowserWindow | null = null;
 const workspaceWatchers = new Map<number, FSWatcher>();
 
+function getWindowIconPath() {
+  return app.isPackaged
+    ? join(__dirname, '../../dist/logoSpigot.ico')
+    : join(__dirname, '../../logoSpigot.ico');
+}
+
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -17,7 +24,7 @@ function createWindow() {
     show: false, // Start hidden to prevent raw white flashes
     frame: false, // Frameless window for premium custom title bar
     titleBarStyle: 'hidden',
-    icon: join(__dirname, '../../logoSpigot.ico'),
+    icon: getWindowIconPath(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
