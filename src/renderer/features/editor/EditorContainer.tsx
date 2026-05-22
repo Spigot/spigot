@@ -36,6 +36,13 @@ const defineMonacoTheme = (monaco: any) => {
   });
 };
 
+// Configure Monaco to load assets locally from our public folder (works offline and respects CSP 'self')
+loader.config({
+  paths: {
+    vs: '/monaco-editor/min/vs',
+  },
+});
+
 // Initialize globally as early as possible as fallback
 loader.init().then((monaco) => {
   defineMonacoTheme(monaco);

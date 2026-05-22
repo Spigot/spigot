@@ -49,10 +49,12 @@ contextBridge.exposeInMainWorld('api', {
     setSelectedModel: (provider: string, model: string) => ipcRenderer.invoke('store:set-selected-model', provider, model),
     getLastWorkspace: () => ipcRenderer.invoke('store:get-last-workspace'),
     setLastWorkspace: (workspacePath: string | null) => ipcRenderer.invoke('store:set-last-workspace', workspacePath),
+    getChatHistory: () => ipcRenderer.invoke('store:get-chat-history'),
+    setChatHistory: (chatHistory: any[]) => ipcRenderer.invoke('store:set-chat-history', chatHistory),
   },
   ai: {
     fetchModels: (provider: string, apiKey: string) => ipcRenderer.invoke('ai:fetch-models', provider, apiKey),
-    streamChat: (args: { provider: string; model: string; apiKey: string; prompt: string; contextText: string | null; history: any[] }) => 
+    streamChat: (args: { provider: string; model: string; apiKey: string; prompt: string; contextText: string | null; history: any[]; image?: string | null }) => 
       ipcRenderer.invoke('ai:stream-chat', args),
     abortChat: () => ipcRenderer.send('ai:abort-chat'),
     onChunk: (callback: (chunk: string) => void) => {

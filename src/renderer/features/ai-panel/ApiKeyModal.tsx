@@ -16,6 +16,7 @@ const PROVIDERS = [
   { id: 'qwen', name: 'Qwen' },
   { id: 'kimi', name: 'Kimi' },
   { id: 'openrouter', name: 'OpenRouter' },
+  { id: 'minimax', name: 'MiniMax' },
 ];
 
 const PROVIDER_OPTIONS = PROVIDERS.map((provider) => ({
@@ -64,11 +65,11 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm select-none p-4 animate-fade-in">
       <div 
-        className="w-full max-w-md bg-editor-bg border border-editor-border rounded-xl shadow-2xl overflow-hidden glass-panel flex flex-col transition-all-custom"
+        className="w-full max-w-md bg-editor-bg border border-editor-border rounded-xl shadow-2xl overflow-visible glass-panel flex flex-col transition-all-custom"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-editor-border bg-editor-titleBar">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-editor-border bg-editor-titleBar rounded-t-xl">
           <div className="flex items-center gap-2 text-white">
             <Settings className="w-4 h-4 text-editor-accent" />
             <span className="font-semibold text-sm">Ajustes del Agente</span>
@@ -117,6 +118,35 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
                   className="underline text-white hover:text-indigo-300 font-bold transition-colors cursor-pointer"
                 >
                   openrouter.ai
+                </a>.
+              </span>
+            </div>
+          )}
+
+          {selectedProvider === 'minimax' && (
+            <div className="flex flex-col gap-1.5 p-3 rounded-lg bg-teal-950/40 border border-teal-900/50 text-[11px] text-teal-200 leading-relaxed animate-fade-in">
+              <div className="flex items-center gap-1.5 font-bold text-white uppercase tracking-wider text-[9px] text-teal-400">
+                <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                <span>Soporte de MiniMax Activo</span>
+              </div>
+              <span>
+                ¡Podés usar <strong>MiniMax</strong> para conectar sus potentes modelos como MiniMax-Text-01 o MiniMax-M2.5!
+                Conseguí tu clave API en{' '}
+                <a
+                  href="https://platform.minimaxi.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline text-white hover:text-teal-300 font-bold transition-colors cursor-pointer"
+                >
+                  platform.minimaxi.com
+                </a> o{' '}
+                <a
+                  href="https://platform.minimax.io"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline text-white hover:text-teal-300 font-bold transition-colors cursor-pointer"
+                >
+                  platform.minimax.io
                 </a>.
               </span>
             </div>

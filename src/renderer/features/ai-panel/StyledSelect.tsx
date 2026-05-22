@@ -56,7 +56,7 @@ export const StyledSelect: React.FC<StyledSelectProps> = ({
       </button>
 
       {isOpen && !isDisabled && (
-        <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-[70] max-h-56 overflow-y-auto rounded-lg border border-editor-border bg-editor-bg shadow-2xl">
+        <div className="absolute right-0 top-[calc(100%+4px)] z-[70] max-h-72 min-w-full w-max max-w-[250px] overflow-y-auto rounded-lg border border-editor-border bg-editor-bg shadow-2xl">
           {options.map((option) => {
             const isSelected = option.value === value;
 

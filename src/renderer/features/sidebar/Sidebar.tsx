@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useLayoutStore, SidebarTab } from '../../store/layoutStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { useAIStore } from '../../store/aiStore';
 import { FileTree } from './FileTree';
-import { Search, Replace, FileCode, Check, RefreshCw, GitBranch, ChevronDown, ChevronRight, Sparkles, MoreHorizontal, Files, Blocks, Settings } from 'lucide-react';
+import { Search, Replace, FileCode, Check, RefreshCw, GitBranch, ChevronDown, ChevronRight, Sparkles, MoreHorizontal, Files, Blocks, Settings, Loader2 } from 'lucide-react';
 
 interface SearchMatch {
   filePath: string;
@@ -31,6 +32,38 @@ export const Sidebar: React.FC = () => {
   const [isChangesHeaderOpen, setIsChangesHeaderOpen] = useState(true);
   const [isChangesListOpen, setIsChangesListOpen] = useState(true);
   const [isGraphOpen, setIsGraphOpen] = useState(true);
+  const [isGeneratingCommit, setIsGeneratingCommit] = useState(false);
+
+  const handleGenerateCommitMessage = async () => {
+    if (!workspacePath) return;
+    setIsGeneratingCommit(true);
+    setCommitFeedback('');
+    try {
+      const diff = await (window as any).api.git.getDiff(workspacePath, '');
+      if (!diff || !diff.trim()) {
+        setCommitFeedback('Error: ¡Che! No hay ningún cambio local guardado para hacer commit.');
+        setIsGeneratingCommit(false);
+        return;
+      }
+
+      setCommitMessage('');
+      await useAIStore.getState().generateCommitMessage(diff, (text) => {
+        setCommitMessage(text);
+      });
+      setCommitFeedback('Mensaje de commit sugerido con éxito.');
+    } catch (err: any) {
+      console.error('Failed generating commit message:', err);
+      let errorMsg = 'Error al generar el mensaje.';
+      if (err.message && err.message.includes('API Key')) {
+        errorMsg = 'Error: ¡Che! Te falta configurar la API Key de la IA en los ajustes antes de proponer un commit.';
+      } else if (err.message) {
+        errorMsg = `Error: ${err.message}`;
+      }
+      setCommitFeedback(errorMsg);
+    } finally {
+      setIsGeneratingCommit(false);
+    }
+  };
 
   const refreshGitStatus = async () => {
     if (!workspacePath) return;
@@ -700,17 +733,15 @@ export const Sidebar: React.FC = () => {
                   </button>
                   <button
                     title="Generate commit message"
-                    className="p-1.5 rounded-lg hover:bg-zinc-800 transition-all-custom text-amber-400 hover:text-amber-300"
-                    onClick={() => {
-                      if (displayedGitFiles.length > 0) {
-                        const filesStr = displayedGitFiles.map(f => f.filePath.split('/').pop()).join(', ');
-                        setCommitMessage(`feat: update ${filesStr.slice(0, 42)}`);
-                      } else {
-                        setCommitMessage('chore: maintain repository files');
-                      }
-                    }}
+                    disabled={isGeneratingCommit}
+                    className="p-1.5 rounded-lg hover:bg-zinc-800 transition-all-custom text-amber-400 hover:text-amber-300 disabled:opacity-50"
+                    onClick={handleGenerateCommitMessage}
                   >
-                    <Sparkles className="w-3.5 h-3.5" />
+                    {isGeneratingCommit ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5" />
+                    )}
                   </button>
                   <button className="p-1.5 rounded-lg hover:bg-zinc-800 hover:text-white transition-all-custom" title="More actions">
                     <MoreHorizontal className="w-3.5 h-3.5" />
@@ -737,17 +768,15 @@ export const Sidebar: React.FC = () => {
                       <button
                         type="button"
                         title="Generate message"
-                        onClick={() => {
-                          if (displayedGitFiles.length > 0) {
-                            const filesStr = displayedGitFiles.map(f => f.filePath.split('/').pop()).join(', ');
-                            setCommitMessage(`feat: refine ${filesStr.slice(0, 42)}`);
-                          } else {
-                            setCommitMessage('chore: maintain repository files');
-                          }
-                        }}
-                        className="absolute right-2 top-2 text-zinc-500 hover:text-amber-400 p-0.5 rounded transition-all-custom"
+                        disabled={isGeneratingCommit}
+                        onClick={handleGenerateCommitMessage}
+                        className="absolute right-2 top-2 text-zinc-500 hover:text-amber-400 disabled:text-amber-500 disabled:opacity-50 p-0.5 rounded transition-all-custom"
                       >
-                        <Sparkles className="w-3.5 h-3.5" />
+                        {isGeneratingCommit ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                        ) : (
+                          <Sparkles className="w-3.5 h-3.5" />
+                        )}
                       </button>
                     </div>
 

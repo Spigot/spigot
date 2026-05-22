@@ -351,6 +351,18 @@ ipcMain.handle('store:set-last-workspace', async (_event, workspacePath: string 
   return true;
 });
 
+ipcMain.handle('store:get-chat-history', async () => {
+  const data = await readStore();
+  return data.chatHistory || [];
+});
+
+ipcMain.handle('store:set-chat-history', async (_event, chatHistory: any[]) => {
+  const data = await readStore();
+  data.chatHistory = chatHistory;
+  await writeStore(data);
+  return true;
+});
+
 // 2. Fetch Models Dynamically from Provider endpoints
 ipcMain.handle('ai:fetch-models', async (_event, provider: string, apiKey: string) => {
   try {
@@ -393,6 +405,13 @@ ipcMain.handle('ai:fetch-models', async (_event, provider: string, apiKey: strin
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json() as any;
       return json.data.map((m: any) => m.id);
+    } else if (provider === 'minimax') {
+      const res = await fetch('https://api.minimax.io/v1/models', {
+        headers: { 'Authorization': `Bearer ${apiKey}` }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json() as any;
+      return json.data.map((m: any) => m.id);
     }
     return [];
   } catch (err) {
@@ -413,7 +432,7 @@ ipcMain.on('ai:abort-chat', () => {
 
 ipcMain.handle('ai:stream-chat', async (
   _event, 
-  { provider, model, apiKey, prompt, contextText, history }
+  { provider, model, apiKey, prompt, contextText, history, image }
 ): Promise<boolean> => {
   if (activeAbortController) {
     activeAbortController.abort();
@@ -426,18 +445,109 @@ ipcMain.handle('ai:stream-chat', async (
     let headers: Record<string, string> = { 'Content-Type': 'application/json' };
     let body: any = {};
 
-    // Standardize conversation history format for API calls
-    const formattedMessages = (history || []).map((msg: any) => ({
-      role: msg.role,
-      content: msg.content
-    }));
+    let mimeType = 'image/png';
+    let base64Data = '';
+    if (image && image.startsWith('data:')) {
+      const parts = image.split(';base64,');
+      if (parts.length === 2) {
+        mimeType = parts[0].replace('data:', '');
+        base64Data = parts[1];
+      }
+    }
 
-    // Prepend active project context to the latest message
-    const fullUserPrompt = contextText 
-      ? `=== CONTEXTO DEL PROYECTO ===\n${contextText}\n\n=== FIN CONTEXTO ===\n\nPregunta / Instrucción del usuario:\n${prompt}`
+    // Standardize conversation history format for API calls
+    let formattedMessages = (history || []).map((msg: any) => {
+      if (msg.image) {
+        let hMimeType = 'image/png';
+        let hBase64Data = '';
+        if (msg.image.startsWith('data:')) {
+          const hParts = msg.image.split(';base64,');
+          if (hParts.length === 2) {
+            hMimeType = hParts[0].replace('data:', '');
+            hBase64Data = hParts[1];
+          }
+        }
+        
+        if (provider === 'anthropic') {
+          return {
+            role: msg.role,
+            content: [
+              { type: 'text', text: msg.content },
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: hMimeType,
+                  data: hBase64Data
+                }
+              }
+            ]
+          };
+        } else if (provider === 'gemini') {
+          return msg; // Will be handled separately in geminiContents mapping
+        } else {
+          return {
+            role: msg.role,
+            content: [
+              { type: 'text', text: msg.content },
+              { type: 'image_url', image_url: { url: msg.image } }
+            ]
+          };
+        }
+      }
+      return {
+        role: msg.role,
+        content: msg.content
+      };
+    });
+
+    // Prepend active project context to the latest message, with defensive context window bounds for restrictive providers like MiniMax
+    let activeContext = contextText;
+    if (provider === 'minimax') {
+      // Keep only the last 4 messages of history for MiniMax to save context window space
+      formattedMessages = formattedMessages.slice(-4);
+      if (contextText && contextText.length > 1200) {
+        activeContext = contextText.slice(0, 1200) + '\n\n... [Contexto del proyecto truncado automáticamente por el sistema para no exceder los límites del proveedor MiniMax] ...';
+      }
+    }
+
+    const fullUserPrompt = activeContext 
+      ? `=== CONTEXTO DEL PROYECTO ===\n${activeContext}\n\n=== FIN CONTEXTO ===\n\nPregunta / Instrucción del usuario:\n${prompt}`
       : prompt;
 
-    formattedMessages.push({ role: 'user', content: fullUserPrompt });
+    // Attach latest message for standard providers
+    if (provider !== 'gemini' && provider !== 'anthropic') {
+      if (image) {
+        formattedMessages.push({
+          role: 'user',
+          content: [
+            { type: 'text', text: fullUserPrompt },
+            { type: 'image_url', image_url: { url: image } }
+          ]
+        });
+      } else {
+        formattedMessages.push({ role: 'user', content: fullUserPrompt });
+      }
+    } else if (provider === 'anthropic') {
+      if (image && base64Data) {
+        formattedMessages.push({
+          role: 'user',
+          content: [
+            { type: 'text', text: fullUserPrompt },
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: mimeType,
+                data: base64Data
+              }
+            }
+          ]
+        });
+      } else {
+        formattedMessages.push({ role: 'user', content: fullUserPrompt });
+      }
+    }
 
     if (provider === 'openai') {
       url = 'https://api.openai.com/v1/chat/completions';
@@ -457,6 +567,10 @@ ipcMain.handle('ai:stream-chat', async (
       url = 'https://api.moonshot.cn/v1/chat/completions';
       headers['Authorization'] = `Bearer ${apiKey}`;
       body = { model, messages: formattedMessages, stream: true };
+    } else if (provider === 'minimax') {
+      url = 'https://api.minimax.io/v1/chat/completions';
+      headers['Authorization'] = `Bearer ${apiKey}`;
+      body = { model, messages: formattedMessages, stream: true };
     } else if (provider === 'qwen') {
       url = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
       headers['Authorization'] = `Bearer ${apiKey}`;
@@ -473,14 +587,47 @@ ipcMain.handle('ai:stream-chat', async (
       };
     } else if (provider === 'gemini') {
       url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`;
-      // Gemini expects contents list
-      const geminiContents = (history || []).map((msg: any) => ({
-        role: msg.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: msg.content }]
-      }));
+      
+      const geminiContents = (history || []).map((msg: any) => {
+        const parts: any[] = [{ text: msg.content }];
+        if (msg.image) {
+          let hMimeType = 'image/png';
+          let hBase64Data = '';
+          if (msg.image.startsWith('data:')) {
+            const hParts = msg.image.split(';base64,');
+            if (hParts.length === 2) {
+              hMimeType = hParts[0].replace('data:', '');
+              hBase64Data = hParts[1];
+            }
+          }
+          if (hBase64Data) {
+            parts.push({
+              inlineData: {
+                mimeType: hMimeType,
+                data: hBase64Data
+              }
+            });
+          }
+        }
+        return {
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts
+        };
+      });
+
+      const userParts: any[] = [{ text: fullUserPrompt }];
+      if (image && base64Data) {
+        userParts.push({
+          inlineData: {
+            mimeType: mimeType,
+            data: base64Data
+          }
+        });
+      }
+
       geminiContents.push({
         role: 'user',
-        parts: [{ text: fullUserPrompt }]
+        parts: userParts
       });
       body = { contents: geminiContents };
     }
@@ -597,8 +744,9 @@ ipcMain.handle('git:status', async (_event, workspacePath: string) => {
 
 ipcMain.handle('git:diff', async (_event, workspacePath: string, filePath: string) => {
   try {
+    const cmd = filePath ? `git diff HEAD -- "${filePath}"` : `git diff HEAD`;
     const { stdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-      exec(`git diff HEAD -- "${filePath}"`, { cwd: workspacePath }, (err, stdout, stderr) => {
+      exec(cmd, { cwd: workspacePath }, (err, stdout, stderr) => {
         if (err && !stdout) reject(err);
         else resolve({ stdout, stderr });
       });
