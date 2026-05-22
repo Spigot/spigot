@@ -256,6 +256,35 @@ ipcMain.handle('store:set-selected-model', async (_event, provider: string, mode
   return true;
 });
 
+ipcMain.handle('store:get-last-workspace', async () => {
+  const data = await readStore();
+  const lastWorkspacePath = data.lastWorkspacePath;
+
+  if (typeof lastWorkspacePath !== 'string' || !lastWorkspacePath.trim()) {
+    return null;
+  }
+
+  try {
+    const stats = await fsPromises.stat(lastWorkspacePath);
+    return stats.isDirectory() ? lastWorkspacePath : null;
+  } catch (err) {
+    return null;
+  }
+});
+
+ipcMain.handle('store:set-last-workspace', async (_event, workspacePath: string | null) => {
+  const data = await readStore();
+
+  if (workspacePath && workspacePath.trim()) {
+    data.lastWorkspacePath = workspacePath;
+  } else {
+    delete data.lastWorkspacePath;
+  }
+
+  await writeStore(data);
+  return true;
+});
+
 // 2. Fetch Models Dynamically from Provider endpoints
 ipcMain.handle('ai:fetch-models', async (_event, provider: string, apiKey: string) => {
   try {
