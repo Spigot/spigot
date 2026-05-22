@@ -501,7 +501,7 @@ export const TitleBar: React.FC = () => {
                         <div className="rounded-md bg-zinc-900/60 border border-zinc-800 p-2">
                           <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold mb-1">Sistema</div>
                           <div>App: {appInfo?.name || 'Spigot'}</div>
-                          <div>Versi?n: {appInfo?.version || '...'}</div>
+                          <div>Versión: {appInfo?.version || '...'}</div>
                         </div>
 
                         <button
