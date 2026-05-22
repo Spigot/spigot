@@ -130,7 +130,7 @@ export const TitleBar: React.FC = () => {
       await handleConnectSSH(newServer);
     } catch (err) {
       console.error('Error adding SSH server:', err);
-      alert('No se pudo guardar o abrir la conexi?n SSH.');
+      alert('No se pudo guardar o abrir la conexión SSH.');
     }
   };
 
@@ -609,8 +609,8 @@ export const TitleBar: React.FC = () => {
             <div className="flex items-center gap-2 mb-3">
               <Server className="w-4 h-4 text-emerald-400" />
               <div>
-                <h2 className="font-semibold text-white">Nueva conexi?n SSH</h2>
-                <p className="text-[11px] text-zinc-500">Guard? un host y abrilo en la terminal integrada.</p>
+                <h2 className="font-semibold text-white">Nueva conexión SSH</h2>
+                <p className="text-[11px] text-zinc-500">Guardá un host y abrilo en la terminal integrada.</p>
               </div>
             </div>
 
