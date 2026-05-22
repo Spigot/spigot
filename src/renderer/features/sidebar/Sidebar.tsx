@@ -3,7 +3,7 @@ import { useLayoutStore } from '../../store/layoutStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useAIStore } from '../../store/aiStore';
 import { FileTree } from './FileTree';
-import { Search, Replace, FileCode, Check, RefreshCw, GitBranch, ChevronDown, ChevronRight, Sparkles, MoreHorizontal, Loader2, ArrowUp } from 'lucide-react';
+import { Search, Replace, FileCode, Check, RefreshCw, GitBranch, ChevronDown, ChevronRight, Sparkles, MoreHorizontal, Loader2, ArrowUp, Folder } from 'lucide-react';
 
 interface SearchMatch {
   filePath: string;
@@ -444,6 +444,12 @@ export const Sidebar: React.FC = () => {
   }, [dirtyFiles, gitFiles, workspacePath]);
   const changedFileCount = displayedGitFiles.length;
 
+  const handleOpenExplorer = () => {
+    if (workspacePath && (window as any).api?.app?.openShell) {
+      (window as any).api.app.openShell(workspacePath);
+    }
+  };
+
   if (!isSidebarOpen) return null;
 
   return (
@@ -466,6 +472,15 @@ export const Sidebar: React.FC = () => {
           {activeSidebarTab === 'extensions' && 'EXTENSIONES'}
           {activeSidebarTab === 'settings' && 'CONFIGURACIÓN'}
         </span>
+        {activeSidebarTab === 'explorer' && (
+          <button 
+            onClick={handleOpenExplorer}
+            className="p-1.5 hover:bg-zinc-800/60 rounded-md text-zinc-400 hover:text-zinc-200 transition-all-custom"
+            title="Abrir en Explorador de Archivos"
+          >
+            <Folder className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
 
       {activeSidebarTab === 'explorer' && (
