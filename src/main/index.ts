@@ -9,6 +9,10 @@ import { lspManager } from './lspManager';
 let mainWindow: BrowserWindow | null = null;
 const workspaceWatchers = new Map<number, FSWatcher>();
 
+// Must be registered before Electron is ready; otherwise DevTools may still call
+// the unsupported Autofill protocol and print noisy console errors.
+app.commandLine.appendSwitch('disable-features', 'AutofillServerCommunication,AutofillShowTypePredictions');
+
 function getWindowIconPath() {
   return app.isPackaged
     ? join(__dirname, '../../dist/logoSpigot.ico')
@@ -103,9 +107,6 @@ mainWindow.on('closed', () => {
 }
 
 app.whenReady().then(() => {
-  // Mitigate "Request Autofill.enable failed" error in devtools by disabling Autofill feature
-  app.commandLine.appendSwitch('disable-features', 'AutofillServerCommunication,AutofillShowTypePredictions');
-
   createWindow();
   startUpdateService();
 
@@ -130,6 +131,12 @@ ipcMain.on('app:minimize', () => {
 ipcMain.on('app:open-shell', (_event, folderPath: string) => {
   if (folderPath) {
     shell.openPath(folderPath);
+  }
+});
+
+ipcMain.on('app:open-external', (_event, url: string) => {
+  if (url?.startsWith('https://github.com/Spigot/spigot')) {
+    shell.openExternal(url);
   }
 });
 
@@ -165,6 +172,17 @@ ipcMain.on('app:zoom-reset', () => {
     mainWindow.webContents.setZoomLevel(0);
   }
 });
+
+ipcMain.handle('app:get-info', () => ({
+  name: app.getName(),
+  version: app.getVersion(),
+  platform: process.platform,
+  arch: process.arch,
+  electron: process.versions.electron,
+  chrome: process.versions.chrome,
+  node: process.versions.node,
+  isPackaged: app.isPackaged,
+}));
 
 ipcMain.handle('updater:install-update', () => {
   if (!app.isPackaged) {
@@ -1053,4 +1071,3 @@ ipcMain.handle('git:push', async (_event, workspacePath: string) => {
     return { success: false, error: err.message };
   }
 });
-

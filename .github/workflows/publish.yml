@@ -29,6 +29,9 @@ jobs:
       - name: Install dependencies with PNPM policy
         run: pnpm install --frozen-lockfile
 
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit
+
       - name: Run tests
         run: pnpm run test
 

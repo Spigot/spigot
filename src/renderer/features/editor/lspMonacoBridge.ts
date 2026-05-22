@@ -35,7 +35,12 @@ export const toFileUri = (filePath: string) => {
   return `file://${encodeURI(prefixed)}`;
 };
 
-const toLspLanguageId = (language: string) => {
+export const toLspLanguageId = (language: string, filePathOrUri?: string) => {
+  const normalizedPath = filePathOrUri?.replace(/\\/g, '/').toLowerCase() ?? '';
+
+  if (normalizedPath.endsWith('.tsx')) return 'typescriptreact';
+  if (normalizedPath.endsWith('.jsx')) return 'javascriptreact';
+  if (language === 'typescriptreact' || language === 'javascriptreact') return language;
   if (language === 'typescript') return 'typescript';
   if (language === 'javascript') return 'javascript';
   return language;
@@ -119,7 +124,7 @@ export const registerLspCompletionProvider = (monaco: Monaco, languageId: string
   const lspLanguageId = toLspLanguageId(languageId);
   const providerKey = `${workspacePath ?? ''}:${lspLanguageId}`;
 
-  if (!workspacePath || !['typescript', 'javascript'].includes(lspLanguageId) || registeredLanguages.has(providerKey)) {
+  if (!workspacePath || !['typescript', 'javascript', 'typescriptreact', 'javascriptreact'].includes(lspLanguageId) || registeredLanguages.has(providerKey)) {
     return;
   }
 
@@ -130,7 +135,7 @@ export const registerLspCompletionProvider = (monaco: Monaco, languageId: string
     async provideCompletionItems(model, position) {
       const result = await (window as any).api?.lsp?.completion?.({
         workspacePath,
-        languageId: lspLanguageId,
+        languageId: toLspLanguageId(languageId, model.uri.toString()),
         uri: model.uri.toString(),
         line: position.lineNumber - 1,
         character: position.column - 1,
@@ -165,8 +170,8 @@ export const registerLspCompletionProvider = (monaco: Monaco, languageId: string
 };
 
 export const openLspDocument = async (workspacePath: string | null, filePath: string, languageId: string, text: string) => {
-  const lspLanguageId = toLspLanguageId(languageId);
-  if (!workspacePath || !['typescript', 'javascript'].includes(lspLanguageId)) return;
+  const lspLanguageId = toLspLanguageId(languageId, filePath);
+  if (!workspacePath || !['typescript', 'javascript', 'typescriptreact', 'javascriptreact'].includes(lspLanguageId)) return;
 
   const uri = toFileUri(filePath);
   if (openedDocuments.has(uri)) return;
@@ -191,8 +196,8 @@ export const openLspDocument = async (workspacePath: string | null, filePath: st
 };
 
 export const changeLspDocument = async (workspacePath: string | null, filePath: string, languageId: string, text: string) => {
-  const lspLanguageId = toLspLanguageId(languageId);
-  if (!workspacePath || !['typescript', 'javascript'].includes(lspLanguageId)) return;
+  const lspLanguageId = toLspLanguageId(languageId, filePath);
+  if (!workspacePath || !['typescript', 'javascript', 'typescriptreact', 'javascriptreact'].includes(lspLanguageId)) return;
 
   const uri = toFileUri(filePath);
   const nextVersion = (modelVersions.get(uri) ?? 1) + 1;
@@ -219,8 +224,8 @@ export const changeLspDocument = async (workspacePath: string | null, filePath: 
 };
 
 export const saveLspDocument = async (workspacePath: string | null, filePath: string, languageId: string, text: string) => {
-  const lspLanguageId = toLspLanguageId(languageId);
-  if (!workspacePath || !['typescript', 'javascript'].includes(lspLanguageId)) return;
+  const lspLanguageId = toLspLanguageId(languageId, filePath);
+  if (!workspacePath || !['typescript', 'javascript', 'typescriptreact', 'javascriptreact'].includes(lspLanguageId)) return;
 
   await (window as any).api?.lsp?.saveDocument?.({
     workspacePath,

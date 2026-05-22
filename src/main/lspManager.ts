@@ -42,7 +42,7 @@ type SessionState = {
   initPromise: Promise<void>;
 };
 
-const TYPESCRIPT_LANGUAGE_IDS = new Set(['typescript', 'javascript']);
+const TYPESCRIPT_LANGUAGE_IDS = new Set(['typescript', 'typescriptreact', 'javascript', 'javascriptreact']);
 
 class LspManager {
   private readonly sessions = new Map<string, SessionState>();

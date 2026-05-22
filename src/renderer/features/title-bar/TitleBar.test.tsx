@@ -24,6 +24,15 @@ const mockClose = vi.fn();
 const mockZoomIn = vi.fn();
 const mockZoomOut = vi.fn();
 const mockZoomReset = vi.fn();
+const mockOpenExternal = vi.fn();
+const mockGetInfo = vi.fn().mockResolvedValue({
+  name: 'Spigot',
+  version: '1.0.4',
+  platform: 'win32',
+  arch: 'x64',
+  electron: '30.0.0',
+  isPackaged: true,
+});
 const mockGetSSHServers = vi.fn().mockResolvedValue([
   { id: '1', name: 'test-server-alpha', host: '10.0.0.1', user: 'deploy' },
   { id: '2', name: 'test-server-beta', host: '10.0.0.2', user: 'root' },
@@ -41,6 +50,8 @@ let updateReadyCallback: ((payload: { version?: string }) => void) | null = null
     zoomIn: mockZoomIn,
     zoomOut: mockZoomOut,
     zoomReset: mockZoomReset,
+    getInfo: mockGetInfo,
+    openExternal: mockOpenExternal,
   },
   updater: {
     installUpdate: mockInstallUpdate,
@@ -64,6 +75,8 @@ describe('TitleBar Component', () => {
     updateReadyCallback = null;
     mockInstallUpdate.mockClear();
     mockCreateSSH.mockClear();
+    mockGetInfo.mockClear();
+    mockOpenExternal.mockClear();
   });
 
   it('renders the brand title correctly', () => {
@@ -82,6 +95,17 @@ describe('TitleBar Component', () => {
     expect(screen.getByText('Ver')).toBeDefined();
     expect(screen.getByText('Tools')).toBeDefined();
     expect(screen.getByText('SSH')).toBeDefined();
+    expect(screen.getByText('Ayuda')).toBeDefined();
+  });
+
+  it('renders Help dropdown with current app version', async () => {
+    render(<TitleBar />);
+
+    fireEvent.click(screen.getByText('Ayuda'));
+
+    expect(await screen.findByText('Ayuda de Spigot')).toBeDefined();
+    expect(await screen.findByText('Versión actual: 1.0.4')).toBeDefined();
+    expect(mockGetInfo).toHaveBeenCalled();
   });
 
 
@@ -178,13 +202,13 @@ describe('TitleBar Component', () => {
   it('shows update button after update is downloaded and installs on click', async () => {
     render(<TitleBar />);
 
-    expect(screen.queryByText('Actualizar versi?n')).toBeNull();
+    expect(screen.queryByText('Actualizar versión')).toBeNull();
 
     act(() => {
       updateReadyCallback?.({ version: '1.0.4' });
     });
 
-    const updateButton = await screen.findByText('Actualizar versi?n');
+    const updateButton = await screen.findByText('Actualizar versión');
     fireEvent.click(updateButton);
 
     expect(mockInstallUpdate).toHaveBeenCalled();

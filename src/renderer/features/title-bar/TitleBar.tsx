@@ -6,7 +6,7 @@ import logoSpigotUrl from '../../assets/logoSpigot.png';
 import { 
   Minus, Square, X, Plus, Folder, Save, LogOut,
   Sparkles, Terminal, Settings, LayoutGrid,
-  ZoomIn, ZoomOut, RefreshCw, Server, Key
+  ZoomIn, ZoomOut, RefreshCw, Server, Key, HelpCircle, Github
 } from 'lucide-react';
 
 
@@ -32,6 +32,15 @@ export const TitleBar: React.FC = () => {
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [recentProjects, setRecentProjects] = useState<string[]>([]);
   const [updateReady, setUpdateReady] = useState<{ version?: string } | null>(null);
+  const [appInfo, setAppInfo] = useState<any>(null);
+  const [isSshFormOpen, setIsSshFormOpen] = useState(false);
+  const [sshDraft, setSshDraft] = useState({
+    name: '',
+    host: '',
+    user: 'ubuntu',
+    port: '22',
+    identityFile: '',
+  });
 
   useEffect(() => {
     const unsubscribe = (window as any).api.updater?.onUpdateReady?.((payload: { version?: string }) => {
@@ -42,6 +51,15 @@ export const TitleBar: React.FC = () => {
       unsubscribe?.();
     };
   }, []);
+
+  const loadAppInfo = async () => {
+    try {
+      const info = await (window as any).api.app.getInfo();
+      setAppInfo(info);
+    } catch (err) {
+      console.error('Error loading app info:', err);
+    }
+  };
 
   const loadRecentProjects = async () => {
     try {
@@ -73,35 +91,42 @@ export const TitleBar: React.FC = () => {
   };
 
   const handleNewSSHConnection = async () => {
-    const name = prompt('Ingresá el alias o nombre del servidor VPS:', 'mi-servidor-vps');
-    if (!name || !name.trim()) return;
+    setActiveDropdown(null);
+    setSshDraft({
+      name: '',
+      host: '',
+      user: 'ubuntu',
+      port: '22',
+      identityFile: '',
+    });
+    setIsSshFormOpen(true);
+  };
 
-    const host = prompt('Ingresá la dirección IP o dominio del servidor (ej: 186.23.12.9 o vps.midominio.com):');
-    if (!host || !host.trim()) return;
+  const handleSaveSSHConnection = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
 
-    const user = prompt('Ingresá el usuario de conexión SSH (ej: ubuntu o root):', 'ubuntu');
-    if (!user || !user.trim()) return;
-
-    const portInput = prompt('Puerto SSH:', '22');
-    const port = Number(portInput || '22');
+    const port = Number(sshDraft.port || '22');
+    if (!sshDraft.host.trim() || !sshDraft.user.trim()) {
+      alert('Host y usuario SSH son obligatorios.');
+      return;
+    }
     if (!Number.isInteger(port) || port <= 0) {
-      alert('Puerto SSH inválido.');
+      alert('Puerto SSH inv?lido.');
       return;
     }
 
-    const identityFile = prompt('Ruta de clave privada opcional (.pem/.ppk convertido/OpenSSH). Dejalo vacío para usar password o ssh-agent:', '');
-
     try {
-      const newServer = {
+      const newServer: SSHServer = {
         id: Date.now().toString(),
-        name: name.trim(),
-        host: host.trim(),
-        user: user.trim(),
+        name: sshDraft.name.trim() || `${sshDraft.user.trim()}@${sshDraft.host.trim()}`,
+        host: sshDraft.host.trim(),
+        user: sshDraft.user.trim(),
         port,
-        identityFile: identityFile?.trim() || undefined,
+        identityFile: sshDraft.identityFile.trim() || undefined,
       };
       const list = await (window as any).api.store.addSSHServer(newServer);
       setSshServers(list || []);
+      setIsSshFormOpen(false);
       await handleConnectSSH(newServer);
     } catch (err) {
       console.error('Error adding SSH server:', err);
@@ -179,7 +204,7 @@ export const TitleBar: React.FC = () => {
         {/* Top-bar Navigation Menus */}
         <nav className="hidden lg:flex items-center gap-1 text-[12px] text-zinc-500 font-normal relative">
           {['Archivo', 'Ver', 'Proyectos', 'Tools', 'MCP', 'SSH', 'Ayuda'].map((menu) => {
-            const hasDropdown = menu === 'Archivo' || menu === 'Proyectos' || menu === 'Ver' || menu === 'SSH';
+            const hasDropdown = menu === 'Archivo' || menu === 'Proyectos' || menu === 'Ver' || menu === 'SSH' || menu === 'Ayuda';
             const isOpen = activeDropdown === menu;
             return (
               <div key={menu} className="relative">
@@ -194,6 +219,8 @@ export const TitleBar: React.FC = () => {
                           await loadRecentProjects();
                         } else if (menu === 'SSH') {
                           await loadSshServers();
+                        } else if (menu === 'Ayuda') {
+                          await loadAppInfo();
                         }
                       }
                     }
@@ -453,6 +480,44 @@ export const TitleBar: React.FC = () => {
                     </div>
                   </>
                 )}
+
+
+                {menu === 'Ayuda' && isOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40 cursor-default"
+                      onClick={() => setActiveDropdown(null)}
+                    />
+                    <div className="absolute left-0 mt-1 w-80 bg-zinc-950/95 backdrop-blur-md border border-zinc-800/80 rounded-md shadow-2xl py-2 z-50 text-[12px] text-zinc-300 animate-in fade-in slide-in-from-top-1 duration-100 ease-out font-sans">
+                      <div className="px-3 pb-2 border-b border-zinc-800/60 flex items-center gap-2">
+                        <HelpCircle className="w-4 h-4 text-indigo-400" />
+                        <div>
+                          <div className="text-zinc-100 font-semibold">Ayuda de Spigot</div>
+                          <div className="text-[10px] text-zinc-500">Versión actual: {appInfo?.version || 'cargando...'}</div>
+                        </div>
+                      </div>
+
+                      <div className="px-3 py-2 space-y-2">
+                        <div className="rounded-md bg-zinc-900/60 border border-zinc-800 p-2">
+                          <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold mb-1">Sistema</div>
+                          <div>App: {appInfo?.name || 'Spigot'}</div>
+                          <div>Versión: {appInfo?.version || '...'}</div>
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            setActiveDropdown(null);
+                            (window as any).api.app.openExternal('https://github.com/Spigot/spigot');
+                          }}
+                          className="w-full rounded-md bg-zinc-900/60 border border-zinc-800 p-2 hover:bg-zinc-800 hover:text-white transition-colors flex items-center gap-2 text-left"
+                        >
+                          <Github className="w-4 h-4 text-zinc-400" />
+                          <span>GitHub</span>
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             );
           })}
@@ -476,9 +541,9 @@ export const TitleBar: React.FC = () => {
           <button
             onClick={handleInstallUpdate}
             className="h-7 px-3 mr-2 rounded-md bg-emerald-500 text-black text-[12px] font-semibold hover:bg-emerald-400 transition-all-custom shadow-lg shadow-emerald-950/30"
-            title={updateReady.version ? `Instalar versi?n ${updateReady.version}` : 'Instalar actualizaci?n descargada'}
+            title={updateReady.version ? `Instalar versión ${updateReady.version}` : 'Instalar actualización descargada'}
           >
-            Actualizar versi?n
+            Actualizar versión
           </button>
         )}
 
@@ -537,6 +602,51 @@ export const TitleBar: React.FC = () => {
           <X className="w-4 h-4" />
         </button>
       </div>
+
+      {isSshFormOpen && (
+        <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/60 pt-14 app-non-draggable">
+          <form onSubmit={handleSaveSSHConnection} className="w-[420px] max-h-[calc(100vh-72px)] overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-950 p-4 shadow-2xl text-sm text-zinc-200">
+            <div className="flex items-center gap-2 mb-3">
+              <Server className="w-4 h-4 text-emerald-400" />
+              <div>
+                <h2 className="font-semibold text-white">Nueva conexión SSH</h2>
+                <p className="text-[11px] text-zinc-500">Guardá un host y abrilo en la terminal integrada.</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <label className="block">
+                <span className="text-[11px] text-zinc-500">Alias</span>
+                <input value={sshDraft.name} onChange={(e) => setSshDraft({ ...sshDraft, name: e.target.value })} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 outline-none focus:border-emerald-500" placeholder="mi-servidor-vps" />
+              </label>
+              <label className="block">
+                <span className="text-[11px] text-zinc-500">Host / IP</span>
+                <input value={sshDraft.host} onChange={(e) => setSshDraft({ ...sshDraft, host: e.target.value })} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 outline-none focus:border-emerald-500" placeholder="186.23.12.9 o vps.midominio.com" autoFocus />
+              </label>
+              <div className="grid grid-cols-[1fr_100px] gap-3">
+                <label className="block">
+                  <span className="text-[11px] text-zinc-500">Usuario</span>
+                  <input value={sshDraft.user} onChange={(e) => setSshDraft({ ...sshDraft, user: e.target.value })} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 outline-none focus:border-emerald-500" placeholder="ubuntu" />
+                </label>
+                <label className="block">
+                  <span className="text-[11px] text-zinc-500">Puerto</span>
+                  <input value={sshDraft.port} onChange={(e) => setSshDraft({ ...sshDraft, port: e.target.value })} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 outline-none focus:border-emerald-500" placeholder="22" />
+                </label>
+              </div>
+              <label className="block">
+                <span className="text-[11px] text-zinc-500">Clave privada opcional</span>
+                <input value={sshDraft.identityFile} onChange={(e) => setSshDraft({ ...sshDraft, identityFile: e.target.value })} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 outline-none focus:border-emerald-500" placeholder="C:\Users\vos\.ssh\id_rsa" />
+              </label>
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setIsSshFormOpen(false)} className="rounded-md px-3 py-1.5 text-zinc-400 hover:bg-zinc-900 hover:text-white">Cancelar</button>
+              <button type="submit" className="rounded-md bg-emerald-500 px-3 py-1.5 font-semibold text-black hover:bg-emerald-400">Guardar y conectar</button>
+            </div>
+          </form>
+        </div>
+      )}
+
     </header>
   );
 };

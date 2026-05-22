@@ -108,42 +108,42 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   openFile: async (filePath: string) => {
-    const { openTabs, fileBuffers, imageBuffers } = get();
-    
-    // Add tab if not already present
-    if (!openTabs.includes(filePath)) {
-      set({ openTabs: [...openTabs, filePath] });
-    }
-    
-    set({ activeTabPath: filePath });
-
     const isImageFile = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i.test(filePath);
 
     if (isImageFile) {
-      if (imageBuffers[filePath] === undefined) {
+      let nextImageBuffer = get().imageBuffers[filePath];
+      if (nextImageBuffer === undefined) {
         try {
-          const base64 = await (window as any).api.fs.readBinaryFile(filePath);
-          set((state) => ({
-            imageBuffers: { ...state.imageBuffers, [filePath]: base64 },
-          }));
+          nextImageBuffer = await (window as any).api.fs.readBinaryFile(filePath);
         } catch (err) {
           console.error(`Failed to load image preview for ${filePath}:`, err);
+          return;
         }
       }
+
+      set((state) => ({
+        openTabs: state.openTabs.includes(filePath) ? state.openTabs : [...state.openTabs, filePath],
+        activeTabPath: filePath,
+        imageBuffers: { ...state.imageBuffers, [filePath]: nextImageBuffer },
+      }));
       return;
     }
 
-    // Load file from disk if not already cached in memory buffer
-    if (fileBuffers[filePath] === undefined) {
+    let nextContent = get().fileBuffers[filePath];
+    if (nextContent === undefined) {
       try {
-        const content = await (window as any).api.fs.readFile(filePath);
-        set((state) => ({
-          fileBuffers: { ...state.fileBuffers, [filePath]: content }
-        }));
+        nextContent = await (window as any).api.fs.readFile(filePath);
       } catch (err) {
         console.error(`Failed to load file contents for ${filePath}:`, err);
+        return;
       }
     }
+
+    set((state) => ({
+      openTabs: state.openTabs.includes(filePath) ? state.openTabs : [...state.openTabs, filePath],
+      activeTabPath: filePath,
+      fileBuffers: { ...state.fileBuffers, [filePath]: nextContent },
+    }));
   },
 
   closeFile: (filePath: string) => {

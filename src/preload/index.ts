@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('api', {
     zoomOut: () => ipcRenderer.send('app:zoom-out'),
     zoomReset: () => ipcRenderer.send('app:zoom-reset'),
     openShell: (folderPath: string) => ipcRenderer.send('app:open-shell', folderPath),
+    openExternal: (url: string) => ipcRenderer.send('app:open-external', url),
+    getInfo: () => ipcRenderer.invoke('app:get-info'),
   },
   updater: {
     installUpdate: () => ipcRenderer.invoke('updater:install-update'),
