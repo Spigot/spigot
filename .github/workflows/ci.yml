@@ -39,8 +39,16 @@ jobs:
       - name: Run Vite production build check
         run: pnpm run build:electron
 
+      - name: Install Playwright Browsers
+        run: pnpm exec playwright install --with-deps
+
       - name: Run Vitest Unit & Integration tests
         run: pnpm run test
 
       - name: Run Playwright E2E tests
+        run: xvfb-run pnpm run test:e2e
+        if: runner.os == 'Linux'
+
+      - name: Run Playwright E2E tests (Windows)
         run: pnpm run test:e2e
+        if: runner.os == 'Windows'
