@@ -488,7 +488,7 @@ export const TitleBar: React.FC = () => {
                       className="fixed inset-0 z-40 cursor-default"
                       onClick={() => setActiveDropdown(null)}
                     />
-                    <div className="absolute right-0 top-full mt-1 w-80 bg-zinc-950/95 backdrop-blur-md border border-zinc-800/80 rounded-md shadow-2xl py-2 z-50 text-[12px] text-zinc-300 animate-in fade-in slide-in-from-top-1 duration-100 ease-out font-sans">
+                    <div className="absolute left-0 mt-1 w-80 bg-zinc-950/95 backdrop-blur-md border border-zinc-800/80 rounded-md shadow-2xl py-2 z-50 text-[12px] text-zinc-300 animate-in fade-in slide-in-from-top-1 duration-100 ease-out font-sans">
                       <div className="px-3 pb-2 border-b border-zinc-800/60 flex items-center gap-2">
                         <HelpCircle className="w-4 h-4 text-indigo-400" />
                         <div>
