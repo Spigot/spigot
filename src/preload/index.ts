@@ -39,6 +39,8 @@ contextBridge.exposeInMainWorld('api', {
     setKey: (provider: string, key: string) => ipcRenderer.invoke('store:set-key', provider, key),
     getSelectedModels: () => ipcRenderer.invoke('store:get-selected-models'),
     setSelectedModel: (provider: string, model: string) => ipcRenderer.invoke('store:set-selected-model', provider, model),
+    getLastWorkspace: () => ipcRenderer.invoke('store:get-last-workspace'),
+    setLastWorkspace: (workspacePath: string | null) => ipcRenderer.invoke('store:set-last-workspace', workspacePath),
   },
   ai: {
     fetchModels: (provider: string, apiKey: string) => ipcRenderer.invoke('ai:fetch-models', provider, apiKey),

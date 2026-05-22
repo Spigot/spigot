@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import TitleBar from './features/title-bar/TitleBar';
 import ActivityBar from './features/activity-bar/ActivityBar';
@@ -8,9 +8,16 @@ import EditorContainer from './features/editor/EditorContainer';
 import ConsolePanel from './features/terminal/ConsolePanel';
 import AIPanel from './features/ai-panel/AIPanel';
 import StatusBar from './features/status-bar/StatusBar';
+import { useWorkspaceStore } from './store/workspaceStore';
 import './index.css';
 
 const App: React.FC = () => {
+  const restoreLastWorkspace = useWorkspaceStore((state) => state.restoreLastWorkspace);
+
+  useEffect(() => {
+    restoreLastWorkspace();
+  }, [restoreLastWorkspace]);
+
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-editor-bg">
       {/* 1. Custom Frameless Title Bar */}

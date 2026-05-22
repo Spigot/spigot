@@ -29,6 +29,7 @@ interface WorkspaceState {
   deleteItem: (itemPath: string) => Promise<void>;
   setPendingSelection: (selection: { filePath: string; line: number; column: number; length: number } | null) => void;
   setExplorerSelectedPath: (path: string | null) => void;
+  restoreLastWorkspace: () => Promise<void>;
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
@@ -44,6 +45,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   setPendingSelection: (selection) => set({ pendingSelection: selection }),
   setExplorerSelectedPath: (path) => set({ explorerSelectedPath: path }),
 
+  restoreLastWorkspace: async () => {
+    try {
+      const lastWorkspacePath = await (window as any).api?.store?.getLastWorkspace?.();
+      if (lastWorkspacePath) {
+        await get().setWorkspacePath(lastWorkspacePath);
+      }
+    } catch (err) {
+      console.error('Error restoring last workspace:', err);
+    }
+  },
 
   selectWorkspace: async () => {
     try {
@@ -59,6 +70,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   setWorkspacePath: async (path: string) => {
     set({ workspacePath: path, openTabs: [], activeTabPath: null, fileBuffers: {}, dirtyFiles: [] });
     await get().refreshWorkspace();
+    await (window as any).api?.store?.setLastWorkspace?.(path);
   },
 
   refreshWorkspace: async () => {
