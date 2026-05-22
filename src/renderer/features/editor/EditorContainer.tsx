@@ -309,6 +309,12 @@ export const EditorContainer: React.FC = () => {
   }
 
   const isDiffActive = activeDiffFile !== null && activeDiffFile.filePath === activeTabPath;
+  const diffOriginalModelPath = activeDiffFile
+    ? `spigot-diff-original://${encodeURIComponent(activeDiffFile.filePath)}`
+    : undefined;
+  const diffModifiedModelPath = activeTabPath
+    ? `spigot-diff-modified://${encodeURIComponent(activeTabPath)}`
+    : undefined;
 
   if (isImageActive && activeTabPath) {
     const imageName = activeTabPath.split(/[/\\]/).pop() || activeTabPath;
@@ -367,11 +373,16 @@ export const EditorContainer: React.FC = () => {
         </div>
 
         <DiffEditor
+          key={activeDiffFile.filePath}
           height="100%"
           width="100%"
           original={activeDiffFile.original}
           modified={activeContent}
           language={language}
+          originalModelPath={diffOriginalModelPath}
+          modifiedModelPath={diffModifiedModelPath}
+          keepCurrentOriginalModel
+          keepCurrentModifiedModel
           theme="cursor-dark"
           beforeMount={defineMonacoTheme}
           onMount={handleDiffOnMount}

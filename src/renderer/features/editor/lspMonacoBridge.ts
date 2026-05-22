@@ -171,18 +171,23 @@ export const openLspDocument = async (workspacePath: string | null, filePath: st
   const uri = toFileUri(filePath);
   if (openedDocuments.has(uri)) return;
 
-  openedDocuments.add(uri);
-  modelVersions.set(uri, 1);
-
-  await (window as any).api?.lsp?.openDocument?.({
-    workspacePath,
-    document: {
-      uri,
-      languageId: lspLanguageId,
-      version: 1,
-      text,
-    },
-  });
+  try {
+    await (window as any).api?.lsp?.openDocument?.({
+      workspacePath,
+      document: {
+        uri,
+        languageId: lspLanguageId,
+        version: 1,
+        text,
+      },
+    });
+    openedDocuments.add(uri);
+    modelVersions.set(uri, 1);
+  } catch (error) {
+    openedDocuments.delete(uri);
+    modelVersions.delete(uri);
+    console.warn('Unable to open LSP document:', error);
+  }
 };
 
 export const changeLspDocument = async (workspacePath: string | null, filePath: string, languageId: string, text: string) => {
@@ -198,15 +203,19 @@ export const changeLspDocument = async (workspacePath: string | null, filePath: 
     return;
   }
 
-  await (window as any).api?.lsp?.changeDocument?.({
-    workspacePath,
-    languageId: lspLanguageId,
-    document: {
-      uri,
-      version: nextVersion,
-      text,
-    },
-  });
+  try {
+    await (window as any).api?.lsp?.changeDocument?.({
+      workspacePath,
+      languageId: lspLanguageId,
+      document: {
+        uri,
+        version: nextVersion,
+        text,
+      },
+    });
+  } catch (error) {
+    console.warn('Unable to sync LSP document change:', error);
+  }
 };
 
 export const saveLspDocument = async (workspacePath: string | null, filePath: string, languageId: string, text: string) => {

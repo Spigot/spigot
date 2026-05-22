@@ -135,7 +135,6 @@ class LspManager {
       initPromise: Promise.resolve(),
     };
 
-    session.initPromise = this.initializeSession(window, session, languageId);
     this.sessions.set(sessionKey, session);
 
     child.stderr.on('data', (chunk) => {
@@ -148,6 +147,7 @@ class LspManager {
     });
 
     connection.listen();
+    session.initPromise = this.initializeSession(window, session, languageId);
     return session;
   }
 
