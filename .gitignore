@@ -55,3 +55,5 @@ Thumbs.db
 # Root-level user mock screenshots and assets
 /*.png
 !public/*.png
+# PNPM local store
+.pnpm-store/

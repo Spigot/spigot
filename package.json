@@ -9,12 +9,16 @@
   "main": "dist-electron/main/index.js",
   "type": "commonjs",
   "scripts": {
+    "preinstall": "node scripts/enforce-pnpm.cjs",
     "dev": "vite",
     "build": "tsc && vite build && electron-builder --publish never",
     "build:electron": "vite build",
-    "postinstall": "electron-builder install-app-deps",
-    "rebuild": "electron-rebuild -f -w node-pty",
-    "test": "vitest run"
+    "postinstall": "node scripts/postinstall.cjs",
+    "rebuild:native": "electron-builder install-app-deps",
+    "rebuild": "corepack pnpm run rebuild:native",
+    "test": "vitest run",
+    "security:audit": "corepack pnpm audit --prod",
+    "security:signatures": "npm audit signatures"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",
@@ -32,7 +36,6 @@
     "autoprefixer": "^10.4.19",
     "electron": "^30.0.1",
     "electron-builder": "^24.13.3",
-    "@electron/rebuild": "^3.6.0",
     "postcss": "^8.4.38",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -81,5 +84,14 @@
         "AppImage"
       ]
     }
+  },
+  "packageManager": "pnpm@11.2.2",
+  "engines": {
+    "node": ">=22.14.0",
+    "pnpm": ">=11.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }
