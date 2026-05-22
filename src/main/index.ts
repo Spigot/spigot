@@ -1,10 +1,12 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import { join, relative } from 'path';
-import { promises as fsPromises } from 'fs';
+import { promises as fsPromises, watch, FSWatcher } from 'fs';
 import { exec } from 'child_process';
 import { terminalManager } from './terminal';
+import { lspManager } from './lspManager';
 
 let mainWindow: BrowserWindow | null = null;
+const workspaceWatchers = new Map<number, FSWatcher>();
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -38,8 +40,9 @@ function createWindow() {
     mainWindow.loadFile(join(__dirname, '../../dist/index.html'));
   }
 
-  mainWindow.on('closed', () => {
+mainWindow.on('closed', () => {
     terminalManager.clearAll();
+    lspManager.shutdownAll();
     mainWindow = null;
   });
 }
@@ -54,6 +57,7 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   terminalManager.clearAll();
+  lspManager.shutdownAll();
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -191,6 +195,56 @@ ipcMain.handle('fs:delete-item', async (_event, itemPath: string) => {
     console.error(`Error deleting item ${itemPath}:`, err);
     throw new Error(`Failed to delete item: ${err.message}`);
   }
+});
+
+ipcMain.handle('fs:watch-workspace', async (event, workspacePath: string) => {
+  const webContentsId = event.sender.id;
+  workspaceWatchers.get(webContentsId)?.close();
+
+  try {
+    const watcher = watch(
+      workspacePath,
+      { recursive: process.platform === 'win32' },
+      (_eventType, filename) => {
+        event.sender.send('workspace:changed', filename?.toString() ?? null);
+      },
+    );
+
+    watcher.on('error', (err) => {
+      console.error(`Workspace watcher failed for ${workspacePath}:`, err);
+      event.sender.send('workspace:watch-error', err.message);
+    });
+
+    workspaceWatchers.set(webContentsId, watcher);
+    return true;
+  } catch (err: any) {
+    console.error(`Error watching workspace ${workspacePath}:`, err);
+    return false;
+  }
+});
+
+ipcMain.handle('fs:unwatch-workspace', async (event) => {
+  const webContentsId = event.sender.id;
+  workspaceWatchers.get(webContentsId)?.close();
+  workspaceWatchers.delete(webContentsId);
+  return true;
+});
+
+ipcMain.handle('lsp:open-document', async (_event, args) => {
+  if (!mainWindow) return false;
+  return lspManager.openDocument(mainWindow, args.workspacePath, args.document);
+});
+
+ipcMain.handle('lsp:change-document', async (_event, args) => {
+  return lspManager.changeDocument(args.workspacePath, args.languageId, args.document);
+});
+
+ipcMain.handle('lsp:save-document', async (_event, args) => {
+  return lspManager.saveDocument(args.workspacePath, args.languageId, args.uri, args.text);
+});
+
+ipcMain.handle('lsp:completion', async (_event, args) => {
+  return lspManager.completion(args.workspacePath, args.languageId, args);
 });
 
 // Integrated Terminal PTY Handlers

@@ -17,7 +17,7 @@ export const Sidebar: React.FC = () => {
   const { activeSidebarTab, isSidebarOpen, sidebarWidth, setSidebarWidth, setSidebarTab } = useLayoutStore();
   const { 
     activeTabPath, fileBuffers, fileTree, updateFileBuffer, openFile, openTabs, setPendingSelection,
-    workspacePath, setDiffFile, activeDiffFile
+    workspacePath, setDiffFile, activeDiffFile, dirtyFiles
   } = useWorkspaceStore();
 
   // Git Source Control states
@@ -75,6 +75,16 @@ export const Sidebar: React.FC = () => {
     if (activeSidebarTab === 'source-control') {
       refreshGitStatus();
     }
+  }, [activeSidebarTab, workspacePath]);
+
+  useEffect(() => {
+    if (activeSidebarTab !== 'source-control' || !workspacePath) return;
+
+    const intervalId = window.setInterval(() => {
+      refreshGitStatus();
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
   }, [activeSidebarTab, workspacePath]);
 
   const handleSelectGitFile = async (relativeFilePath: string) => {
@@ -342,12 +352,46 @@ export const Sidebar: React.FC = () => {
     return acc;
   }, {});
 
+
+  const getGitStatusMeta = (status: string) => {
+    const statusRaw = status.trim();
+
+    if (statusRaw === 'A') {
+      return { badgeText: 'A', badgeColor: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20', title: 'Added' };
+    }
+
+    if (statusRaw === '??') {
+      return { badgeText: 'U', badgeColor: 'text-cyan-300 bg-cyan-500/10 border-cyan-500/20', title: 'Untracked' };
+    }
+
+    if (statusRaw === 'D') {
+      return { badgeText: 'D', badgeColor: 'text-red-400 bg-red-500/10 border-red-500/20', title: 'Deleted' };
+    }
+
+    return { badgeText: 'M', badgeColor: 'text-amber-300 bg-amber-500/10 border-amber-500/20', title: 'Modified' };
+  };
+
+  const displayedGitFiles = React.useMemo(() => {
+    if (!workspacePath) return gitFiles;
+
+    const gitRelativePaths = new Set(gitFiles.map((file) => file.filePath.replace(/\\/g, '/')));
+    const unsavedFiles = dirtyFiles
+      .map((filePath) => filePath.replace(/\\/g, '/'))
+      .filter((filePath) => filePath.startsWith(workspacePath.replace(/\\/g, '/')))
+      .map((filePath) => filePath.slice(workspacePath.replace(/\\/g, '/').length + 1))
+      .filter((relativePath) => relativePath && !gitRelativePaths.has(relativePath))
+      .map((filePath) => ({ status: 'M*', filePath }));
+
+    return [...gitFiles, ...unsavedFiles];
+  }, [dirtyFiles, gitFiles, workspacePath]);
+  const changedFileCount = displayedGitFiles.length;
+
   if (!isSidebarOpen) return null;
 
   return (
     <aside 
       style={{ width: `${sidebarWidth}px` }}
-      className="bg-editor-sidebar border-r border-editor-border flex flex-col select-none z-30 relative animate-fade-in"
+      className="bg-[#101011] border-r border-zinc-800/80 flex flex-col select-none z-30 relative animate-fade-in shadow-[inset_-1px_0_0_rgba(255,255,255,0.02)]"
     >
       {/* Drag Resize Handle */}
       <div
@@ -356,7 +400,7 @@ export const Sidebar: React.FC = () => {
       />
 
       {/* Premium Horizontal Navigation Tabs Bar */}
-      <div className="h-10 border-b border-editor-border flex items-center justify-between px-3 bg-zinc-950/20 shrink-0 select-none">
+      <div className="h-11 border-b border-zinc-800/80 flex items-center justify-between px-3 bg-zinc-950/45 shrink-0 select-none">
         <div className="flex items-center gap-1">
           {[
             { id: 'explorer' as SidebarTab, icon: Files, label: 'Explorador' },
@@ -371,10 +415,10 @@ export const Sidebar: React.FC = () => {
                 key={tab.id}
                 onClick={() => setSidebarTab(tab.id)}
                 title={tab.label}
-                className={`p-1.5 rounded-md transition-all-custom ${
+                className={`p-2 rounded-lg transition-all-custom ${
                   isActive 
-                    ? 'text-white bg-zinc-900/60 border border-zinc-800/40 font-bold' 
-                    : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/20'
+                    ? 'text-white bg-zinc-800/80 border border-zinc-700/70 font-bold shadow-sm' 
+                    : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60'
                 }`}
               >
                 <Icon className="w-4.5 h-4.5" />
@@ -388,10 +432,10 @@ export const Sidebar: React.FC = () => {
           <button
             onClick={() => setSidebarTab('settings')}
             title="Configuración"
-            className={`p-1.5 rounded-md transition-all-custom ${
+            className={`p-2 rounded-lg transition-all-custom ${
               activeSidebarTab === 'settings'
-                ? 'text-white bg-zinc-900/60 border border-zinc-800/40 font-bold'
-                : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/20'
+                ? 'text-white bg-zinc-800/80 border border-zinc-700/70 font-bold shadow-sm'
+                : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60'
             }`}
           >
             <Settings className="w-4.5 h-4.5" />
@@ -597,72 +641,87 @@ export const Sidebar: React.FC = () => {
       )}
 
       {activeSidebarTab === 'source-control' && (
-        <div className="flex-1 flex flex-col overflow-hidden select-none bg-editor-bg">
+        <div className="flex-1 flex flex-col overflow-hidden select-none bg-[#101011]">
+          <div className="px-3 py-3 border-b border-zinc-800/80 bg-zinc-950/55">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-300">
+                  <GitBranch className="w-3.5 h-3.5" />
+                  <span>Source Control</span>
+                </div>
+                <div className="mt-1 flex items-center gap-1.5 min-w-0">
+                  <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.6)] shrink-0" />
+                  <span className="truncate text-[13px] font-semibold text-white" title={currentBranch}>
+                    {currentBranch}
+                  </span>
+                  <span className="text-[10px] text-zinc-500">branch</span>
+                </div>
+              </div>
+
+              <button
+                onClick={refreshGitStatus}
+                disabled={isLoadingGit}
+                title="Refresh source control"
+                className="h-8 w-8 rounded-lg border border-zinc-800 bg-zinc-900/80 text-zinc-300 hover:text-white hover:border-zinc-600 hover:bg-zinc-800 transition-all-custom flex items-center justify-center shrink-0"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoadingGit ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
 
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-            {/* Section 1: CHANGES Collapsible */}
-            <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-              <div className="flex items-center justify-between px-3 py-1.5 bg-editor-hover/5 select-none hover:bg-editor-hover/10 transition-all-custom shrink-0">
+            <div className="flex flex-col overflow-hidden min-h-0 shrink-0">
+              <div className="flex items-center justify-between px-3 py-2.5 bg-zinc-950/35 select-none hover:bg-zinc-900/70 transition-all-custom shrink-0 border-b border-zinc-800/70">
                 <button
                   onClick={() => setIsChangesHeaderOpen(!isChangesHeaderOpen)}
-                  className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-editor-text hover:text-white transition-colors"
+                  className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-zinc-200 hover:text-white transition-colors"
                 >
                   {isChangesHeaderOpen ? (
-                    <ChevronDown className="w-3 h-3 text-zinc-400" />
+                    <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />
                   ) : (
-                    <ChevronRight className="w-3 h-3 text-zinc-400" />
+                    <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />
                   )}
-                  <span>Changes</span>
+                  <span>Working Tree</span>
+                  {changedFileCount > 0 && (
+                    <span className="ml-1 rounded-full border border-indigo-400/30 bg-indigo-400/15 px-1.5 py-0.5 text-[10px] text-indigo-200">
+                      {changedFileCount}
+                    </span>
+                  )}
                 </button>
-                
-                <div className="flex items-center gap-1 text-zinc-400">
+
+                <div className="flex items-center gap-1 text-zinc-500">
                   <button
                     onClick={() => handleCommit()}
                     disabled={isCommitting || !commitMessage.trim()}
-                    title="Commit All Changes"
-                    className="p-1 rounded hover:bg-editor-hover hover:text-white transition-all-custom disabled:opacity-30"
+                    title="Commit all changes"
+                    className="p-1.5 rounded-lg hover:bg-zinc-800 hover:text-white transition-all-custom disabled:opacity-30"
                   >
-                    <Check className="w-3 h-3" />
+                    <Check className="w-3.5 h-3.5" />
                   </button>
                   <button
-                    title="Staged Files / Stash"
-                    className="p-1 rounded hover:bg-editor-hover hover:text-white transition-all-custom"
-                  >
-                    <GitBranch className="w-3 h-3" />
-                  </button>
-                  <button
-                    title="AI Commit Message"
-                    className="p-1 rounded hover:bg-editor-hover hover:text-white transition-all-custom text-amber-500/80 hover:text-amber-400"
+                    title="Generate commit message"
+                    className="p-1.5 rounded-lg hover:bg-zinc-800 transition-all-custom text-amber-400 hover:text-amber-300"
                     onClick={() => {
-                      if (gitFiles.length > 0) {
-                        const filesStr = gitFiles.map(f => f.filePath.split('/').pop()).join(', ');
-                        setCommitMessage(`feat: update changes in ${filesStr.slice(0, 40)}`);
+                      if (displayedGitFiles.length > 0) {
+                        const filesStr = displayedGitFiles.map(f => f.filePath.split('/').pop()).join(', ');
+                        setCommitMessage(`feat: update ${filesStr.slice(0, 42)}`);
                       } else {
-                        setCommitMessage('chore: update configurations');
+                        setCommitMessage('chore: maintain repository files');
                       }
                     }}
                   >
-                    <Sparkles className="w-3 h-3" />
+                    <Sparkles className="w-3.5 h-3.5" />
                   </button>
-                  <button
-                    onClick={refreshGitStatus}
-                    disabled={isLoadingGit}
-                    title="Refresh"
-                    className="p-1 rounded hover:bg-editor-hover hover:text-white transition-all-custom"
-                  >
-                    <RefreshCw className={`w-3 h-3 ${isLoadingGit ? 'animate-spin' : ''}`} />
-                  </button>
-                  <button className="p-1 rounded hover:bg-editor-hover hover:text-white transition-all-custom">
-                    <MoreHorizontal className="w-3 h-3" />
+                  <button className="p-1.5 rounded-lg hover:bg-zinc-800 hover:text-white transition-all-custom" title="More actions">
+                    <MoreHorizontal className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
 
               {isChangesHeaderOpen && (
-                <div className="flex-1 flex flex-col overflow-hidden p-3 min-h-0 gap-3">
-                  {/* Commit Input Field & Commit Button */}
-                  <div className="flex flex-col gap-2 shrink-0">
-                    <div className="relative flex items-center">
+                <div className="flex flex-col overflow-hidden p-3 min-h-0 gap-3 shrink-0">
+                  <form onSubmit={handleCommit} className="flex flex-col gap-1.5 shrink-0">
+                    <div className="relative">
                       <textarea
                         value={commitMessage}
                         onChange={(e) => setCommitMessage(e.target.value)}
@@ -671,151 +730,118 @@ export const Sidebar: React.FC = () => {
                             handleCommit();
                           }
                         }}
-                        placeholder={`Message (Ctrl+Enter to commit on "${currentBranch}")`}
+                        placeholder={`Message on ${currentBranch} (Ctrl+Enter)`}
                         rows={2}
-                        className="w-full bg-editor-hover border border-editor-border text-[11px] rounded-md pl-2.5 pr-7 py-1.5 text-white placeholder-zinc-500 outline-none focus:border-zinc-600 transition-all-custom font-sans resize-none leading-normal"
+                        className="w-full bg-zinc-950/70 border border-zinc-700/80 text-[12px] rounded-xl pl-3 pr-8 py-2 text-zinc-100 placeholder-zinc-400 outline-none focus:border-zinc-500 transition-all-custom font-sans resize-none leading-snug shadow-inner"
                       />
                       <button
-                        title="AI Generate Message"
+                        type="button"
+                        title="Generate message"
                         onClick={() => {
-                          if (gitFiles.length > 0) {
-                            const filesStr = gitFiles.map(f => f.filePath.split('/').pop()).join(', ');
-                            setCommitMessage(`feat: refine changes in ${filesStr.slice(0, 40)}`);
+                          if (displayedGitFiles.length > 0) {
+                            const filesStr = displayedGitFiles.map(f => f.filePath.split('/').pop()).join(', ');
+                            setCommitMessage(`feat: refine ${filesStr.slice(0, 42)}`);
                           } else {
                             setCommitMessage('chore: maintain repository files');
                           }
                         }}
                         className="absolute right-2 top-2 text-zinc-500 hover:text-amber-400 p-0.5 rounded transition-all-custom"
                       >
-                        <Sparkles className="w-3 h-3" />
+                        <Sparkles className="w-3.5 h-3.5" />
                       </button>
                     </div>
 
-                    {/* Commit Button */}
-                    <div className="flex items-center w-full">
+                    <div className="flex items-center gap-1.5">
                       <button
-                        onClick={() => handleCommit()}
+                        type="submit"
                         disabled={isCommitting || !commitMessage.trim()}
-                        className="flex-1 flex items-center justify-center gap-1.5 bg-indigo-650 hover:bg-indigo-650/85 disabled:opacity-40 disabled:hover:bg-indigo-650 text-white font-semibold text-[11px] py-1 px-3 rounded-l active:scale-[0.98] border-r border-indigo-700/30 transition-all-custom"
+                        className="flex-1 flex items-center justify-center gap-1.5 bg-zinc-100 hover:bg-white disabled:opacity-45 disabled:hover:bg-zinc-100 text-black font-bold text-[12px] h-8 rounded-lg active:scale-[0.98] transition-all-custom"
                       >
                         {isCommitting ? (
-                          <span className="w-3 h-3 border border-t-transparent border-white rounded-full animate-spin"></span>
+                          <span className="w-3 h-3 border border-t-transparent border-black rounded-full animate-spin" />
                         ) : (
                           <Check className="w-3.5 h-3.5 shrink-0" />
                         )}
                         <span>Commit</span>
                       </button>
                       <button
+                        type="button"
                         disabled={isCommitting}
-                        className="bg-indigo-650 hover:bg-indigo-650/85 disabled:opacity-40 disabled:hover:bg-indigo-650 text-white font-semibold text-[11px] py-1 px-1.5 rounded-r active:scale-[0.98] transition-all-custom shrink-0 flex items-center justify-center"
+                        className="h-8 w-9 rounded-lg border border-zinc-800 bg-zinc-950/70 text-zinc-300 hover:text-white hover:border-zinc-600 hover:bg-zinc-900 transition-all-custom flex items-center justify-center"
+                        title="Commit options"
                       >
-                        <ChevronDown className="w-3 h-3" />
+                        <ChevronDown className="w-3.5 h-3.5" />
                       </button>
                     </div>
 
                     {commitFeedback && (
-                      <div className={`text-[10px] px-2 py-1 rounded leading-normal ${commitFeedback.startsWith('Error') ? 'bg-red-950/30 text-red-400 border border-red-900/30' : 'bg-emerald-950/30 text-emerald-400 border border-emerald-900/30'}`}>
+                      <div className={`text-[11px] px-2.5 py-1.5 rounded-lg leading-normal border ${commitFeedback.startsWith('Error') ? 'bg-red-950/30 text-red-400 border-red-900/30' : 'bg-emerald-950/30 text-emerald-400 border-emerald-900/30'}`}>
                         {commitFeedback}
                       </div>
                     )}
-                  </div>
+                  </form>
 
-                  {/* Changes sub-list */}
-                  <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-                    <div className="flex items-center justify-between py-0.5 px-1 shrink-0 select-none">
+                  <div className="flex flex-col overflow-hidden min-h-0 rounded-xl border border-zinc-800/90 bg-zinc-950/35 shadow-[0_10px_30px_rgba(0,0,0,0.18)]">
+                    <div className="flex items-center justify-between h-9 px-3 shrink-0 border-b border-zinc-800/80 bg-zinc-950/35">
                       <button
                         onClick={() => setIsChangesListOpen(!isChangesListOpen)}
-                        className="flex items-center gap-1 text-[10px] font-bold text-zinc-300 hover:text-white transition-colors"
+                        className="flex items-center gap-1.5 text-[11px] font-bold text-zinc-200 hover:text-white transition-colors uppercase tracking-[0.12em]"
                       >
                         {isChangesListOpen ? (
                           <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />
                         ) : (
                           <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />
                         )}
-                        <span>Changes</span>
+                        <span>Changed Files</span>
                       </button>
-                      {gitFiles.length > 0 && (
-                        <span className="text-[9.5px] font-bold bg-indigo-950 text-indigo-400 px-1.5 py-0.2 rounded-full border border-indigo-900/40 font-sans">
-                          {gitFiles.length}
-                        </span>
-                      )}
                     </div>
 
                     {isChangesListOpen && (
-                      <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-0.5 mt-1 pr-1 custom-scrollbar">
+                      <div className="max-h-[360px] overflow-y-auto min-h-0 flex flex-col gap-1 p-2 custom-scrollbar">
                         {!workspacePath ? (
-                          <div className="flex flex-col items-center justify-center py-8 text-center text-editor-textDark select-none opacity-40">
+                          <div className="flex flex-col items-center justify-center py-8 text-center text-editor-textDark select-none opacity-50">
                             <GitBranch className="w-6 h-6 mb-2" />
                             <span className="text-[9px] font-bold uppercase tracking-wider">No workspace</span>
                           </div>
-                        ) : gitFiles.length === 0 ? (
+                        ) : displayedGitFiles.length === 0 ? (
                           <div className="flex flex-col items-center justify-center py-8 text-center text-editor-textDark select-none">
                             <div className="w-8 h-8 rounded-full bg-emerald-950/20 border border-emerald-900/30 flex items-center justify-center mb-2">
                               <Check className="w-4 h-4 text-emerald-500" />
                             </div>
-                     <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                       Todo al día
-                     </span>
-                     <p className="text-[9px] text-zinc-600 mt-0.5 leading-normal max-w-[160px]">
-                       No se detectaron cambios.
-                     </p>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Clean tree</span>
+                            <p className="text-[9px] text-zinc-600 mt-0.5 leading-normal max-w-[160px]">No pending changes.</p>
                           </div>
                         ) : (
-                          gitFiles.map((file) => {
+                          displayedGitFiles.map((file) => {
                             const fileName = file.filePath.split('/').pop() || file.filePath;
                             const relativeDir = file.filePath.split('/').slice(0, -1).join('/');
-                            
-                            const statusRaw = file.status.trim();
-                            let badgeText = 'M';
-                            let badgeColor = 'text-amber-500';
-                            let statusTitle = 'Modificado';
-
-                            if (statusRaw === 'A') {
-                              badgeText = 'A';
-                              badgeColor = 'text-emerald-500';
-                              statusTitle = 'Agregado';
-                            } else if (statusRaw === '??') {
-                              badgeText = 'U';
-                              badgeColor = 'text-emerald-500';
-                              statusTitle = 'No trackeado';
-                            } else if (statusRaw === 'D') {
-                              badgeText = 'D';
-                              badgeColor = 'text-red-500';
-                              statusTitle = 'Eliminado';
-                            }
-
+                            const meta = getGitStatusMeta(file.status);
                             const isActive = activeDiffFile?.filePath === `${workspacePath}/${file.filePath}`.replace(/\/+/g, '/');
 
                             return (
                               <button
                                 key={file.filePath}
                                 onClick={() => handleSelectGitFile(file.filePath)}
-                                className={`w-full text-left group flex items-center justify-between py-1 px-1.5 rounded hover:bg-zinc-900/30 text-zinc-300 hover:text-white transition-all-custom ${
+                                className={`w-full text-left group grid grid-cols-[1fr_auto] gap-2 rounded-xl px-2.5 py-2 hover:bg-zinc-800/70 text-zinc-200 hover:text-white transition-all-custom border ${
                                   isActive
-                                    ? 'bg-zinc-800/40 border border-zinc-700/30 text-white font-medium'
-                                    : 'border border-transparent'
+                                    ? 'bg-zinc-800/85 border-zinc-600/80 text-white shadow-sm'
+                                    : 'border-transparent'
                                 }`}
-                                title={`${file.filePath} (${statusTitle})`}
+                                title={`${file.filePath} (${meta.title})`}
                               >
-                                <div className="flex items-center gap-2 overflow-hidden flex-1">
-                                  {/* Beautiful chevron > for all changed files */}
-                                  <span className={`text-[12px] font-bold shrink-0 select-none w-3.5 h-3.5 flex items-center justify-center transition-colors ${isActive ? 'text-amber-500 font-extrabold' : 'text-zinc-500 group-hover:text-zinc-300'}`}>
-                                    &gt;
+                                <div className="min-w-0 flex items-center gap-2">
+                                  <span className={`h-6 w-6 rounded-lg border flex items-center justify-center text-[10px] font-mono font-bold shrink-0 ${meta.badgeColor}`}>
+                                    {meta.badgeText}
                                   </span>
-                                  <div className="flex items-baseline gap-1.5 overflow-hidden flex-1 leading-none">
-                                    <span className="text-[11.5px] font-medium truncate">
-                                      {fileName}
-                                    </span>
+                                  <div className="min-w-0 flex flex-col leading-snug">
+                                    <span className="text-[12.5px] font-semibold truncate text-zinc-100">{fileName}</span>
                                     {relativeDir && (
-                                      <span className="text-[9.5px] text-editor-textDark truncate font-normal">
-                                        {relativeDir}
-                                      </span>
+                                      <span className="text-[10.5px] text-zinc-400 truncate">{relativeDir}</span>
                                     )}
                                   </div>
                                 </div>
-                                
-                                <span className={`text-[10px] font-mono font-bold w-4 h-4 flex items-center justify-center shrink-0 ${badgeColor}`}>
-                                  {badgeText}
+                                <span className={`text-[14px] font-bold self-center ${isActive ? 'text-amber-400' : 'text-zinc-600 group-hover:text-zinc-300'}`}>
+                                  &gt;
                                 </span>
                               </button>
                             );
@@ -828,69 +854,60 @@ export const Sidebar: React.FC = () => {
               )}
             </div>
 
-            {/* Section 2: GRAPH Collapsible (VS Code Git Graph layout) */}
-            <div className="border-t border-editor-border flex flex-col min-h-0 bg-zinc-950/10">
-              <div className="flex items-center justify-between px-3 py-1.5 bg-editor-hover/5 select-none hover:bg-editor-hover/10 transition-all-custom shrink-0">
+            <div className="border-t border-zinc-800/80 flex flex-col bg-zinc-950/45 shrink-0">
+              <div className="flex items-center justify-between px-3 py-2.5 select-none hover:bg-zinc-900/70 transition-all-custom shrink-0">
                 <button
                   onClick={() => setIsGraphOpen(!isGraphOpen)}
-                  className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-editor-text hover:text-white transition-colors"
+                  className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-zinc-200 hover:text-white transition-colors"
                 >
                   {isGraphOpen ? (
-                    <ChevronDown className="w-3 h-3 text-zinc-400" />
+                    <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />
                   ) : (
-                    <ChevronRight className="w-3 h-3 text-zinc-400" />
+                    <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />
                   )}
-                  <span>Graph</span>
+                  <span>Branch Graph</span>
                 </button>
-                <div className="flex items-center gap-1 text-zinc-400">
-                  <button title="Auto Refresh" className="p-1 rounded hover:bg-editor-hover hover:text-white text-[9px] font-bold uppercase tracking-wider transition-all-custom">
+                <div className="flex items-center gap-1 text-zinc-500">
+                  <button title="Auto refresh" className="px-2 py-1 rounded-lg hover:bg-zinc-800 hover:text-white text-[10px] font-bold uppercase tracking-wider transition-all-custom">
                     Auto
                   </button>
-                  <button title="Reload Log" onClick={refreshGitStatus} className="p-1 rounded hover:bg-editor-hover hover:text-white transition-all-custom">
-                    <RefreshCw className="w-3 h-3" />
-                  </button>
-                  <button className="p-1 rounded hover:bg-editor-hover hover:text-white transition-all-custom">
-                    <MoreHorizontal className="w-3 h-3" />
+                  <button title="Reload graph" onClick={refreshGitStatus} className="p-1.5 rounded-lg hover:bg-zinc-800 hover:text-white transition-all-custom">
+                    <RefreshCw className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
 
               {isGraphOpen && (
-                <div className="max-h-[160px] overflow-y-auto p-2 flex flex-col gap-1 min-h-0 custom-scrollbar select-none">
+                <div className="max-h-[220px] overflow-y-auto px-2 pb-2 flex flex-col gap-1 min-h-0 custom-scrollbar select-none">
                   {gitLog.length === 0 ? (
                     <div className="py-6 text-center text-[10px] text-editor-textDark italic">
-                      No hay commits registrados en este repositorio.
+                      No commits found in this repository.
                     </div>
                   ) : (
                     gitLog.map((commit, idx) => (
-                      <div key={commit.hash} className="flex items-start gap-2 py-1 px-1 hover:bg-zinc-900/20 rounded transition-colors text-[10.5px]">
-                        {/* Visual Git Graph Node */}
-                        <div className="flex flex-col items-center justify-center shrink-0 w-3 h-4 relative">
-                          {/* Vertical Line */}
+                      <div key={commit.hash} className="grid grid-cols-[20px_1fr] gap-2 rounded-xl px-2 py-2 hover:bg-zinc-800/60 transition-colors text-[11.5px]">
+                        <div className="flex flex-col items-center justify-center shrink-0 w-5 h-8 relative">
                           {idx < gitLog.length - 1 && (
-                            <div className="absolute w-0.5 bg-indigo-500 top-2 bottom-[-8px] left-[5px]" />
+                            <div className="absolute w-px bg-indigo-500/70 top-4 bottom-[-10px]" />
                           )}
                           {idx > 0 && (
-                            <div className="absolute w-0.5 bg-indigo-500 top-[-8px] bottom-2 left-[5px]" />
+                            <div className="absolute w-px bg-indigo-500/70 top-[-10px] bottom-4" />
                           )}
-                          {/* Node Circle */}
-                          <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 border border-zinc-950 z-10" />
+                          <div className="w-2.5 h-2.5 rounded-full bg-indigo-300 border border-zinc-950 z-10 shadow-[0_0_12px_rgba(165,180,252,0.55)]" />
                         </div>
 
-                        <div className="flex-1 min-w-0 flex flex-col leading-tight gap-0.5">
+                        <div className="min-w-0 flex flex-col leading-snug gap-1">
                           <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="font-semibold text-zinc-200 truncate flex-1 leading-normal" title={commit.message}>
+                            <span className="font-semibold text-zinc-100 truncate flex-1 leading-normal" title={commit.message}>
                               {commit.message}
                             </span>
                             {commit.branch && (
-                              <span className="bg-indigo-950/70 text-indigo-400 font-bold px-1 rounded text-[7.5px] tracking-wider uppercase border border-indigo-900/30 shrink-0">
+                              <span className="bg-indigo-400/15 text-indigo-200 font-bold px-1.5 py-0.5 rounded-md text-[8px] tracking-wider uppercase border border-indigo-400/25 shrink-0">
                                 {commit.branch}
                               </span>
                             )}
                           </div>
-                          <span className="text-[8.5px] text-editor-textDark font-mono">
-                            {commit.hash}
-                          </span>
+                          <span className="text-[9.5px] text-zinc-500 font-mono">{commit.hash}</span>
                         </div>
                       </div>
                     ))

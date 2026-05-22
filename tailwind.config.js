@@ -7,6 +7,11 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        background: '#0a0a0a',
+        border: '#27272a',
+        accent: '#27272a',
+        'accent-foreground': '#ffffff',
+        'muted-foreground': '#a1a1aa',
         editor: {
           bg: '#0a0a0a',          // Cursor deep pitch black
           sidebar: '#0e0e0f',     // Sleek sidebar dark gray

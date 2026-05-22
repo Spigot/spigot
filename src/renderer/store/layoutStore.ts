@@ -30,7 +30,7 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   isSidebarOpen: true,
   isConsoleOpen: false,
   isConsoleMaximized: false,
-  sidebarWidth: 240,
+  sidebarWidth: 280,
   consoleHeight: 250,
   isAIPanelOpen: true,
   aiPanelWidth: 320,

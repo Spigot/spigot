@@ -1,6 +1,14 @@
 import React, { useEffect, useRef } from 'react';
 import MonacoEditor, { DiffEditor, loader } from '@monaco-editor/react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import {
+  changeLspDocument,
+  initializeLspDiagnosticsBridge,
+  openLspDocument,
+  registerLspCompletionProvider,
+  saveLspDocument,
+  toFileUri,
+} from './lspMonacoBridge';
 
 // Define premium Cursor-like Pitch-Black theme configuration
 const defineMonacoTheme = (monaco: any) => {
@@ -35,11 +43,12 @@ loader.init().then((monaco) => {
 
 export const EditorContainer: React.FC = () => {
   const { 
-    activeTabPath, fileBuffers, updateFileBuffer, saveActiveFile, selectWorkspace, workspacePath,
+    activeTabPath, fileBuffers, updateFileBuffer, selectWorkspace, workspacePath,
     pendingSelection, setPendingSelection, activeDiffFile, clearDiffFile
   } = useWorkspaceStore();
 
   const editorRef = useRef<any>(null);
+  const monacoRef = useRef<any>(null);
 
   // Auto-detect Monaco language based on file extension
   const getLanguage = (path: string | null): string => {
@@ -76,12 +85,15 @@ export const EditorContainer: React.FC = () => {
 
   const handleEditorDidMount = (editor: any, monaco: any) => {
     editorRef.current = editor;
+    monacoRef.current = monaco;
+    initializeLspDiagnosticsBridge(monaco);
 
     // Configure TypeScript IntelliSense features and compilation environment
-    monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
+    const compilerOptions = {
       target: monaco.languages.typescript.ScriptTarget.ESNext,
-      moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
-      module: monaco.languages.typescript.ModuleKind.CommonJS,
+      moduleResolution: monaco.languages.typescript.ModuleResolutionKind.Bundler
+        ?? monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+      module: monaco.languages.typescript.ModuleKind.ESNext,
       noLib: false,
       allowJs: true,
       checkJs: true,
@@ -89,18 +101,48 @@ export const EditorContainer: React.FC = () => {
       allowNonTsExtensions: true,
       resolveJsonModule: true,
       esModuleInterop: true,
-    });
+      baseUrl: 'file:///',
+      paths: {
+        '@/*': ['*'],
+      },
+    };
 
-    monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
-      noSemanticValidation: false,
+    monaco.languages.typescript.typescriptDefaults.setCompilerOptions(compilerOptions);
+    monaco.languages.typescript.javascriptDefaults.setCompilerOptions(compilerOptions);
+
+    monaco.languages.typescript.typescriptDefaults.setEagerModelSync(true);
+    monaco.languages.typescript.javascriptDefaults.setEagerModelSync(true);
+
+    // Monaco standalone is not a full project LSP. Keep syntax checks, but avoid
+    // noisy semantic false positives until a real language server bridge exists.
+    const diagnosticsOptions = {
+      noSemanticValidation: true,
       noSyntaxValidation: false,
-    });
+      noSuggestionDiagnostics: true,
+    };
+
+    monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions(diagnosticsOptions);
+    monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions(diagnosticsOptions);
 
     monaco.editor.setTheme('cursor-dark');
+    registerLspCompletionProvider(monaco, getLanguage(activeTabPath), workspacePath);
+
+    if (activeTabPath) {
+      openLspDocument(workspacePath, activeTabPath, getLanguage(activeTabPath), fileBuffers[activeTabPath] ?? '');
+    }
 
     // Register Ctrl+S shortcut inside Monaco editor instance
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-      useWorkspaceStore.getState().saveActiveFile();
+      const state = useWorkspaceStore.getState();
+      if (state.activeTabPath) {
+        saveLspDocument(
+          state.workspacePath,
+          state.activeTabPath,
+          getLanguage(state.activeTabPath),
+          state.fileBuffers[state.activeTabPath] ?? '',
+        );
+      }
+      state.saveActiveFile();
     });
 
     // Apply specific VS Code editor settings
@@ -173,60 +215,56 @@ export const EditorContainer: React.FC = () => {
     }
   }, [activeTabPath, pendingSelection, setPendingSelection]);
 
-  // Setup Keyboard Shortcuts (Ctrl+S / Cmd+S to Save)
-  useEffect(() => {
-    const handleKeyDown = async (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        await saveActiveFile();
-      }
-    };
-    
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [saveActiveFile]);
-
   // Handle document content changes
   const handleEditorChange = (value: string | undefined) => {
     if (activeTabPath && value !== undefined) {
       updateFileBuffer(activeTabPath, value);
+      changeLspDocument(workspacePath, activeTabPath, language, value);
     }
   };
 
-  // If no tab is active, show the stunning editor welcome screen
+  const activeContent = activeTabPath ? fileBuffers[activeTabPath] ?? '' : '';
+  const language = getLanguage(activeTabPath);
+
+  useEffect(() => {
+    if (!activeTabPath || !monacoRef.current) return;
+
+    registerLspCompletionProvider(monacoRef.current, language, workspacePath);
+    openLspDocument(workspacePath, activeTabPath, language, activeContent);
+  }, [activeContent, activeTabPath, language, workspacePath]);
+
+  // If no tab is active, show the editor welcome screen
   if (!activeTabPath) {
     return (
-      <div className="flex-1 flex flex-col justify-center items-center bg-editor-bg select-none h-full border-r border-editor-border p-8">
-        <div className="max-w-md w-full flex flex-col items-center text-center">
-          <img src="/logoSpigot.png" alt="Spigot Logo" width="64" height="64" className="w-16 h-16 mb-6 select-none pointer-events-none object-contain" />
-          
-          <h1 className="text-xl font-bold text-white mb-2 tracking-wide uppercase">Spigot Editor</h1>
-          <p className="text-xs text-editor-textDark mb-8 leading-relaxed">
-            Un editor de código liviano y modular construido con Screaming Architecture sobre Electron + React.
+      <div className="flex-1 flex flex-col justify-center items-center bg-editor-bg select-none h-full border-r border-editor-border p-6">
+        <div className="max-w-[400px] w-full flex flex-col items-center text-center">
+          <img src="/logoSpigot.png" alt="Spigot Logo" width="56" height="56" className="w-14 h-14 mb-5 select-none pointer-events-none object-contain opacity-95" />
+
+          <h1 className="text-lg font-bold text-white mb-2 tracking-wide uppercase">Spigot Editor</h1>
+          <p className="text-[12px] text-editor-textDark mb-6 leading-relaxed">
+            A lightweight modular code editor built with Screaming Architecture on Electron + React.
           </p>
 
-          <div className="w-full flex flex-col gap-3.5 bg-zinc-900/50 p-6 rounded-lg border border-editor-border glass-panel">
-            <h2 className="text-[10px] text-editor-textDark uppercase font-bold text-left tracking-wider">Comandos Rápidos</h2>
-            
-            <div className="flex justify-between items-center text-xs border-b border-zinc-800/40 pb-2">
-              <span className="text-editor-text font-medium">Abrir Carpeta</span>
-              <kbd className="px-2 py-0.5 bg-zinc-800 text-editor-textDark rounded border border-zinc-700 text-[10px] font-mono shadow-sm">
+          <div className="w-full flex flex-col gap-2.5 bg-zinc-950/45 p-4 rounded-xl border border-editor-border shadow-2xl shadow-black/20">
+            <h2 className="text-[10px] text-editor-textDark uppercase font-bold text-left tracking-wider">Quick Commands</h2>
+
+            <div className="flex justify-between items-center text-xs border-b border-zinc-800/50 pb-2">
+              <span className="text-editor-text font-medium">Open Folder</span>
+              <kbd className="px-2 py-0.5 bg-zinc-900 text-editor-textDark rounded-md border border-zinc-800 text-[10px] font-mono shadow-sm">
                 Ctrl + O
               </kbd>
             </div>
-            
-            <div className="flex justify-between items-center text-xs border-b border-zinc-800/40 pb-2">
-              <span className="text-editor-text font-medium">Nuevo Archivo</span>
-              <kbd className="px-2 py-0.5 bg-zinc-800 text-editor-textDark rounded border border-zinc-700 text-[10px] font-mono shadow-sm">
+
+            <div className="flex justify-between items-center text-xs border-b border-zinc-800/50 pb-2">
+              <span className="text-editor-text font-medium">New File</span>
+              <kbd className="px-2 py-0.5 bg-zinc-900 text-editor-textDark rounded-md border border-zinc-800 text-[10px] font-mono shadow-sm">
                 Ctrl + N
               </kbd>
             </div>
 
             <div className="flex justify-between items-center text-xs">
-              <span className="text-editor-text font-medium">Guardar Cambios</span>
-              <kbd className="px-2 py-0.5 bg-zinc-800 text-editor-textDark rounded border border-zinc-700 text-[10px] font-mono shadow-sm">
+              <span className="text-editor-text font-medium">Save Changes</span>
+              <kbd className="px-2 py-0.5 bg-zinc-900 text-editor-textDark rounded-md border border-zinc-800 text-[10px] font-mono shadow-sm">
                 Ctrl + S
               </kbd>
             </div>
@@ -235,18 +273,15 @@ export const EditorContainer: React.FC = () => {
           {!workspacePath && (
             <button
               onClick={selectWorkspace}
-              className="mt-8 bg-white text-black text-xs font-semibold px-5 py-2.5 rounded shadow hover:bg-zinc-200 active:scale-95 transition-all-custom"
+              className="mt-6 bg-white text-black text-xs font-semibold px-4 py-2 rounded-lg shadow hover:bg-zinc-200 active:scale-95 transition-all-custom"
             >
-              Cargar Proyecto
+              Load Project
             </button>
           )}
         </div>
       </div>
     );
   }
-
-  const activeContent = fileBuffers[activeTabPath] ?? '';
-  const language = getLanguage(activeTabPath);
 
   const isDiffActive = activeDiffFile !== null && activeDiffFile.filePath === activeTabPath;
 
@@ -295,7 +330,7 @@ export const EditorContainer: React.FC = () => {
         height="100%"
         width="100%"
         language={language}
-        path={activeTabPath} // This enables URI path-aware models in monaco react!
+        path={toFileUri(activeTabPath)} // Align Monaco model URI with LSP document URI.
         value={activeContent}
         theme="cursor-dark"
         beforeMount={defineMonacoTheme}

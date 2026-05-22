@@ -156,7 +156,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   updateFileBuffer: (filePath: string, content: string) => {
-    const { dirtyFiles, fileBuffers } = get();
+    const { dirtyFiles, fileBuffers, gitChangedFiles } = get();
     
     // Quick optimization: only trigger state update if content actually changed
     if (fileBuffers[filePath] === content) return;
@@ -164,9 +164,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const newBuffers = { ...fileBuffers, [filePath]: content };
     const newDirty = dirtyFiles.includes(filePath) ? dirtyFiles : [...dirtyFiles, filePath];
 
+    const newGitChangedFiles = gitChangedFiles.includes(filePath) ? gitChangedFiles : [...gitChangedFiles, filePath];
+
     set({
       fileBuffers: newBuffers,
-      dirtyFiles: newDirty
+      dirtyFiles: newDirty,
+      gitChangedFiles: newGitChangedFiles,
     });
   },
 

@@ -22,13 +22,19 @@
   },
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",
+    "framer-motion": "^12.38.0",
     "lucide-react": "^0.378.0",
     "node-pty": "^1.1.0",
+    "typescript-language-server": "^5.2.0",
+    "vscode-jsonrpc": "^8.2.1",
+    "vscode-languageserver-protocol": "^3.17.5",
     "xterm": "^5.3.0",
     "xterm-addon-fit": "^0.8.0",
     "zustand": "^4.5.2"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.4.2",
+    "@testing-library/react": "^14.2.2",
     "@types/node": "^20.12.7",
     "@types/react": "^18.2.79",
     "@types/react-dom": "^18.2.25",
@@ -36,6 +42,7 @@
     "autoprefixer": "^10.4.19",
     "electron": "^30.0.1",
     "electron-builder": "^24.13.3",
+    "jsdom": "^24.0.0",
     "postcss": "^8.4.38",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -44,10 +51,7 @@
     "vite": "^5.2.10",
     "vite-plugin-electron": "^0.28.6",
     "vite-plugin-electron-renderer": "^0.14.5",
-    "vitest": "^1.5.0",
-    "@testing-library/react": "^14.2.2",
-    "@testing-library/jest-dom": "^6.4.2",
-    "jsdom": "^24.0.0"
+    "vitest": "^1.5.0"
   },
   "build": {
     "publish": null,

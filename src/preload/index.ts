@@ -14,6 +14,13 @@ contextBridge.exposeInMainWorld('api', {
     writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:write-file', filePath, content),
     createItem: (itemPath: string, type: 'file' | 'directory') => ipcRenderer.invoke('fs:create-item', itemPath, type),
     deleteItem: (itemPath: string) => ipcRenderer.invoke('fs:delete-item', itemPath),
+    watchWorkspace: (workspacePath: string) => ipcRenderer.invoke('fs:watch-workspace', workspacePath),
+    unwatchWorkspace: () => ipcRenderer.invoke('fs:unwatch-workspace'),
+    onWorkspaceChanged: (callback: (filename: string | null) => void) => {
+      const listener = (_event: any, filename: string | null) => callback(filename);
+      ipcRenderer.on('workspace:changed', listener);
+      return () => ipcRenderer.removeListener('workspace:changed', listener);
+    },
   },
   terminal: {
     create: (cols: number, rows: number, cwd: string) => ipcRenderer.invoke('terminal:create', { cols, rows, cwd }),
@@ -70,6 +77,17 @@ contextBridge.exposeInMainWorld('api', {
     getCurrentBranch: (workspacePath: string) => ipcRenderer.invoke('git:current-branch', workspacePath),
     commit: (workspacePath: string, message: string) => ipcRenderer.invoke('git:commit', workspacePath, message),
     getLog: (workspacePath: string) => ipcRenderer.invoke('git:log', workspacePath),
+  },
+  lsp: {
+    openDocument: (args: any) => ipcRenderer.invoke('lsp:open-document', args),
+    changeDocument: (args: any) => ipcRenderer.invoke('lsp:change-document', args),
+    saveDocument: (args: any) => ipcRenderer.invoke('lsp:save-document', args),
+    completion: (args: any) => ipcRenderer.invoke('lsp:completion', args),
+    onDiagnostics: (callback: (payload: any) => void) => {
+      const listener = (_event: any, payload: any) => callback(payload);
+      ipcRenderer.on('lsp:diagnostics', listener);
+      return () => ipcRenderer.removeListener('lsp:diagnostics', listener);
+    },
   }
 });
 
