@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAIStore } from '../../store/aiStore';
-import { X, Key, Check, AlertCircle, Eye, EyeOff, Settings } from 'lucide-react';
+import { X, Key, Check, AlertCircle, Eye, EyeOff, Settings, Sparkles } from 'lucide-react';
 import { StyledSelect } from './StyledSelect';
 
 interface ApiKeyModalProps {
@@ -15,6 +15,7 @@ const PROVIDERS = [
   { id: 'deepseek', name: 'DeepSeek' },
   { id: 'qwen', name: 'Qwen' },
   { id: 'kimi', name: 'Kimi' },
+  { id: 'openrouter', name: 'OpenRouter' },
 ];
 
 const PROVIDER_OPTIONS = PROVIDERS.map((provider) => ({
@@ -99,6 +100,27 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
               buttonClassName="px-3 py-2 text-xs"
             />
           </div>
+
+          {selectedProvider === 'openrouter' && (
+            <div className="flex flex-col gap-1.5 p-3 rounded-lg bg-indigo-950/40 border border-indigo-900/50 text-[11px] text-indigo-200 leading-relaxed">
+              <div className="flex items-center gap-1.5 font-bold text-white uppercase tracking-wider text-[9px] text-indigo-400">
+                <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                <span>Soporte de OpenRouter Activo</span>
+              </div>
+              <span>
+                ¡Podés usar <strong>OpenRouter</strong> para conectar decenas de modelos externos (como Claude 3.5 Sonnet, GPT-4o, Llama 3, DeepSeek, etc.)!
+                Conseguí tu clave API en{' '}
+                <a
+                  href="https://openrouter.ai"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline text-white hover:text-indigo-300 font-bold transition-colors cursor-pointer"
+                >
+                  openrouter.ai
+                </a>.
+              </span>
+            </div>
+          )}
 
           <div className="flex flex-col gap-1.5 relative">
             <label className="text-[11px] text-editor-textDark font-bold uppercase tracking-wider">

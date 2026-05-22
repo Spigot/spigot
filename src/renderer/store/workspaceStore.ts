@@ -16,6 +16,8 @@ interface WorkspaceState {
   dirtyFiles: string[]; // List of paths with unsaved changes
   pendingSelection: { filePath: string; line: number; column: number; length: number } | null;
   explorerSelectedPath: string | null;
+  activeDiffFile: { filePath: string; original: string; modified: string } | null;
+  gitChangedFiles: string[]; // Absolute paths of files changed in Git
 
   selectWorkspace: () => Promise<void>;
   setWorkspacePath: (path: string) => Promise<void>;
@@ -30,6 +32,9 @@ interface WorkspaceState {
   setPendingSelection: (selection: { filePath: string; line: number; column: number; length: number } | null) => void;
   setExplorerSelectedPath: (path: string | null) => void;
   restoreLastWorkspace: () => Promise<void>;
+  setDiffFile: (diffFile: { filePath: string; original: string; modified: string } | null) => void;
+  clearDiffFile: () => void;
+  setGitChangedFiles: (files: string[]) => void;
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
@@ -41,9 +46,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   dirtyFiles: [],
   pendingSelection: null,
   explorerSelectedPath: null,
+  activeDiffFile: null,
+  gitChangedFiles: [],
 
   setPendingSelection: (selection) => set({ pendingSelection: selection }),
   setExplorerSelectedPath: (path) => set({ explorerSelectedPath: path }),
+  setDiffFile: (diffFile) => set({ activeDiffFile: diffFile }),
+  clearDiffFile: () => set({ activeDiffFile: null }),
+  setGitChangedFiles: (files) => set({ gitChangedFiles: files }),
 
   restoreLastWorkspace: async () => {
     try {
@@ -79,6 +89,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     try {
       const tree = await (window as any).api.fs.readDir(workspacePath);
       set({ fileTree: tree });
+      
+      // Update changed files from Git
+      try {
+        const changed = await (window as any).api.git.getStatus(workspacePath);
+        if (changed) {
+          const absPaths = changed.map((f: any) => `${workspacePath}/${f.filePath}`.replace(/\/+/g, '/'));
+          set({ gitChangedFiles: absPaths });
+        }
+      } catch (gitErr) {
+        console.error('Error updating git files during workspace refresh:', gitErr);
+      }
     } catch (err) {
       console.error('Error reading workspace:', err);
     }
@@ -151,14 +172,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   saveActiveFile: async () => {
     const { activeTabPath, fileBuffers, dirtyFiles } = get();
-    if (!activeTabPath || !dirtyFiles.includes(activeTabPath)) return;
+    if (!activeTabPath) return;
 
-    const content = fileBuffers[activeTabPath] || '';
+    const content = fileBuffers[activeTabPath] ?? '';
     try {
       await (window as any).api.fs.writeFile(activeTabPath, content);
       set({
         dirtyFiles: dirtyFiles.filter((f) => f !== activeTabPath)
       });
+      await get().refreshWorkspace();
     } catch (err) {
       console.error(`Error saving file ${activeTabPath}:`, err);
     }

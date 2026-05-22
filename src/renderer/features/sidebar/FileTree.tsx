@@ -7,7 +7,7 @@ import {
 export const FileTree: React.FC = () => {
   const { 
     workspacePath, fileTree, selectWorkspace, openFile, activeTabPath, createItem, deleteItem,
-    explorerSelectedPath, setExplorerSelectedPath
+    explorerSelectedPath, setExplorerSelectedPath, gitChangedFiles
   } = useWorkspaceStore();
 
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
@@ -34,12 +34,21 @@ export const FileTree: React.FC = () => {
     const isFileActive = activeTabPath === node.path;
     const isExplorerSelected = explorerSelectedPath === node.path;
 
+    const normalizedNodePath = node.path.replace(/\\/g, '/').replace(/\/+/g, '/');
+    const hasGitChanges = isFolder
+      ? gitChangedFiles.some(
+          (f) => f.replace(/\\/g, '/').replace(/\/+/g, '/').startsWith(normalizedNodePath + '/')
+        )
+      : gitChangedFiles.some(
+          (f) => f.replace(/\\/g, '/').replace(/\/+/g, '/') === normalizedNodePath
+        );
+
     return (
       <div key={node.path} className="flex flex-col">
         {/* Row element */}
         <div 
           style={{ paddingLeft: `${depth * 12 + 8}px` }}
-          className={`group flex items-center justify-between py-1 pr-2 hover:bg-editor-hover cursor-pointer text-xs transition-all-custom border-l-2 relative ${
+          className={`group flex items-center justify-between py-1 pr-2 hover:bg-editor-hover cursor-pointer text-sm transition-all-custom border-l-2 relative ${
             isExplorerSelected 
               ? 'bg-zinc-800/60 border-white text-white font-medium' 
               : isFileActive 
@@ -59,23 +68,33 @@ export const FileTree: React.FC = () => {
             {isFolder ? (
               <>
                 {isExpanded ? (
-                  <ChevronDown className="w-3.5 h-3.5 text-editor-textDark shrink-0" />
+                  <ChevronDown className="w-4 h-4 text-editor-textDark shrink-0" />
                 ) : (
-                  <ChevronRight className="w-3.5 h-3.5 text-editor-textDark shrink-0" />
+                  <ChevronRight className="w-4 h-4 text-editor-textDark shrink-0" />
                 )}
                 {isExpanded ? (
-                  <FolderOpen className="w-4 h-4 text-amber-400 shrink-0" />
+                  <FolderOpen className="w-4.5 h-4.5 text-amber-400 shrink-0" />
                 ) : (
-                  <Folder className="w-4 h-4 text-amber-400 shrink-0" />
+                  <Folder className="w-4.5 h-4.5 text-amber-400 shrink-0" />
                 )}
               </>
             ) : (
               <>
-                <div className="w-3.5 h-3.5 shrink-0" /> {/* Alignment spacer */}
-                <FileCode className="w-4 h-4 text-sky-400 shrink-0" />
+                <div className="w-4 h-4 shrink-0" /> {/* Alignment spacer */}
+                <span className={`text-[13.5px] font-bold shrink-0 select-none w-4.5 h-4.5 flex items-center justify-center transition-colors ${hasGitChanges ? 'text-amber-500 font-extrabold' : 'text-sky-400'}`}>
+                  &gt;
+                </span>
               </>
             )}
-            <span className="truncate">{node.name}</span>
+            <span className={`truncate ${hasGitChanges && !isFileActive && !isExplorerSelected ? 'text-amber-400/90 font-medium' : ''}`}>
+              {node.name}
+            </span>
+            {hasGitChanges && (
+              <span 
+                className="w-2 h-2 rounded-full bg-amber-500 shrink-0 ml-1" 
+                title="Cambios sin confirmar" 
+              />
+            )}
           </div>
 
           {/* Inline Action buttons shown on hover */}
@@ -184,7 +203,7 @@ export const FileTree: React.FC = () => {
   return (
     <div className="flex flex-col py-1">
       {/* Root actions header */}
-      <div className="px-3 py-1 flex items-center justify-between text-[10px] text-editor-textDark font-bold uppercase tracking-wider select-none bg-zinc-800/40">
+      <div className="px-3 py-1.5 flex items-center justify-between text-[11px] text-editor-textDark font-bold uppercase tracking-wider select-none bg-zinc-800/40">
         <span>Archivos</span>
         <div className="flex items-center gap-1.5">
           <button
@@ -192,14 +211,14 @@ export const FileTree: React.FC = () => {
             className="hover:text-white transition-all-custom"
             title="Nuevo Archivo Raíz"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="w-4 h-4" />
           </button>
           <button
             onClick={() => setActiveCreation({ path: workspacePath, type: 'directory' })}
             className="hover:text-white transition-all-custom"
             title="Nueva Carpeta Raíz"
           >
-            <FolderPlus className="w-3.5 h-3.5" />
+            <FolderPlus className="w-4 h-4" />
           </button>
         </div>
       </div>

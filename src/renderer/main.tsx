@@ -1,7 +1,6 @@
 import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import TitleBar from './features/title-bar/TitleBar';
-import ActivityBar from './features/activity-bar/ActivityBar';
 import Sidebar from './features/sidebar/Sidebar';
 import EditorTabs from './features/editor/EditorTabs';
 import EditorContainer from './features/editor/EditorContainer';
@@ -25,9 +24,6 @@ const App: React.FC = () => {
 
       {/* 2. Main Workspace Layout */}
       <div className="flex-1 flex overflow-hidden w-full relative">
-        {/* Leftmost Activity Bar */}
-        <ActivityBar />
-
         {/* Dynamic Left Sidebar panel (Filetree, Search, etc.) */}
         <Sidebar />
 

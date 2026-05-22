@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
-import { join } from 'path';
+import { join, relative } from 'path';
 import { promises as fsPromises } from 'fs';
+import { exec } from 'child_process';
 import { terminalManager } from './terminal';
 
 let mainWindow: BrowserWindow | null = null;
@@ -309,6 +310,17 @@ ipcMain.handle('ai:fetch-models', async (_event, provider: string, apiKey: strin
       return json.models
         .map((m: any) => m.name.replace('models/', ''))
         .filter((id: string) => id.includes('gemini'));
+    } else if (provider === 'openrouter') {
+      const res = await fetch('https://openrouter.ai/api/v1/models', {
+        headers: { 
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': 'https://spigot.gentleman.com',
+          'X-Title': 'Spigot'
+        }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json() as any;
+      return json.data.map((m: any) => m.id);
     } else if (provider === 'kimi') {
       const res = await fetch('https://api.moonshot.cn/v1/models', {
         headers: { 'Authorization': `Bearer ${apiKey}` }
@@ -365,6 +377,12 @@ ipcMain.handle('ai:stream-chat', async (
     if (provider === 'openai') {
       url = 'https://api.openai.com/v1/chat/completions';
       headers['Authorization'] = `Bearer ${apiKey}`;
+      body = { model, messages: formattedMessages, stream: true };
+    } else if (provider === 'openrouter') {
+      url = 'https://openrouter.ai/api/v1/chat/completions';
+      headers['Authorization'] = `Bearer ${apiKey}`;
+      headers['HTTP-Referer'] = 'https://spigot.gentleman.com';
+      headers['X-Title'] = 'Spigot';
       body = { model, messages: formattedMessages, stream: true };
     } else if (provider === 'deepseek') {
       url = 'https://api.deepseek.com/chat/completions';
@@ -487,6 +505,130 @@ ipcMain.handle('ai:stream-chat', async (
     }
     activeAbortController = null;
     return false;
+  }
+});
+
+// 4. Git Source Control Handlers
+ipcMain.handle('git:status', async (_event, workspacePath: string) => {
+  try {
+    const { stdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      exec('git status --porcelain', { cwd: workspacePath }, (err, stdout, stderr) => {
+        if (err && !stdout) reject(err);
+        else resolve({ stdout, stderr });
+      });
+    });
+
+    const lines = stdout.split('\n').filter(Boolean);
+    return lines.map(line => {
+      const status = line.slice(0, 2);
+      const filePath = line.slice(3).trim();
+      return { status, filePath };
+    });
+  } catch (err) {
+    console.error('Error running git status:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('git:diff', async (_event, workspacePath: string, filePath: string) => {
+  try {
+    const { stdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      exec(`git diff HEAD -- "${filePath}"`, { cwd: workspacePath }, (err, stdout, stderr) => {
+        if (err && !stdout) reject(err);
+        else resolve({ stdout, stderr });
+      });
+    });
+    return stdout;
+  } catch (err) {
+    console.error('Error running git diff:', err);
+    return 'No se pudo obtener el diff de git para este archivo o es un archivo nuevo sin trackear.';
+  }
+});
+
+ipcMain.handle('git:show-original', async (_event, workspacePath: string, filePath: string) => {
+  try {
+    const relativePath = relative(workspacePath, filePath).replace(/\\/g, '/');
+    const { stdout } = await new Promise<{ stdout: string }>((resolve) => {
+      exec(`git show "HEAD:${relativePath}"`, { cwd: workspacePath, maxBuffer: 1024 * 1024 * 10 }, (err, stdout) => {
+        if (err) {
+          resolve({ stdout: '' });
+        } else {
+          resolve({ stdout });
+        }
+      });
+    });
+    return stdout;
+  } catch (err) {
+    console.error('Error running git show-original:', err);
+    return '';
+  }
+});
+
+ipcMain.handle('git:current-branch', async (_event, workspacePath: string) => {
+  try {
+    const { stdout } = await new Promise<{ stdout: string }>((resolve) => {
+      exec('git branch --show-current', { cwd: workspacePath }, (err, stdout) => {
+        if (err || !stdout.trim()) {
+          exec('git rev-parse --abbrev-ref HEAD', { cwd: workspacePath }, (err2, stdout2) => {
+            if (err2) resolve({ stdout: 'main' });
+            else resolve({ stdout: stdout2.trim() });
+          });
+        } else {
+          resolve({ stdout: stdout.trim() });
+        }
+      });
+    });
+    return stdout;
+  } catch {
+    return 'main';
+  }
+});
+
+ipcMain.handle('git:commit', async (_event, workspacePath: string, message: string) => {
+  try {
+    const { stdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      exec('git add -A && git commit -m "' + message.replace(/"/g, '\\"') + '"', { cwd: workspacePath }, (err, stdout, stderr) => {
+        if (err) reject(err);
+        else resolve({ stdout, stderr });
+      });
+    });
+    return { success: true, output: stdout };
+  } catch (err: any) {
+    console.error('Error running git commit:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('git:log', async (_event, workspacePath: string) => {
+  try {
+    const { stdout } = await new Promise<{ stdout: string }>((resolve) => {
+      exec('git log -n 10 --oneline --decorate', { cwd: workspacePath }, (err, stdout) => {
+        if (err) resolve({ stdout: '' });
+        else resolve({ stdout });
+      });
+    });
+    const lines = stdout.split('\n').filter(Boolean);
+    return lines.map(line => {
+      const firstSpace = line.indexOf(' ');
+      const hash = line.slice(0, firstSpace);
+      let rest = line.slice(firstSpace + 1);
+      
+      let branchName = '';
+      if (rest.startsWith('(')) {
+        const closingParen = rest.indexOf(')');
+        const refStr = rest.slice(1, closingParen);
+        const headMatch = refStr.match(/HEAD -> ([^,)]+)/);
+        if (headMatch) {
+          branchName = headMatch[1];
+        } else {
+          branchName = refStr.split(',')[0].trim();
+        }
+        rest = rest.slice(closingParen + 1).trim();
+      }
+      return { hash, message: rest, branch: branchName };
+    });
+  } catch {
+    return [];
   }
 });
 

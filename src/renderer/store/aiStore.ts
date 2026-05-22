@@ -36,6 +36,7 @@ const DEFAULT_MODELS: Record<string, string[]> = {
   deepseek: ['deepseek-chat', 'deepseek-coder'],
   qwen: ['qwen-turbo', 'qwen-plus', 'qwen-max'],
   kimi: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'],
+  openrouter: ['anthropic/claude-3.5-sonnet', 'openai/gpt-4o', 'meta-llama/llama-3.1-8b-instruct:free', 'google/gemini-flash-1.5', 'mistralai/mistral-7b-instruct:free'],
 };
 
 export const useAIStore = create<AIState>((set, get) => ({
@@ -47,6 +48,7 @@ export const useAIStore = create<AIState>((set, get) => ({
     deepseek: { key: '', activeModel: '', availableModels: [] },
     qwen: { key: '', activeModel: '', availableModels: [] },
     kimi: { key: '', activeModel: '', availableModels: [] },
+    openrouter: { key: '', activeModel: '', availableModels: [] },
   },
   activeProvider: 'openai',
   isGenerating: false,

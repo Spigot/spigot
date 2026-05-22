@@ -1,11 +1,42 @@
 import React, { useEffect, useRef } from 'react';
-import MonacoEditor from '@monaco-editor/react';
+import MonacoEditor, { DiffEditor, loader } from '@monaco-editor/react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+
+// Define premium Cursor-like Pitch-Black theme configuration
+const defineMonacoTheme = (monaco: any) => {
+  monaco.editor.defineTheme('cursor-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: '', background: '0a0a0a' },
+    ],
+    colors: {
+      'editor.background': '#0a0a0a',
+      'editor.lineHighlightBackground': '#18181b',
+      'editorLineNumber.foreground': '#52525b',
+      'editorLineNumber.activeForeground': '#ffffff',
+      'editor.selectionBackground': '#27272a',
+      'editor.inactiveSelectionBackground': '#1c1c1e',
+      'minimap.background': '#070708',
+      'editorWidget.background': '#0e0e0f',
+      'editorWidget.border': '#1c1c1e',
+      'editorSuggestWidget.background': '#0e0e0f',
+      'editorSuggestWidget.border': '#1c1c1e',
+      'editorSuggestWidget.selectedBackground': '#27272a',
+      'editorSuggestWidget.highlightForeground': '#ffffff',
+    }
+  });
+};
+
+// Initialize globally as early as possible as fallback
+loader.init().then((monaco) => {
+  defineMonacoTheme(monaco);
+});
 
 export const EditorContainer: React.FC = () => {
   const { 
     activeTabPath, fileBuffers, updateFileBuffer, saveActiveFile, selectWorkspace, workspacePath,
-    pendingSelection, setPendingSelection
+    pendingSelection, setPendingSelection, activeDiffFile, clearDiffFile
   } = useWorkspaceStore();
 
   const editorRef = useRef<any>(null);
@@ -65,35 +96,16 @@ export const EditorContainer: React.FC = () => {
       noSyntaxValidation: false,
     });
 
-    // Define premium Cursor-like Pitch-Black theme
-    monaco.editor.defineTheme('cursor-dark', {
-      base: 'vs-dark',
-      inherit: true,
-      rules: [
-        { token: '', background: '0a0a0a' },
-      ],
-      colors: {
-        'editor.background': '#0a0a0a',
-        'editor.lineHighlightBackground': '#18181b',
-        'editorLineNumber.foreground': '#52525b',
-        'editorLineNumber.activeForeground': '#ffffff',
-        'editor.selectionBackground': '#27272a',
-        'editor.inactiveSelectionBackground': '#1c1c1e',
-        'minimap.background': '#070708',
-        'editorWidget.background': '#0e0e0f',
-        'editorWidget.border': '#1c1c1e',
-        'editorSuggestWidget.background': '#0e0e0f',
-        'editorSuggestWidget.border': '#1c1c1e',
-        'editorSuggestWidget.selectedBackground': '#27272a',
-        'editorSuggestWidget.highlightForeground': '#ffffff',
-      }
-    });
-
     monaco.editor.setTheme('cursor-dark');
+
+    // Register Ctrl+S shortcut inside Monaco editor instance
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      useWorkspaceStore.getState().saveActiveFile();
+    });
 
     // Apply specific VS Code editor settings
     editor.updateOptions({
-      fontSize: 14,
+      fontSize: 16,
       fontFamily: 'Consolas, "Courier New", monospace',
       minimap: { enabled: true },
       lineNumbers: 'on',
@@ -108,6 +120,38 @@ export const EditorContainer: React.FC = () => {
       parameterHints: { enabled: true },
       suggestOnTriggerCharacters: true,
       acceptSuggestionOnEnter: "on",
+      tabSize: 2,
+    });
+  };
+
+  const handleDiffOnMount = (editor: any, monaco: any) => {
+    monaco.editor.setTheme('cursor-dark');
+
+    editor.getModifiedEditor().updateOptions({
+      fontSize: 16,
+      fontFamily: 'Consolas, "Courier New", monospace',
+      minimap: { enabled: true },
+      lineNumbers: 'on',
+      roundedSelection: false,
+      scrollBeyondLastLine: false,
+      readOnly: true, // Hacemos el diff editor de sólo lectura para mayor robustez
+      automaticLayout: true,
+      cursorBlinking: 'smooth',
+      cursorSmoothCaretAnimation: 'on',
+      padding: { top: 8, bottom: 8 },
+      tabSize: 2,
+    });
+    
+    editor.getOriginalEditor().updateOptions({
+      fontSize: 16,
+      fontFamily: 'Consolas, "Courier New", monospace',
+      minimap: { enabled: false },
+      lineNumbers: 'on',
+      roundedSelection: false,
+      scrollBeyondLastLine: false,
+      readOnly: true,
+      automaticLayout: true,
+      padding: { top: 8, bottom: 8 },
       tabSize: 2,
     });
   };
@@ -204,6 +248,47 @@ export const EditorContainer: React.FC = () => {
   const activeContent = fileBuffers[activeTabPath] ?? '';
   const language = getLanguage(activeTabPath);
 
+  const isDiffActive = activeDiffFile !== null && activeDiffFile.filePath === activeTabPath;
+
+  if (isDiffActive) {
+    return (
+      <div className="flex-1 flex flex-col h-full bg-editor-bg border-r border-editor-border relative overflow-hidden">
+        {/* Floating Diff Toolbar */}
+        <div className="absolute top-2 right-4 z-10 flex items-center gap-2">
+          <div className="bg-editor-bg/95 border border-editor-border backdrop-blur-md px-2.5 py-1 rounded-lg flex items-center gap-2 shadow-lg">
+            <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider select-none">
+              Diferencias de Git
+            </span>
+            <div className="w-px h-3 bg-zinc-800" />
+            <button
+              onClick={clearDiffFile}
+              className="bg-white hover:bg-zinc-200 text-black text-[10px] font-bold px-2 py-0.5 rounded cursor-pointer transition-all-custom animate-pulse-subtle"
+            >
+              Cerrar Diff
+            </button>
+          </div>
+        </div>
+
+        <DiffEditor
+          height="100%"
+          width="100%"
+          original={activeDiffFile.original}
+          modified={activeContent}
+          language={language}
+          theme="cursor-dark"
+          beforeMount={defineMonacoTheme}
+          onMount={handleDiffOnMount}
+          loading={
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-editor-bg gap-3 z-50">
+              <div className="w-8 h-8 border-2 border-editor-accent border-t-transparent rounded-full animate-spin" />
+              <span className="text-xs text-editor-textDark font-medium">Comparando archivos...</span>
+            </div>
+          }
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 flex flex-col h-full bg-editor-bg border-r border-editor-border relative overflow-hidden">
       <MonacoEditor
@@ -213,6 +298,7 @@ export const EditorContainer: React.FC = () => {
         path={activeTabPath} // This enables URI path-aware models in monaco react!
         value={activeContent}
         theme="cursor-dark"
+        beforeMount={defineMonacoTheme}
         onChange={handleEditorChange}
         onMount={handleEditorDidMount}
         loading={

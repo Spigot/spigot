@@ -1,9 +1,9 @@
 import React from 'react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
-import { FileCode, X } from 'lucide-react';
+import { X } from 'lucide-react';
 
 export const EditorTabs: React.FC = () => {
-  const { openTabs, activeTabPath, setActiveTab, closeFile, dirtyFiles } = useWorkspaceStore();
+  const { openTabs, activeTabPath, setActiveTab, closeFile, dirtyFiles, activeDiffFile } = useWorkspaceStore();
 
   if (openTabs.length === 0) return null;
 
@@ -13,6 +13,7 @@ export const EditorTabs: React.FC = () => {
         const fileName = path.split(/[/\\]/).pop() || '';
         const isActive = activeTabPath === path;
         const isDirty = dirtyFiles.includes(path);
+        const isDiffActive = activeDiffFile !== null && activeDiffFile.filePath === path;
 
         return (
           <div
@@ -24,8 +25,10 @@ export const EditorTabs: React.FC = () => {
                 : 'bg-editor-tabInactive text-editor-textDark hover:bg-zinc-800/60 hover:text-editor-text'
             }`}
           >
-            {/* File Icon */}
-            <FileCode className={`w-3.5 h-3.5 ${isActive ? 'text-sky-400' : 'text-editor-textDark group-hover:text-sky-400'}`} />
+            {/* File Icon or Diff indicator > */}
+            <span className={`font-bold text-[12px] shrink-0 select-none mr-0.5 transition-colors ${isDiffActive ? 'text-amber-500 font-extrabold' : isActive ? 'text-sky-400' : 'text-editor-textDark group-hover:text-sky-400'}`}>
+              &gt;
+            </span>
             
             {/* File Name */}
             <span className="truncate max-w-[120px]">{fileName}</span>

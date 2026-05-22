@@ -62,6 +62,14 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('ai:stream-error', listener);
       return () => ipcRenderer.removeListener('ai:stream-error', listener);
     }
+  },
+  git: {
+    getStatus: (workspacePath: string) => ipcRenderer.invoke('git:status', workspacePath),
+    getDiff: (workspacePath: string, filePath: string) => ipcRenderer.invoke('git:diff', workspacePath, filePath),
+    showOriginal: (workspacePath: string, filePath: string) => ipcRenderer.invoke('git:show-original', workspacePath, filePath),
+    getCurrentBranch: (workspacePath: string) => ipcRenderer.invoke('git:current-branch', workspacePath),
+    commit: (workspacePath: string, message: string) => ipcRenderer.invoke('git:commit', workspacePath, message),
+    getLog: (workspacePath: string) => ipcRenderer.invoke('git:log', workspacePath),
   }
 });
 

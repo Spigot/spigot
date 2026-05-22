@@ -1,6 +1,6 @@
 import React from 'react';
 import { useLayoutStore, SidebarTab } from '../../store/layoutStore';
-import { Files, Search, Blocks, Settings, Terminal, Sparkles } from 'lucide-react';
+import { Files, Search, Blocks, Settings, Terminal, Sparkles, GitBranch } from 'lucide-react';
 
 export const ActivityBar: React.FC = () => {
   const { 
@@ -12,6 +12,7 @@ export const ActivityBar: React.FC = () => {
   const menuItems = [
     { id: 'explorer' as SidebarTab, icon: Files, label: 'Explorador' },
     { id: 'search' as SidebarTab, icon: Search, label: 'Buscar' },
+    { id: 'source-control' as SidebarTab, icon: GitBranch, label: 'Control de Código Fuente' },
     { id: 'extensions' as SidebarTab, icon: Blocks, label: 'Extensiones' },
   ];
 

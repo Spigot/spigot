@@ -18,6 +18,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   deepseek: 'DeepSeek',
   qwen: 'Qwen',
   kimi: 'Kimi',
+  openrouter: 'OpenRouter',
 };
 
 export const AIPanel: React.FC = () => {
@@ -299,7 +300,7 @@ export const AIPanel: React.FC = () => {
           /* Warning when the active provider doesn't have a key configured */
           <div className="flex-1 flex flex-col items-center justify-center text-center p-6 select-none">
             <ShieldAlert className="w-10 h-10 text-amber-500 mb-3" />
-            <h3 className="text-xs font-semibold text-white mb-2">Clave faltante para {providers[activeProvider]?.activeModel.includes('gpt') ? 'OpenAI' : activeProvider.toUpperCase()}</h3>
+            <h3 className="text-xs font-semibold text-white mb-2">Clave faltante para {PROVIDER_LABELS[activeProvider] || activeProvider.toUpperCase()}</h3>
             <p className="text-[11px] text-editor-textDark leading-relaxed mb-4 max-w-[200px]">
               No has configurado una API Key para este proveedor específico.
             </p>
