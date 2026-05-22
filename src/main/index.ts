@@ -166,6 +166,17 @@ ipcMain.on('app:zoom-reset', () => {
   }
 });
 
+ipcMain.handle('app:get-info', () => ({
+  name: app.getName(),
+  version: app.getVersion(),
+  platform: process.platform,
+  arch: process.arch,
+  electron: process.versions.electron,
+  chrome: process.versions.chrome,
+  node: process.versions.node,
+  isPackaged: app.isPackaged,
+}));
+
 ipcMain.handle('updater:install-update', () => {
   if (!app.isPackaged) {
     return { ok: false, error: 'Updates are only available in the packaged app.' };
