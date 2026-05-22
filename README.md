@@ -1,16 +1,19 @@
-## Hi there 👋
+﻿# Spigot
 
-<!--
-**Spigot/spigot** is a ✨ _special_ ✨ repository because its `README.md` (this file) appears on your GitHub profile.
+Premium multi-platform code editor inspired by VS Code using Electron, React, and Screaming Architecture.
 
-Here are some ideas to get you started:
+## Development
 
-- 🔭 I’m currently working on ...
-- 🌱 I’m currently learning ...
-- 👯 I’m looking to collaborate on ...
-- 🤔 I’m looking for help with ...
-- 💬 Ask me about ...
-- 📫 How to reach me: ...
-- 😄 Pronouns: ...
-- ⚡ Fun fact: ...
--->
+This repository uses PNPM through Corepack.
+
+```bash
+corepack enable
+pnpm install --frozen-lockfile
+pnpm run dev
+```
+
+## Supply-chain security
+
+Spigot applies defense-in-depth controls for dependency consumers, package-manager installs, and publishing.
+
+See [docs/supply-chain-security.md](docs/supply-chain-security.md).

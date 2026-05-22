@@ -1,0 +1,49 @@
+﻿packages:
+  - .
+
+# Supply-chain cooldown: delay newly published package versions for 7 days.
+minimumReleaseAge: 10080
+minimumReleaseAgeStrict: true
+
+# Refuse dependency versions whose npm trust signals regressed.
+trustPolicy: no-downgrade
+trustPolicyIgnoreAfter: 43200
+trustPolicyExclude:
+  # Existing resolved Vite 5 release: keep scoped until Vite is upgraded.
+  - vite@5.4.21
+  # Transitive @types/node dependency selected by current type range.
+  - undici-types@6.21.0
+
+# Block transitive git/tarball dependencies that bypass registry controls.
+blockExoticSubdeps: true
+
+# Pin the package manager. If the running PNPM does not match package.json,
+# fail instead of silently downloading/running another version.
+pmOnFail: error
+
+# Install safety: never run dependency lifecycle scripts unless explicitly allowed.
+dangerouslyAllowAllBuilds: false
+strictDepBuilds: true
+sideEffectsCache: false
+verifyStoreIntegrity: true
+strictStorePkgContentCheck: true
+engineStrict: true
+
+# Security override for Monaco's transitive DOMPurify dependency.
+overrides:
+  dompurify: ^3.4.0
+
+# Explicit build-script allowlist. Everything else is denied by default.
+allowBuilds:
+  '@electron/rebuild': true
+  '@parcel/watcher': true
+  '@swc/core': true
+  bufferutil: true
+  core-js: false
+  electron: true
+  electron-builder: true
+  esbuild: true
+  node-abi: true
+  node-pty: true
+  utf-8-validate: true
+
