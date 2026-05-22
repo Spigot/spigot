@@ -41,3 +41,6 @@ jobs:
 
       - name: Run Vitest Unit & Integration tests
         run: pnpm run test
+
+      - name: Run Playwright E2E tests
+        run: pnpm run test:e2e

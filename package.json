@@ -17,6 +17,7 @@
     "rebuild:native": "electron-builder install-app-deps",
     "rebuild": "corepack pnpm run rebuild:native",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "security:audit": "corepack pnpm audit --prod",
     "security:signatures": "npm audit signatures",
     "release:win": "node scripts/copy-monaco.cjs && tsc && vite build && electron-builder --win --publish never"
@@ -36,6 +37,7 @@
     "zustand": "^4.5.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@testing-library/jest-dom": "^6.4.2",
     "@testing-library/react": "^14.2.2",
     "@types/node": "^20.12.7",
