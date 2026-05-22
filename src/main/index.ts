@@ -9,6 +9,10 @@ import { lspManager } from './lspManager';
 let mainWindow: BrowserWindow | null = null;
 const workspaceWatchers = new Map<number, FSWatcher>();
 
+// Must be registered before Electron is ready; otherwise DevTools may still call
+// the unsupported Autofill protocol and print noisy console errors.
+app.commandLine.appendSwitch('disable-features', 'AutofillServerCommunication,AutofillShowTypePredictions');
+
 function getWindowIconPath() {
   return app.isPackaged
     ? join(__dirname, '../../dist/logoSpigot.ico')
@@ -103,9 +107,6 @@ mainWindow.on('closed', () => {
 }
 
 app.whenReady().then(() => {
-  // Mitigate "Request Autofill.enable failed" error in devtools by disabling Autofill feature
-  app.commandLine.appendSwitch('disable-features', 'AutofillServerCommunication,AutofillShowTypePredictions');
-
   createWindow();
   startUpdateService();
 
@@ -1070,4 +1071,3 @@ ipcMain.handle('git:push', async (_event, workspacePath: string) => {
     return { success: false, error: err.message };
   }
 });
-

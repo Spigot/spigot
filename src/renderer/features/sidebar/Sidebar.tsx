@@ -1,18 +1,11 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { useLayoutStore } from '../../store/layoutStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useAIStore } from '../../store/aiStore';
 import { FileTree } from './FileTree';
 import { Search, Replace, FileCode, Check, RefreshCw, GitBranch, ChevronDown, ChevronRight, Sparkles, MoreHorizontal, Loader2, ArrowUp, Folder } from 'lucide-react';
-
-interface SearchMatch {
-  filePath: string;
-  fileName: string;
-  line: number; // 1-indexed
-  column: number; // 1-indexed
-  length: number;
-  lineContent: string;
-}
+import { buildSearchRegex, collectSearchableFilePaths, MAX_SEARCH_FILE_BYTES, MAX_SEARCH_RESULTS, searchInContent } from './searchEngine';
+import type { SearchMatch } from './searchEngine';
 
 export const Sidebar: React.FC = () => {
   const { activeSidebarTab, isSidebarOpen, sidebarWidth, setSidebarWidth } = useLayoutStore();
@@ -184,6 +177,7 @@ export const Sidebar: React.FC = () => {
   const [searchScope, setSearchScope] = useState<'active' | 'workspace'>('active');
   const [results, setResults] = useState<SearchMatch[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const searchRunIdRef = useRef(0);
 
   // Resize handler
   const handleResizeMouseDown = (e: React.MouseEvent) => {
@@ -207,77 +201,43 @@ export const Sidebar: React.FC = () => {
   };
 
   // Perform search matches recursively or active-only
-  const performSearch = async () => {
+  const performSearch = async (runId: number) => {
     if (!searchQuery) {
       setResults([]);
+      setIsSearching(false);
       return;
     }
 
     setIsSearching(true);
     const matchedItems: SearchMatch[] = [];
 
-    const escapeRegex = (str: string) => str.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-
-    let pattern = isRegex ? searchQuery : escapeRegex(searchQuery);
-    if (wholeWord) {
-      pattern = `\\b${pattern}\\b`;
-    }
-    const flags = matchCase ? 'g' : 'gi';
-    
     let regex: RegExp;
     try {
-      regex = new RegExp(pattern, flags);
+      regex = buildSearchRegex(searchQuery, { matchCase, wholeWord, isRegex });
     } catch (e) {
       setIsSearching(false);
       return; // Invalid regex
     }
 
-    const searchInFileContent = (filePath: string, content: string) => {
-      const fileName = filePath.split('/').pop() || filePath;
-      const lines = content.split('\n');
-      lines.forEach((lineText, lineIdx) => {
-        regex.lastIndex = 0;
-        let match;
-        while ((match = regex.exec(lineText)) !== null) {
-          matchedItems.push({
-            filePath,
-            fileName,
-            line: lineIdx + 1,
-            column: match.index + 1,
-            length: match[0].length,
-            lineContent: lineText,
-          });
-          if (match[0].length === 0) {
-            regex.lastIndex++;
-          }
-        }
-      });
+    const addMatches = (filePath: string, content: string) => {
+      if (content.length > MAX_SEARCH_FILE_BYTES || matchedItems.length >= MAX_SEARCH_RESULTS) return;
+
+      const remaining = MAX_SEARCH_RESULTS - matchedItems.length;
+      matchedItems.push(...searchInContent(filePath, content, regex, remaining));
     };
 
     if (searchScope === 'active') {
       if (activeTabPath) {
         const content = fileBuffers[activeTabPath] || '';
-        searchInFileContent(activeTabPath, content);
+        addMatches(activeTabPath, content);
       }
     } else {
-      // Recursively collect all files from workspace tree
-      const getAllFiles = (nodes: any[]): string[] => {
-        let files: string[] = [];
-        nodes.forEach(node => {
-          if (node.isDirectory) {
-            if (node.children) {
-              files = [...files, ...getAllFiles(node.children)];
-            }
-          } else {
-            files.push(node.path);
-          }
-        });
-        return files;
-      };
-
-      const allFilePaths = getAllFiles(fileTree);
+      const allFilePaths = collectSearchableFilePaths(fileTree);
       
-      for (const fPath of allFilePaths) {
+      for (let index = 0; index < allFilePaths.length; index++) {
+        if (runId !== searchRunIdRef.current || matchedItems.length >= MAX_SEARCH_RESULTS) return;
+
+        const fPath = allFilePaths[index];
         let content = fileBuffers[fPath];
         if (content === undefined) {
           try {
@@ -287,17 +247,37 @@ export const Sidebar: React.FC = () => {
             continue;
           }
         }
-        searchInFileContent(fPath, content);
+        addMatches(fPath, content);
+
+        if (index % 25 === 0) {
+          await new Promise((resolve) => window.setTimeout(resolve, 0));
+        }
       }
     }
 
-    setResults(matchedItems);
-    setIsSearching(false);
+    if (runId === searchRunIdRef.current) {
+      setResults(matchedItems);
+      setIsSearching(false);
+    }
   };
 
   // Run search when inputs or active file buffer changes
   useEffect(() => {
-    performSearch();
+    const runId = searchRunIdRef.current + 1;
+    searchRunIdRef.current = runId;
+
+    if (!searchQuery) {
+      setResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    const timeoutId = window.setTimeout(() => {
+      performSearch(runId);
+    }, searchScope === 'workspace' ? 300 : 120);
+
+    return () => window.clearTimeout(timeoutId);
   }, [searchQuery, matchCase, wholeWord, isRegex, searchScope, activeTabPath, fileBuffers]);
 
   // Navigate to match selection in Monaco Editor

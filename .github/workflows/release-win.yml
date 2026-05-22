@@ -28,6 +28,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit
+
+      - name: Unit and integration tests
+        run: pnpm run test
+
       - name: Build and publish to GitHub Releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -29,6 +29,7 @@ const deferred = <T>() => {
 
 describe('workspaceStore openFile', () => {
   beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
     resetWorkspaceStore();
     (global.window as any).api = {
       fs: {
