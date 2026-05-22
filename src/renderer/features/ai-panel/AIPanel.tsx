@@ -123,10 +123,10 @@ export const AIPanel: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Initialize key store on mount
+  // Initialize key store on mount and reload on workspace switch
   useEffect(() => {
     initializeStore();
-  }, []);
+  }, [workspacePath]);
 
   // Auto-scroll to bottom of conversation
   useEffect(() => {

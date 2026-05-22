@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import TitleBar from './TitleBar';
 
 const mockSelectWorkspace = vi.fn();
@@ -21,11 +21,28 @@ vi.mock('../../store/workspaceStore', () => ({
 const mockMinimize = vi.fn();
 const mockMaximize = vi.fn();
 const mockClose = vi.fn();
+const mockZoomIn = vi.fn();
+const mockZoomOut = vi.fn();
+const mockZoomReset = vi.fn();
+const mockGetSSHServers = vi.fn().mockResolvedValue([
+  { id: '1', name: 'test-server-alpha', host: '10.0.0.1', user: 'deploy' },
+  { id: '2', name: 'test-server-beta', host: '10.0.0.2', user: 'root' },
+]);
+const mockAddSSHServer = vi.fn();
+
 (global.window as any).api = {
   app: {
     minimize: mockMinimize,
     maximize: mockMaximize,
     close: mockClose,
+    zoomIn: mockZoomIn,
+    zoomOut: mockZoomOut,
+    zoomReset: mockZoomReset,
+  },
+  store: {
+    getSSHServers: mockGetSSHServers,
+    addSSHServer: mockAddSSHServer,
+    getRecentWorkspaces: vi.fn().mockResolvedValue([]),
   },
 };
 
@@ -42,65 +59,125 @@ describe('TitleBar Component', () => {
 
   it('renders the top-bar mock menu buttons', () => {
     render(<TitleBar />);
-    expect(screen.getByText('File')).toBeDefined();
-    expect(screen.getByText('Edit')).toBeDefined();
-    expect(screen.getByText('View')).toBeDefined();
+    expect(screen.getByText('Archivo')).toBeDefined();
+    expect(screen.getByText('Ver')).toBeDefined();
+    expect(screen.getByText('Tools')).toBeDefined();
+    expect(screen.getByText('SSH')).toBeDefined();
   });
 
-  it('toggles dropdown when clicking File', () => {
+
+  it('toggles dropdown when clicking Archivo', () => {
     render(<TitleBar />);
     
     // Dropdown options should not be visible initially
-    expect(screen.queryByText('New File')).toBeNull();
+    expect(screen.queryByText('Nuevo Archivo')).toBeNull();
     
-    // Click File to open menu
-    const fileBtn = screen.getByText('File');
+    // Click Archivo to open menu
+    const fileBtn = screen.getByText('Archivo');
     fireEvent.click(fileBtn);
     
     // Options should now be visible
-    expect(screen.getByText('New File')).toBeDefined();
-    expect(screen.getByText('Open Folder...')).toBeDefined();
-    expect(screen.getByText('Save')).toBeDefined();
-    expect(screen.getByText('Exit')).toBeDefined();
+    expect(screen.getByText('Nuevo Archivo')).toBeDefined();
+    expect(screen.getByText('Abrir Carpeta...')).toBeDefined();
+    expect(screen.getByText('Guardar')).toBeDefined();
+    expect(screen.getByText('Salir')).toBeDefined();
 
-    // Click File again to close
+    // Click Archivo again to close
     fireEvent.click(fileBtn);
-    expect(screen.queryByText('New File')).toBeNull();
+    expect(screen.queryByText('Nuevo Archivo')).toBeNull();
   });
 
-  it('triggers selectWorkspace when Open Folder is clicked', () => {
+  it('triggers selectWorkspace when Abrir Carpeta is clicked', () => {
     render(<TitleBar />);
     
-    const fileBtn = screen.getByText('File');
+    const fileBtn = screen.getByText('Archivo');
     fireEvent.click(fileBtn);
     
-    const openFolderBtn = screen.getByText('Open Folder...');
+    const openFolderBtn = screen.getByText('Abrir Carpeta...');
     fireEvent.click(openFolderBtn);
     
     expect(mockSelectWorkspace).toHaveBeenCalled();
   });
 
-  it('triggers saveActiveFile when Save is clicked', () => {
+  it('triggers saveActiveFile when Guardar is clicked', () => {
     render(<TitleBar />);
     
-    const fileBtn = screen.getByText('File');
+    const fileBtn = screen.getByText('Archivo');
     fireEvent.click(fileBtn);
     
-    const saveBtn = screen.getByText('Save');
+    const saveBtn = screen.getByText('Guardar');
     fireEvent.click(saveBtn);
     
     expect(mockSaveActiveFile).toHaveBeenCalled();
   });
 
-  it('triggers api.app.close when Exit is clicked', () => {
+  it('triggers api.app.close when Salir is clicked', () => {
     render(<TitleBar />);
     
-    const fileBtn = screen.getByText('File');
+    const fileBtn = screen.getByText('Archivo');
     fireEvent.click(fileBtn);
     
-    const exitBtn = screen.getByText('Exit');
+    const exitBtn = screen.getByText('Salir');
     fireEvent.click(exitBtn);
     
     expect(mockClose).toHaveBeenCalled();
   });
+
+  it('toggles dropdown and handles zoom actions when Ver is clicked', () => {
+    render(<TitleBar />);
+    
+    // Zoom options should not be visible initially
+    expect(screen.queryByText('Zoom In')).toBeNull();
+    
+    // Click Ver to open menu
+    const verBtn = screen.getByText('Ver');
+    fireEvent.click(verBtn);
+    
+    // Options should now be visible
+    expect(screen.getByText('Zoom In')).toBeDefined();
+    expect(screen.getByText('Zoom Out')).toBeDefined();
+    expect(screen.getByText('Reset Zoom')).toBeDefined();
+
+    // Click Zoom In
+    const zoomInBtn = screen.getByText('Zoom In');
+    fireEvent.click(zoomInBtn);
+    expect(mockZoomIn).toHaveBeenCalled();
+
+    // Re-open menu to click Zoom Out
+    fireEvent.click(verBtn);
+    const zoomOutBtn = screen.getByText('Zoom Out');
+    fireEvent.click(zoomOutBtn);
+    expect(mockZoomOut).toHaveBeenCalled();
+
+    // Re-open menu to click Reset Zoom
+    fireEvent.click(verBtn);
+    const zoomResetBtn = screen.getByText('Reset Zoom');
+    fireEvent.click(zoomResetBtn);
+    expect(mockZoomReset).toHaveBeenCalled();
+  });
+
+  it('toggles SSH dropdown and displays servers from store when clicked', async () => {
+    render(<TitleBar />);
+    
+    // SSH options should not be visible initially
+    expect(screen.queryByText('Nueva Conexión VPS...')).toBeNull();
+    
+    // Click SSH to open menu (triggers async loadSshServers)
+    const sshBtn = screen.getByText('SSH');
+    fireEvent.click(sshBtn);
+    
+    // Static options should appear immediately
+    expect(screen.getByText('Nueva Conexión VPS...')).toBeDefined();
+    expect(screen.getByText('Claves y Credenciales...')).toBeDefined();
+    
+    // Dynamic servers load from the mock store asynchronously
+    await waitFor(() => {
+      expect(screen.getByText('test-server-alpha')).toBeDefined();
+      expect(screen.getByText('test-server-beta')).toBeDefined();
+    });
+    
+    expect(mockGetSSHServers).toHaveBeenCalled();
+  });
 });
+
+

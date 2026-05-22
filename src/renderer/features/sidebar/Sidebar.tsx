@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { useLayoutStore, SidebarTab } from '../../store/layoutStore';
+import { useLayoutStore } from '../../store/layoutStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useAIStore } from '../../store/aiStore';
 import { FileTree } from './FileTree';
-import { Search, Replace, FileCode, Check, RefreshCw, GitBranch, ChevronDown, ChevronRight, Sparkles, MoreHorizontal, Files, Blocks, Settings, Loader2 } from 'lucide-react';
+import { Search, Replace, FileCode, Check, RefreshCw, GitBranch, ChevronDown, ChevronRight, Sparkles, MoreHorizontal, Loader2, ArrowUp } from 'lucide-react';
 
 interface SearchMatch {
   filePath: string;
@@ -15,7 +15,7 @@ interface SearchMatch {
 }
 
 export const Sidebar: React.FC = () => {
-  const { activeSidebarTab, isSidebarOpen, sidebarWidth, setSidebarWidth, setSidebarTab } = useLayoutStore();
+  const { activeSidebarTab, isSidebarOpen, sidebarWidth, setSidebarWidth } = useLayoutStore();
   const { 
     activeTabPath, fileBuffers, fileTree, updateFileBuffer, openFile, openTabs, setPendingSelection,
     workspacePath, setDiffFile, activeDiffFile, dirtyFiles
@@ -33,6 +33,8 @@ export const Sidebar: React.FC = () => {
   const [isChangesListOpen, setIsChangesListOpen] = useState(true);
   const [isGraphOpen, setIsGraphOpen] = useState(true);
   const [isGeneratingCommit, setIsGeneratingCommit] = useState(false);
+  const [aheadCount, setAheadCount] = useState(0);
+  const [isPushing, setIsPushing] = useState(false);
 
   const handleGenerateCommitMessage = async () => {
     if (!workspacePath) return;
@@ -75,8 +77,11 @@ export const Sidebar: React.FC = () => {
       setCurrentBranch(branch || 'main');
       const log = await (window as any).api.git.getLog(workspacePath);
       setGitLog(log || []);
+      
+      const counts = await (window as any).api.git.getAheadBehind(workspacePath);
+      setAheadCount(counts?.ahead || 0);
     } catch (err) {
-      console.error('Error fetching git status/branch/log:', err);
+      console.error('Error fetching git status/branch/log/ahead-behind:', err);
     } finally {
       setIsLoadingGit(false);
     }
@@ -101,6 +106,26 @@ export const Sidebar: React.FC = () => {
       setCommitFeedback(`Error: ${err.message || 'Fallo desconocido'}`);
     } finally {
       setIsCommitting(false);
+    }
+  };
+
+  const handlePush = async () => {
+    if (!workspacePath) return;
+    setIsPushing(true);
+    setCommitFeedback('');
+    try {
+      const res = await (window as any).api.git.push(workspacePath);
+      if (res.success) {
+        setCommitFeedback('¡Subido al repositorio remoto con éxito!');
+        refreshGitStatus();
+        setTimeout(() => setCommitFeedback(''), 3000);
+      } else {
+        setCommitFeedback(`Error al subir: ${res.error}`);
+      }
+    } catch (err: any) {
+      setCommitFeedback(`Error al subir: ${err.message || 'Fallo desconocido'}`);
+    } finally {
+      setIsPushing(false);
     }
   };
 
@@ -432,48 +457,15 @@ export const Sidebar: React.FC = () => {
         className="absolute top-0 right-0 bottom-0 w-1.5 cursor-ew-resize bg-transparent hover:bg-editor-accent/30 z-30 transition-colors"
       />
 
-      {/* Premium Horizontal Navigation Tabs Bar */}
-      <div className="h-11 border-b border-zinc-800/80 flex items-center justify-between px-3 bg-zinc-950/45 shrink-0 select-none">
-        <div className="flex items-center gap-1">
-          {[
-            { id: 'explorer' as SidebarTab, icon: Files, label: 'Explorador' },
-            { id: 'search' as SidebarTab, icon: Search, label: 'Buscar' },
-            { id: 'source-control' as SidebarTab, icon: GitBranch, label: 'Código Fuente' },
-            { id: 'extensions' as SidebarTab, icon: Blocks, label: 'Extensiones' },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeSidebarTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setSidebarTab(tab.id)}
-                title={tab.label}
-                className={`p-2 rounded-lg transition-all-custom ${
-                  isActive 
-                    ? 'text-white bg-zinc-800/80 border border-zinc-700/70 font-bold shadow-sm' 
-                    : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60'
-                }`}
-              >
-                <Icon className="w-4.5 h-4.5" />
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Configuration Quick-Access Button */}
-        <div className="flex items-center">
-          <button
-            onClick={() => setSidebarTab('settings')}
-            title="Configuración"
-            className={`p-2 rounded-lg transition-all-custom ${
-              activeSidebarTab === 'settings'
-                ? 'text-white bg-zinc-800/80 border border-zinc-700/70 font-bold shadow-sm'
-                : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60'
-            }`}
-          >
-            <Settings className="w-4.5 h-4.5" />
-          </button>
-        </div>
+      {/* Sidebar Header showing current active tab title */}
+      <div className="h-11 border-b border-zinc-800/80 flex items-center justify-between px-4 bg-zinc-950/45 shrink-0 select-none">
+        <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-300">
+          {activeSidebarTab === 'explorer' && 'EXPLORADOR'}
+          {activeSidebarTab === 'search' && 'BUSCAR'}
+          {activeSidebarTab === 'source-control' && 'CÓDIGO FUENTE'}
+          {activeSidebarTab === 'extensions' && 'EXTENSIONES'}
+          {activeSidebarTab === 'settings' && 'CONFIGURACIÓN'}
+        </span>
       </div>
 
       {activeSidebarTab === 'explorer' && (
@@ -688,6 +680,12 @@ export const Sidebar: React.FC = () => {
                     {currentBranch}
                   </span>
                   <span className="text-[10px] text-zinc-500">branch</span>
+                  {aheadCount > 0 && (
+                    <span className="ml-1 flex items-center gap-0.5 rounded-md bg-indigo-500/15 border border-indigo-400/20 px-1.5 py-0.5 text-[9px] text-indigo-300 font-bold" title={`${aheadCount} commits pendientes de push`}>
+                      <ArrowUp className="w-2.5 h-2.5 shrink-0" />
+                      {aheadCount}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -730,18 +728,6 @@ export const Sidebar: React.FC = () => {
                     className="p-1.5 rounded-lg hover:bg-zinc-800 hover:text-white transition-all-custom disabled:opacity-30"
                   >
                     <Check className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    title="Generate commit message"
-                    disabled={isGeneratingCommit}
-                    className="p-1.5 rounded-lg hover:bg-zinc-800 transition-all-custom text-amber-400 hover:text-amber-300 disabled:opacity-50"
-                    onClick={handleGenerateCommitMessage}
-                  >
-                    {isGeneratingCommit ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
-                    ) : (
-                      <Sparkles className="w-3.5 h-3.5" />
-                    )}
                   </button>
                   <button className="p-1.5 rounded-lg hover:bg-zinc-800 hover:text-white transition-all-custom" title="More actions">
                     <MoreHorizontal className="w-3.5 h-3.5" />
@@ -802,6 +788,22 @@ export const Sidebar: React.FC = () => {
                         <ChevronDown className="w-3.5 h-3.5" />
                       </button>
                     </div>
+
+                    {aheadCount > 0 && (
+                      <button
+                        type="button"
+                        disabled={isPushing}
+                        onClick={handlePush}
+                        className="mt-2 w-full flex items-center justify-center gap-1.5 border border-indigo-500/40 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 font-bold text-[12px] h-8 rounded-lg active:scale-[0.98] transition-all-custom shadow-md animate-pulse-subtle"
+                      >
+                        {isPushing ? (
+                          <span className="w-3 h-3 border border-t-transparent border-indigo-400 rounded-full animate-spin" />
+                        ) : (
+                          <ArrowUp className="w-3.5 h-3.5 shrink-0" />
+                        )}
+                        <span>Push {aheadCount} {aheadCount === 1 ? 'commit' : 'commits'}</span>
+                      </button>
+                    )}
 
                     {commitFeedback && (
                       <div className={`text-[11px] px-2.5 py-1.5 rounded-lg leading-normal border ${commitFeedback.startsWith('Error') ? 'bg-red-950/30 text-red-400 border-red-900/30' : 'bg-emerald-950/30 text-emerald-400 border-emerald-900/30'}`}>

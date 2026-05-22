@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useWorkspaceStore } from './workspaceStore';
 
 export interface ChatMessage {
   id: string;
@@ -81,7 +82,8 @@ export const useAIStore = create<AIState>((set, get) => ({
     try {
       const keys = await (window as any).api.store.getKeys();
       const selectedModels = await (window as any).api.store.getSelectedModels();
-      const chatHistory = await (window as any).api.store.getChatHistory();
+      const workspacePath = useWorkspaceStore.getState().workspacePath;
+      const chatHistory = await (window as any).api.store.getChatHistory(workspacePath);
       
       set((state) => {
         const updated = { ...state.providers };
@@ -293,7 +295,8 @@ export const useAIStore = create<AIState>((set, get) => ({
     });
 
     if ((window as any).api?.store) {
-      (window as any).api.store.setChatHistory(updatedConvs).catch(console.error);
+      const workspacePath = useWorkspaceStore.getState().workspacePath;
+      (window as any).api.store.setChatHistory(updatedConvs, workspacePath).catch(console.error);
     }
 
     const removeChunkListener = (window as any).api.ai.onChunk((chunk: string) => {
@@ -333,7 +336,8 @@ export const useAIStore = create<AIState>((set, get) => ({
         });
 
         if ((window as any).api?.store) {
-          await (window as any).api.store.setChatHistory(updatedCurrentConvs).catch(console.error);
+          const workspacePath = useWorkspaceStore.getState().workspacePath;
+          await (window as any).api.store.setChatHistory(updatedCurrentConvs, workspacePath).catch(console.error);
         }
       }
       set({ isGenerating: false, incomingStreamText: '' });
@@ -467,7 +471,8 @@ INSTRUCCIÓN CRÍTICA Y MANDATORIA:
       error: null
     });
     if ((window as any).api?.store) {
-      await (window as any).api.store.setChatHistory([freshConv]).catch(console.error);
+      const workspacePath = useWorkspaceStore.getState().workspacePath;
+      await (window as any).api.store.setChatHistory([freshConv], workspacePath).catch(console.error);
     }
   },
 
@@ -481,7 +486,8 @@ INSTRUCCIÓN CRÍTICA Y MANDATORIA:
     set((state) => {
       const updatedConvs = [newConv, ...state.conversations];
       if ((window as any).api?.store) {
-        (window as any).api.store.setChatHistory(updatedConvs).catch(console.error);
+        const workspacePath = useWorkspaceStore.getState().workspacePath;
+        (window as any).api.store.setChatHistory(updatedConvs, workspacePath).catch(console.error);
       }
       return {
         conversations: updatedConvs,
@@ -529,7 +535,8 @@ INSTRUCCIÓN CRÍTICA Y MANDATORIA:
       }
 
       if ((window as any).api?.store) {
-        (window as any).api.store.setChatHistory(updatedConvs).catch(console.error);
+        const workspacePath = useWorkspaceStore.getState().workspacePath;
+        (window as any).api.store.setChatHistory(updatedConvs, workspacePath).catch(console.error);
       }
 
       return {

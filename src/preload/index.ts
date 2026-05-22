@@ -6,6 +6,9 @@ contextBridge.exposeInMainWorld('api', {
     minimize: () => ipcRenderer.send('app:minimize'),
     maximize: () => ipcRenderer.send('app:maximize'),
     close: () => ipcRenderer.send('app:close'),
+    zoomIn: () => ipcRenderer.send('app:zoom-in'),
+    zoomOut: () => ipcRenderer.send('app:zoom-out'),
+    zoomReset: () => ipcRenderer.send('app:zoom-reset'),
   },
   fs: {
     selectWorkspace: () => ipcRenderer.invoke('fs:select-workspace'),
@@ -49,8 +52,11 @@ contextBridge.exposeInMainWorld('api', {
     setSelectedModel: (provider: string, model: string) => ipcRenderer.invoke('store:set-selected-model', provider, model),
     getLastWorkspace: () => ipcRenderer.invoke('store:get-last-workspace'),
     setLastWorkspace: (workspacePath: string | null) => ipcRenderer.invoke('store:set-last-workspace', workspacePath),
-    getChatHistory: () => ipcRenderer.invoke('store:get-chat-history'),
-    setChatHistory: (chatHistory: any[]) => ipcRenderer.invoke('store:set-chat-history', chatHistory),
+    getRecentWorkspaces: () => ipcRenderer.invoke('store:get-recent-workspaces'),
+    getChatHistory: (workspacePath?: string | null) => ipcRenderer.invoke('store:get-chat-history', workspacePath),
+    setChatHistory: (chatHistory: any[], workspacePath?: string | null) => ipcRenderer.invoke('store:set-chat-history', chatHistory, workspacePath),
+    getSSHServers: () => ipcRenderer.invoke('store:get-ssh-servers'),
+    addSSHServer: (server: { id: string; name: string; host: string; user: string }) => ipcRenderer.invoke('store:add-ssh-server', server),
   },
   ai: {
     fetchModels: (provider: string, apiKey: string) => ipcRenderer.invoke('ai:fetch-models', provider, apiKey),
@@ -80,6 +86,8 @@ contextBridge.exposeInMainWorld('api', {
     getCurrentBranch: (workspacePath: string) => ipcRenderer.invoke('git:current-branch', workspacePath),
     commit: (workspacePath: string, message: string) => ipcRenderer.invoke('git:commit', workspacePath, message),
     getLog: (workspacePath: string) => ipcRenderer.invoke('git:log', workspacePath),
+    getAheadBehind: (workspacePath: string) => ipcRenderer.invoke('git:get-ahead-behind', workspacePath),
+    push: (workspacePath: string) => ipcRenderer.invoke('git:push', workspacePath),
   },
   lsp: {
     openDocument: (args: any) => ipcRenderer.invoke('lsp:open-document', args),

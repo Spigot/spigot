@@ -81,6 +81,26 @@ ipcMain.on('app:close', () => {
   mainWindow?.close();
 });
 
+ipcMain.on('app:zoom-in', () => {
+  if (mainWindow) {
+    const current = mainWindow.webContents.getZoomLevel();
+    mainWindow.webContents.setZoomLevel(current + 0.5);
+  }
+});
+
+ipcMain.on('app:zoom-out', () => {
+  if (mainWindow) {
+    const current = mainWindow.webContents.getZoomLevel();
+    mainWindow.webContents.setZoomLevel(Math.max(-3, current - 0.5));
+  }
+});
+
+ipcMain.on('app:zoom-reset', () => {
+  if (mainWindow) {
+    mainWindow.webContents.setZoomLevel(0);
+  }
+});
+
 // Workspace selection IPC
 ipcMain.handle('fs:select-workspace', async () => {
   if (!mainWindow) return null;
@@ -343,6 +363,14 @@ ipcMain.handle('store:set-last-workspace', async (_event, workspacePath: string 
 
   if (workspacePath && workspacePath.trim()) {
     data.lastWorkspacePath = workspacePath;
+    if (!data.recentWorkspaces) {
+      data.recentWorkspaces = [];
+    }
+    data.recentWorkspaces = data.recentWorkspaces.filter((p: string) => p !== workspacePath);
+    data.recentWorkspaces.unshift(workspacePath);
+    if (data.recentWorkspaces.length > 10) {
+      data.recentWorkspaces = data.recentWorkspaces.slice(0, 10);
+    }
   } else {
     delete data.lastWorkspacePath;
   }
@@ -351,14 +379,66 @@ ipcMain.handle('store:set-last-workspace', async (_event, workspacePath: string 
   return true;
 });
 
-ipcMain.handle('store:get-chat-history', async () => {
+ipcMain.handle('store:get-recent-workspaces', async () => {
   const data = await readStore();
+  const list = data.recentWorkspaces || [];
+  const validList: string[] = [];
+  for (const p of list) {
+    try {
+      const stats = await fsPromises.stat(p);
+      if (stats.isDirectory()) {
+        validList.push(p);
+      }
+    } catch {
+      // Ignore deleted/invalid directory paths
+    }
+  }
+  if (validList.length !== list.length) {
+    data.recentWorkspaces = validList;
+    await writeStore(data);
+  }
+  return validList;
+});
+
+ipcMain.handle('store:get-ssh-servers', async () => {
+  const data = await readStore();
+  return data.sshServers || [];
+});
+
+ipcMain.handle('store:add-ssh-server', async (_event, server: { id: string; name: string; host: string; user: string }) => {
+  const data = await readStore();
+  const servers = data.sshServers || [];
+  const exists = servers.some((s: any) => s.host === server.host && s.user === server.user);
+  if (!exists) {
+    servers.unshift(server);
+    data.sshServers = servers.slice(0, 10);
+    await writeStore(data);
+  }
+  return data.sshServers;
+});
+
+
+ipcMain.handle('store:get-chat-history', async (_event, workspacePath?: string | null) => {
+  const data = await readStore();
+  if (workspacePath && workspacePath.trim()) {
+    if (!data.workspaceChatHistories) {
+      data.workspaceChatHistories = {};
+    }
+    return data.workspaceChatHistories[workspacePath] || [];
+  }
   return data.chatHistory || [];
 });
 
-ipcMain.handle('store:set-chat-history', async (_event, chatHistory: any[]) => {
+ipcMain.handle('store:set-chat-history', async (_event, chatHistory: any[], workspacePath?: string | null) => {
   const data = await readStore();
-  data.chatHistory = chatHistory;
+  if (workspacePath && workspacePath.trim()) {
+    if (!data.workspaceChatHistories) {
+      data.workspaceChatHistories = {};
+    }
+    data.workspaceChatHistories[workspacePath] = chatHistory;
+  } else {
+    data.chatHistory = chatHistory;
+  }
   await writeStore(data);
   return true;
 });
@@ -842,6 +922,41 @@ ipcMain.handle('git:log', async (_event, workspacePath: string) => {
     });
   } catch {
     return [];
+  }
+});
+
+ipcMain.handle('git:get-ahead-behind', async (_event, workspacePath: string) => {
+  try {
+    const { stdout } = await new Promise<{ stdout: string }>((resolve) => {
+      exec('git rev-list --left-right --count HEAD...@{u}', { cwd: workspacePath }, (err, stdout) => {
+        if (err) {
+          resolve({ stdout: '0\t0' });
+        } else {
+          resolve({ stdout });
+        }
+      });
+    });
+    const parts = stdout.trim().split(/\s+/);
+    const ahead = parseInt(parts[0], 10) || 0;
+    const behind = parseInt(parts[1], 10) || 0;
+    return { ahead, behind };
+  } catch (err) {
+    return { ahead: 0, behind: 0 };
+  }
+});
+
+ipcMain.handle('git:push', async (_event, workspacePath: string) => {
+  try {
+    const { stdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      exec('git push', { cwd: workspacePath }, (err, stdout, stderr) => {
+        if (err) reject(err);
+        else resolve({ stdout, stderr });
+      });
+    });
+    return { success: true, output: stdout };
+  } catch (err: any) {
+    console.error('Error running git push:', err);
+    return { success: false, error: err.message };
   }
 });
 
