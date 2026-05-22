@@ -41,12 +41,12 @@ const DEFAULT_MODELS: Record<string, string[]> = {
 export const useAIStore = create<AIState>((set, get) => ({
   messages: [],
   providers: {
-    openai: { key: '', activeModel: 'gpt-4o', availableModels: DEFAULT_MODELS.openai },
-    anthropic: { key: '', activeModel: 'claude-3-5-sonnet-20241022', availableModels: DEFAULT_MODELS.anthropic },
-    gemini: { key: '', activeModel: 'gemini-1.5-flash', availableModels: DEFAULT_MODELS.gemini },
-    deepseek: { key: '', activeModel: 'deepseek-chat', availableModels: DEFAULT_MODELS.deepseek },
-    qwen: { key: '', activeModel: 'qwen-plus', availableModels: DEFAULT_MODELS.qwen },
-    kimi: { key: '', activeModel: 'moonshot-v1-8k', availableModels: DEFAULT_MODELS.kimi },
+    openai: { key: '', activeModel: '', availableModels: [] },
+    anthropic: { key: '', activeModel: '', availableModels: [] },
+    gemini: { key: '', activeModel: '', availableModels: [] },
+    deepseek: { key: '', activeModel: '', availableModels: [] },
+    qwen: { key: '', activeModel: '', availableModels: [] },
+    kimi: { key: '', activeModel: '', availableModels: [] },
   },
   activeProvider: 'openai',
   isGenerating: false,
@@ -54,6 +54,10 @@ export const useAIStore = create<AIState>((set, get) => ({
   error: null,
 
   initializeStore: async () => {
+    if (!(window as any).api?.store || !(window as any).api?.ai) {
+      return;
+    }
+
     try {
       const keys = await (window as any).api.store.getKeys();
       const selectedModels = await (window as any).api.store.getSelectedModels();
@@ -63,14 +67,22 @@ export const useAIStore = create<AIState>((set, get) => ({
         for (const [provider, key] of Object.entries(keys)) {
           if (updated[provider]) {
             updated[provider].key = key as string;
+            if (!key) {
+              updated[provider].activeModel = '';
+              updated[provider].availableModels = [];
+            }
           }
         }
         for (const [provider, model] of Object.entries(selectedModels)) {
-          if (updated[provider]) {
+          if (updated[provider]?.key) {
             updated[provider].activeModel = model as string;
           }
         }
-        return { providers: updated };
+        const firstConfiguredProvider = Object.entries(updated).find(([, data]) => data.key.trim().length > 0)?.[0];
+        return {
+          providers: updated,
+          activeProvider: firstConfiguredProvider ?? state.activeProvider,
+        };
       });
 
       // Query models dynamically for configured providers
@@ -79,13 +91,17 @@ export const useAIStore = create<AIState>((set, get) => ({
         if (data.key) {
           try {
             const dynamic = await (window as any).api.ai.fetchModels(provider, data.key);
-            if (dynamic && dynamic.length > 0) {
+            const availableModels = dynamic && dynamic.length > 0
+              ? dynamic
+              : DEFAULT_MODELS[provider] ?? [];
+
+            if (availableModels.length > 0) {
               set((state) => {
                 const updated = { ...state.providers };
-                updated[provider].availableModels = dynamic;
+                updated[provider].availableModels = availableModels;
                 // If current model is not in new list, reset to first available
-                if (!dynamic.includes(updated[provider].activeModel)) {
-                  updated[provider].activeModel = dynamic[0];
+                if (!availableModels.includes(updated[provider].activeModel)) {
+                  updated[provider].activeModel = availableModels[0];
                 }
                 return { providers: updated };
               });
@@ -108,20 +124,32 @@ export const useAIStore = create<AIState>((set, get) => ({
         const updated = { ...state.providers };
         if (updated[provider]) {
           updated[provider].key = key;
+          if (!key) {
+            updated[provider].activeModel = '';
+            updated[provider].availableModels = [];
+          }
         }
-        return { providers: updated };
+        const firstConfiguredProvider = Object.entries(updated).find(([, data]) => data.key.trim().length > 0)?.[0];
+        return {
+          providers: updated,
+          activeProvider: key ? provider : firstConfiguredProvider ?? state.activeProvider,
+        };
       });
 
       // Dynamically load models
       if (key) {
         const dynamic = await (window as any).api.ai.fetchModels(provider, key);
-        if (dynamic && dynamic.length > 0) {
+        const availableModels = dynamic && dynamic.length > 0
+          ? dynamic
+          : DEFAULT_MODELS[provider] ?? [];
+
+        if (availableModels.length > 0) {
           set((state) => {
             const updated = { ...state.providers };
-            updated[provider].availableModels = dynamic;
+            updated[provider].availableModels = availableModels;
             // Select first model if current isn't valid
-            if (!dynamic.includes(updated[provider].activeModel)) {
-              updated[provider].activeModel = dynamic[0];
+            if (!availableModels.includes(updated[provider].activeModel)) {
+              updated[provider].activeModel = availableModels[0];
             }
             return { providers: updated };
           });
@@ -158,6 +186,11 @@ export const useAIStore = create<AIState>((set, get) => ({
     const providerData = providers[activeProvider];
     if (!providerData || !providerData.key) {
       set({ error: 'Falta configurar la API Key para este proveedor.' });
+      return;
+    }
+
+    if (!providerData.activeModel) {
+      set({ error: 'No hay un modelo configurado para este proveedor.' });
       return;
     }
 

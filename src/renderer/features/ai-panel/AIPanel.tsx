@@ -4,11 +4,21 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useAIStore } from '../../store/aiStore';
 import { compileContext } from './contextCompiler';
 import { ApiKeyModal } from './ApiKeyModal';
+import { StyledSelect } from './StyledSelect';
 import { 
-  Sparkles, Plus, Send, HelpCircle, 
+  Sparkles, Settings, Send, HelpCircle, 
   ShieldAlert, Folder, FileText, 
   Loader2, AlertCircle, Copy, Check, Key, X
 } from 'lucide-react';
+
+const PROVIDER_LABELS: Record<string, string> = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  gemini: 'Gemini',
+  deepseek: 'DeepSeek',
+  qwen: 'Qwen',
+  kimi: 'Kimi',
+};
 
 export const AIPanel: React.FC = () => {
   const { isAIPanelOpen, aiPanelWidth, setAIPanelWidth } = useLayoutStore();
@@ -50,6 +60,13 @@ export const AIPanel: React.FC = () => {
   const activeKeysConfigured = Object.values(providers).some(p => p.key.trim().length > 0);
   const currentProviderData = providers[activeProvider];
   const hasActiveKey = currentProviderData?.key.trim().length > 0;
+  const configuredProviderOptions = Object.entries(providers)
+    .filter(([, provider]) => provider.key.trim().length > 0)
+    .map(([id]) => ({ value: id, label: PROVIDER_LABELS[id] ?? id }));
+  const modelOptions = hasActiveKey
+    ? currentProviderData.availableModels.map((model) => ({ value: model, label: model }))
+    : [];
+  const hasConfiguredModel = hasActiveKey && currentProviderData.activeModel && modelOptions.length > 0;
 
   // Get active explorer path context names
   const getContextInfo = () => {
@@ -214,45 +231,47 @@ export const AIPanel: React.FC = () => {
         <div className="flex items-center gap-1.5 min-w-0">
           <Sparkles className="w-3.5 h-3.5 text-editor-accent shrink-0" />
           
-          {/* Provider selector dropdown */}
-          <select
-            value={activeProvider}
-            onChange={(e) => setActiveProvider(e.target.value)}
-            className="bg-transparent border-none text-[11px] font-bold text-white uppercase tracking-wider outline-none cursor-pointer focus:ring-0 shrink-0"
-          >
-            <option value="openai" className="bg-editor-bg text-white">OpenAI</option>
-            <option value="anthropic" className="bg-editor-bg text-white">Anthropic</option>
-            <option value="gemini" className="bg-editor-bg text-white">Gemini</option>
-            <option value="deepseek" className="bg-editor-bg text-white">DeepSeek</option>
-            <option value="qwen" className="bg-editor-bg text-white">Qwen</option>
-            <option value="kimi" className="bg-editor-bg text-white">Kimi</option>
-          </select>
+          {activeKeysConfigured ? (
+            <>
+              <StyledSelect
+                value={activeProvider}
+                options={configuredProviderOptions}
+                onChange={setActiveProvider}
+                placeholder="Proveedor"
+                disabled={configuredProviderOptions.length <= 1}
+                className="w-[104px] shrink-0"
+                buttonClassName="border-0 bg-transparent px-0 py-0 text-[11px] font-bold uppercase tracking-wider hover:border-transparent focus:border-transparent"
+              />
 
-          <span className="text-[10px] text-editor-textDark shrink-0">|</span>
-
-          {/* Model selector dropdown */}
-          {currentProviderData && (
-            <select
-              value={currentProviderData.activeModel}
-              onChange={(e) => selectModel(activeProvider, e.target.value)}
-              className="bg-transparent border-none text-[10px] text-editor-textDark hover:text-white outline-none cursor-pointer focus:ring-0 font-medium truncate max-w-[110px]"
-            >
-              {currentProviderData.availableModels.map((m) => (
-                <option key={m} value={m} className="bg-editor-bg text-zinc-300 text-xs">
-                  {m}
-                </option>
-              ))}
-            </select>
+              {hasConfiguredModel && (
+                <>
+                  <span className="text-[10px] text-editor-textDark shrink-0">|</span>
+                  <StyledSelect
+                    value={currentProviderData.activeModel}
+                    options={modelOptions}
+                    onChange={(model) => selectModel(activeProvider, model)}
+                    placeholder="Modelo"
+                    disabled={modelOptions.length <= 1}
+                    className="max-w-[130px] min-w-0 shrink"
+                    buttonClassName="border-0 bg-transparent px-0 py-0 text-[10px] font-medium text-editor-textDark hover:border-transparent hover:text-white focus:border-transparent"
+                  />
+                </>
+              )}
+            </>
+          ) : (
+            <span className="truncate text-[11px] font-bold uppercase tracking-wider text-editor-textDark">
+              Sin proveedor
+            </span>
           )}
         </div>
 
-        {/* Add/change API key button */}
+        {/* Agent settings button */}
         <button
           onClick={() => setIsModalOpen(true)}
           className="p-1 hover:bg-editor-hover text-editor-textDark hover:text-white rounded transition-all-custom"
-          title="Configurar claves de proveedores"
+          title="Ajustes del agente"
         >
-          <Plus className="w-3.5 h-3.5" />
+          <Settings className="w-3.5 h-3.5" />
         </button>
       </div>
 
@@ -288,7 +307,7 @@ export const AIPanel: React.FC = () => {
               onClick={() => setIsModalOpen(true)}
               className="border border-editor-border hover:bg-editor-hover text-white text-xs px-3 py-1.5 rounded-lg active:scale-95 transition-all-custom flex items-center gap-1.5"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Key className="w-3.5 h-3.5" />
               <span>Ingresar Clave</span>
             </button>
           </div>
