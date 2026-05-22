@@ -1,12 +1,67 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import { join, relative } from 'path';
 import { promises as fsPromises, watch, FSWatcher } from 'fs';
 import { exec } from 'child_process';
-import { terminalManager } from './terminal';
+import { SshSessionConfig, terminalManager } from './terminal';
 import { lspManager } from './lspManager';
 
 let mainWindow: BrowserWindow | null = null;
 const workspaceWatchers = new Map<number, FSWatcher>();
+
+function getWindowIconPath() {
+  return app.isPackaged
+    ? join(__dirname, '../../dist/logoSpigot.ico')
+    : join(__dirname, '../../logoSpigot.ico');
+}
+
+
+function sendUpdateStatus(channel: string, payload?: unknown) {
+  mainWindow?.webContents.send(channel, payload);
+}
+
+function startUpdateService() {
+  if (!app.isPackaged) {
+    console.log('[updater] Skipping update checks outside packaged app.');
+    return;
+  }
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = false;
+
+  autoUpdater.on('checking-for-update', () => {
+    console.log('[updater] Checking for updates...');
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    console.log(`[updater] Update available: ${info.version}. Downloading in background...`);
+    sendUpdateStatus('updater:download-started', { version: info.version });
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    console.log('[updater] No update available.');
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log(`[updater] Update downloaded: ${info.version}. Waiting for user confirmation.`);
+    sendUpdateStatus('updater:update-ready', { version: info.version });
+  });
+
+  autoUpdater.on('error', (error) => {
+    console.error('[updater] Update error:', error);
+    sendUpdateStatus('updater:error', error instanceof Error ? error.message : String(error));
+  });
+
+  const checkForUpdates = () => {
+    autoUpdater.checkForUpdates().catch((error) => {
+      console.error('[updater] Failed to check for updates:', error);
+    });
+  };
+
+  setTimeout(checkForUpdates, 3000);
+  setInterval(checkForUpdates, 30 * 60 * 1000);
+}
+
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -17,7 +72,7 @@ function createWindow() {
     show: false, // Start hidden to prevent raw white flashes
     frame: false, // Frameless window for premium custom title bar
     titleBarStyle: 'hidden',
-    icon: join(__dirname, '../../logoSpigot.ico'),
+    icon: getWindowIconPath(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -52,6 +107,7 @@ app.whenReady().then(() => {
   app.commandLine.appendSwitch('disable-features', 'AutofillServerCommunication,AutofillShowTypePredictions');
 
   createWindow();
+  startUpdateService();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -108,6 +164,17 @@ ipcMain.on('app:zoom-reset', () => {
   if (mainWindow) {
     mainWindow.webContents.setZoomLevel(0);
   }
+});
+
+ipcMain.handle('updater:install-update', () => {
+  if (!app.isPackaged) {
+    return { ok: false, error: 'Updates are only available in the packaged app.' };
+  }
+
+  terminalManager.clearAll();
+  lspManager.shutdownAll();
+  autoUpdater.quitAndInstall(false, true);
+  return { ok: true };
 });
 
 // Workspace selection IPC
@@ -293,6 +360,20 @@ ipcMain.handle('terminal:create', async (_event, { cols, rows, cwd }) => {
   return terminalManager.createSession(mainWindow, cols, rows, cwd);
 });
 
+ipcMain.handle('terminal:create-ssh', async (_event, { cols, rows, server }: { cols: number; rows: number; server: SshSessionConfig }) => {
+  if (!mainWindow) throw new Error('Main window not available');
+  if (!server?.host?.trim() || !server?.user?.trim()) {
+    throw new Error('SSH host and user are required.');
+  }
+
+  return terminalManager.createSshSession(mainWindow, cols, rows, {
+    ...server,
+    host: server.host.trim(),
+    user: server.user.trim(),
+    identityFile: server.identityFile?.trim() || undefined,
+  });
+});
+
 ipcMain.on('terminal:write', (_event, sessionId, data) => {
   terminalManager.write(sessionId, data);
 });
@@ -414,15 +495,19 @@ ipcMain.handle('store:get-ssh-servers', async () => {
   return data.sshServers || [];
 });
 
-ipcMain.handle('store:add-ssh-server', async (_event, server: { id: string; name: string; host: string; user: string }) => {
+ipcMain.handle('store:add-ssh-server', async (_event, server: { id: string; name: string; host: string; user: string; port?: number; identityFile?: string }) => {
   const data = await readStore();
   const servers = data.sshServers || [];
-  const exists = servers.some((s: any) => s.host === server.host && s.user === server.user);
-  if (!exists) {
-    servers.unshift(server);
-    data.sshServers = servers.slice(0, 10);
-    await writeStore(data);
-  }
+  const normalized = {
+    ...server,
+    host: server.host.trim(),
+    user: server.user.trim(),
+    port: server.port || 22,
+    identityFile: server.identityFile?.trim() || undefined,
+  };
+  const filteredServers = servers.filter((s: any) => !(s.host === normalized.host && s.user === normalized.user && (s.port || 22) === normalized.port));
+  data.sshServers = [normalized, ...filteredServers].slice(0, 10);
+  await writeStore(data);
   return data.sshServers;
 });
 

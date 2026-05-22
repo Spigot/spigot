@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import MonacoEditor, { DiffEditor, loader } from '@monaco-editor/react';
+import logoSpigotUrl from '../../assets/logoSpigot.png';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import {
   changeLspDocument,
@@ -270,7 +271,7 @@ export const EditorContainer: React.FC = () => {
     return (
       <div className="flex-1 flex flex-col justify-center items-center bg-editor-bg select-none h-full border-r border-editor-border p-6">
         <div className="max-w-[400px] w-full flex flex-col items-center text-center">
-          <img src="/logoSpigot.png" alt="Spigot Logo" width="56" height="56" className="w-14 h-14 mb-5 select-none pointer-events-none object-contain opacity-95" />
+          <img src={logoSpigotUrl} alt="Spigot Logo" width="56" height="56" className="w-14 h-14 mb-5 select-none pointer-events-none object-contain opacity-95" />
 
           <h1 className="text-lg font-bold text-white mb-2 tracking-wide uppercase">Spigot Editor</h1>
           <p className="text-[12px] text-editor-textDark mb-6 leading-relaxed">

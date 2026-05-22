@@ -3,6 +3,16 @@ import { create } from 'zustand';
 export interface TerminalSession {
   id: string;
   name: string;
+  kind?: 'local' | 'ssh';
+}
+
+export interface SshServer {
+  id?: string;
+  name?: string;
+  host: string;
+  user: string;
+  port?: number;
+  identityFile?: string;
 }
 
 interface TerminalState {
@@ -11,6 +21,7 @@ interface TerminalState {
   isCreating: boolean;
 
   createSession: (cols: number, rows: number, cwd: string) => Promise<string | null>;
+  createSshSession: (cols: number, rows: number, server: SshServer) => Promise<string | null>;
   closeSession: (id: string) => void;
   setActiveSession: (id: string) => void;
 }
@@ -38,6 +49,32 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
       }
     } catch (err) {
       console.error('Error creating terminal session:', err);
+    } finally {
+      set({ isCreating: false });
+    }
+    return null;
+  },
+
+  createSshSession: async (cols: number, rows: number, server: SshServer) => {
+    if (get().isCreating) return null;
+    set({ isCreating: true });
+    try {
+      const sessionId = await (window as any).api.terminal.createSSH(cols, rows, server);
+      if (sessionId) {
+        const label = server.name?.trim() || `${server.user}@${server.host}`;
+        const newSession: TerminalSession = {
+          id: sessionId,
+          name: `SSH: ${label}`,
+          kind: 'ssh',
+        };
+        set((state) => ({
+          sessions: [...state.sessions, newSession],
+          activeSessionId: sessionId,
+        }));
+        return sessionId;
+      }
+    } catch (err) {
+      console.error('Error creating SSH terminal session:', err);
     } finally {
       set({ isCreating: false });
     }

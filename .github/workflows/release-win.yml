@@ -20,7 +20,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
 
       - name: Enable Corepack
         run: corepack enable
@@ -28,9 +28,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build and Release
+      - name: Build and publish to GitHub Releases
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          pnpm run release:win
-          npx electron-builder --win --publish always
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm run release:win

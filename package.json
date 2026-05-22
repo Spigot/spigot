@@ -1,6 +1,6 @@
 {
   "name": "spigot",
-  "version": "1.0.0",
+  "version": "1.0.4",
   "description": "Premium multi-platform code editor inspired by VS Code using screaming architecture.",
   "repository": {
     "type": "git",
@@ -20,12 +20,13 @@
     "test:e2e": "playwright test",
     "security:audit": "corepack pnpm audit --prod",
     "security:signatures": "npm audit signatures",
-    "release:win": "node scripts/copy-monaco.cjs && tsc && vite build && electron-builder --win --publish never"
+    "release:win": "node scripts/copy-monaco.cjs && tsc && vite build && electron-builder --win --publish always"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-tooltip": "^1.2.8",
+    "electron-updater": "^6.8.3",
     "framer-motion": "^12.38.0",
     "lucide-react": "^0.378.0",
     "node-pty": "^1.1.0",
@@ -60,7 +61,15 @@
     "vitest": "^1.5.0"
   },
   "build": {
-    "publish": null,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Spigot",
+        "repo": "spigot",
+        "releaseType": "release",
+        "vPrefixedTagName": true
+      }
+    ],
     "appId": "com.gentleman.spigot",
     "productName": "Spigot",
     "asar": true,
@@ -76,13 +85,15 @@
       "icon": "logoSpigot.ico",
       "target": [
         "nsis"
-      ]
+      ],
+      "artifactName": "Spigot-Install.${ext}"
     },
     "nsis": {
       "installerIcon": "logoSpigot.ico",
       "uninstallerIcon": "logoSpigot.ico",
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Spigot-Install.${ext}"
     },
     "mac": {
       "target": [
@@ -93,7 +104,11 @@
       "target": [
         "AppImage"
       ]
-    }
+    },
+    "npmRebuild": false,
+    "asarUnpack": [
+      "**/*.node"
+    ]
   },
   "packageManager": "pnpm@11.2.2",
   "engines": {
