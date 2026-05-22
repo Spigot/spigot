@@ -60,11 +60,13 @@ pnpm run build
 
 Esto generará el instalador final y los ejecutables dentro de la carpeta `release/`.
 
-## 🛡️ Seguridad y Cadena de Suministro (Supply-chain Security)
+## 🛡️ Seguridad y Confianza
 
-Spigot aplica controles de defensa en profundidad tanto para el consumo de dependencias, como en las instalaciones mediante el gestor de paquetes y su posterior publicación.
+La seguridad es un pilar fundamental en Spigot:
 
-Para más información, consulta el archivo [docs/supply-chain-security.md](docs/supply-chain-security.md).
+- **Política de Seguridad**: Consulta nuestro [SECURITY.md](SECURITY.md) para saber cómo reportar vulnerabilidades.
+- **Cadena de Suministro**: Aplicamos controles estrictos para el consumo de dependencias y procesos de build. Detalles en [docs/supply-chain-security.md](docs/supply-chain-security.md).
+- **Aislamiento**: Implementamos `contextIsolation` y deshabilitamos `nodeIntegration` en el renderizado de Electron para proteger tu sistema.
 
 ## 🛠️ Tecnologías y Stack
 
