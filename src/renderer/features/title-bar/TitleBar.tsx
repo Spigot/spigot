@@ -428,11 +428,6 @@ export const TitleBar: React.FC = () => {
 
       {/* Right: Premium Actions & Window Controls */}
       <div className="flex items-center h-full app-non-draggable">
-        {/* Upgrade to Pro Button */}
-        <button className="text-[11px] font-bold text-amber-500/90 hover:text-amber-400 border border-amber-500/20 hover:border-amber-400/40 bg-amber-500/5 hover:bg-amber-500/10 px-2.5 py-1 rounded-md mr-2.5 transition-all-custom font-sans tracking-wide">
-          Pasar a Pro
-        </button>
-
         {/* Quick Drawer Toggles */}
         <div className="flex items-center border-r border-zinc-800/60 pr-1.5 mr-1 text-zinc-400">
           <button 
