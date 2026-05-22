@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useLayoutStore } from '../../store/layoutStore';
+import { useTerminalStore } from '../../store/terminalStore';
 import logoSpigotUrl from '../../assets/logoSpigot.png';
 import { 
   Minus, Square, X, Plus, Folder, Save, LogOut,
@@ -24,8 +25,9 @@ export const TitleBar: React.FC = () => {
   const {
     isConsoleOpen, toggleConsole,
     isAIPanelOpen, toggleAIPanel,
-    setSidebarTab, setSidebarOpen
+    setSidebarTab, setSidebarOpen, setConsoleOpen
   } = useLayoutStore();
+  const { createSshSession } = useTerminalStore();
   
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [recentProjects, setRecentProjects] = useState<string[]>([]);
@@ -55,6 +57,8 @@ export const TitleBar: React.FC = () => {
     name: string;
     host: string;
     user: string;
+    port?: number;
+    identityFile?: string;
   }
 
   const [sshServers, setSshServers] = useState<SSHServer[]>([]);
@@ -78,20 +82,44 @@ export const TitleBar: React.FC = () => {
     const user = prompt('Ingresá el usuario de conexión SSH (ej: ubuntu o root):', 'ubuntu');
     if (!user || !user.trim()) return;
 
+    const portInput = prompt('Puerto SSH:', '22');
+    const port = Number(portInput || '22');
+    if (!Number.isInteger(port) || port <= 0) {
+      alert('Puerto SSH inválido.');
+      return;
+    }
+
+    const identityFile = prompt('Ruta de clave privada opcional (.pem/.ppk convertido/OpenSSH). Dejalo vacío para usar password o ssh-agent:', '');
+
     try {
       const newServer = {
         id: Date.now().toString(),
         name: name.trim(),
         host: host.trim(),
         user: user.trim(),
+        port,
+        identityFile: identityFile?.trim() || undefined,
       };
       const list = await (window as any).api.store.addSSHServer(newServer);
       setSshServers(list || []);
-      alert(`Servidor "${newServer.name}" guardado exitosamente.`);
+      await handleConnectSSH(newServer);
     } catch (err) {
       console.error('Error adding SSH server:', err);
+      alert('No se pudo guardar o abrir la conexión SSH.');
     }
   };
+
+  const handleConnectSSH = async (server: SSHServer) => {
+    try {
+      setActiveDropdown(null);
+      setConsoleOpen(true);
+      await createSshSession(100, 30, server);
+    } catch (err) {
+      console.error('Error connecting SSH server:', err);
+      alert('No se pudo abrir la conexión SSH. Revisá que OpenSSH esté instalado y que los datos sean correctos.');
+    }
+  };
+
 
 
 
@@ -384,7 +412,7 @@ export const TitleBar: React.FC = () => {
                       <button
                         onClick={() => {
                           setActiveDropdown(null);
-                          alert('Administrando claves SSH (.pem, .pub)...');
+                          alert('Spigot usa OpenSSH del sistema. Podés usar password interactivo, ssh-agent o indicar una clave privada al crear la conexión.');
                         }}
                         className="w-full text-left px-3 py-2 hover:bg-zinc-800 hover:text-white flex items-center gap-2 transition-colors font-medium text-[12.5px]"
                       >
@@ -409,7 +437,7 @@ export const TitleBar: React.FC = () => {
                               key={server.id}
                               onClick={() => {
                                 setActiveDropdown(null);
-                                alert(`Conectando a ${server.name} (${server.host})...`);
+                                void handleConnectSSH(server);
                               }}
                               className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-white flex flex-col transition-colors animate-in fade-in-5 duration-150"
                             >
@@ -417,7 +445,7 @@ export const TitleBar: React.FC = () => {
                                 <Server className="w-3.5 h-3.5 text-zinc-400" />
                                 <span className="font-semibold text-zinc-200">{server.name}</span>
                               </div>
-                              <span className="text-[10px] text-zinc-500 pl-[22px]">{server.user}@{server.host}</span>
+                              <span className="text-[10px] text-zinc-500 pl-[22px]">{server.user}@{server.host}:{server.port || 22}</span>
                             </button>
                           ))
                         )}

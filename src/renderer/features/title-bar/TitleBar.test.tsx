@@ -30,6 +30,7 @@ const mockGetSSHServers = vi.fn().mockResolvedValue([
 ]);
 const mockAddSSHServer = vi.fn();
 const mockInstallUpdate = vi.fn();
+const mockCreateSSH = vi.fn().mockResolvedValue('ssh-session-1');
 let updateReadyCallback: ((payload: { version?: string }) => void) | null = null;
 
 (global.window as any).api = {
@@ -48,6 +49,9 @@ let updateReadyCallback: ((payload: { version?: string }) => void) | null = null
       return vi.fn();
     }),
   },
+  terminal: {
+    createSSH: mockCreateSSH,
+  },
   store: {
     getSSHServers: mockGetSSHServers,
     addSSHServer: mockAddSSHServer,
@@ -59,6 +63,7 @@ describe('TitleBar Component', () => {
   beforeEach(() => {
     updateReadyCallback = null;
     mockInstallUpdate.mockClear();
+    mockCreateSSH.mockClear();
   });
 
   it('renders the brand title correctly', () => {
@@ -183,6 +188,22 @@ describe('TitleBar Component', () => {
     fireEvent.click(updateButton);
 
     expect(mockInstallUpdate).toHaveBeenCalled();
+  });
+
+  it('opens an SSH terminal when selecting a saved server', async () => {
+    render(<TitleBar />);
+
+    fireEvent.click(screen.getByText('SSH'));
+
+    const serverButton = await screen.findByText('test-server-alpha');
+    fireEvent.click(serverButton);
+
+    await waitFor(() => {
+      expect(mockCreateSSH).toHaveBeenCalledWith(100, 30, expect.objectContaining({
+        host: '10.0.0.1',
+        user: 'deploy',
+      }));
+    });
   });
 
   it('toggles SSH dropdown and displays servers from store when clicked', async () => {

@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   terminal: {
     create: (cols: number, rows: number, cwd: string) => ipcRenderer.invoke('terminal:create', { cols, rows, cwd }),
+    createSSH: (cols: number, rows: number, server: { name?: string; host: string; user: string; port?: number; identityFile?: string }) =>
+      ipcRenderer.invoke('terminal:create-ssh', { cols, rows, server }),
     write: (sessionId: string, data: string) => ipcRenderer.send('terminal:write', sessionId, data),
     resize: (sessionId: string, cols: number, rows: number) => ipcRenderer.send('terminal:resize', sessionId, cols, rows),
     onData: (sessionId: string, callback: (data: string) => void) => {
@@ -70,7 +72,7 @@ contextBridge.exposeInMainWorld('api', {
     getChatHistory: (workspacePath?: string | null) => ipcRenderer.invoke('store:get-chat-history', workspacePath),
     setChatHistory: (chatHistory: any[], workspacePath?: string | null) => ipcRenderer.invoke('store:set-chat-history', chatHistory, workspacePath),
     getSSHServers: () => ipcRenderer.invoke('store:get-ssh-servers'),
-    addSSHServer: (server: { id: string; name: string; host: string; user: string }) => ipcRenderer.invoke('store:add-ssh-server', server),
+    addSSHServer: (server: { id: string; name: string; host: string; user: string; port?: number; identityFile?: string }) => ipcRenderer.invoke('store:add-ssh-server', server),
   },
   ai: {
     fetchModels: (provider: string, apiKey: string) => ipcRenderer.invoke('ai:fetch-models', provider, apiKey),

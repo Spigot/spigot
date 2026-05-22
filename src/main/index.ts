@@ -3,7 +3,7 @@ import { autoUpdater } from 'electron-updater';
 import { join, relative } from 'path';
 import { promises as fsPromises, watch, FSWatcher } from 'fs';
 import { exec } from 'child_process';
-import { terminalManager } from './terminal';
+import { SshSessionConfig, terminalManager } from './terminal';
 import { lspManager } from './lspManager';
 
 let mainWindow: BrowserWindow | null = null;
@@ -360,6 +360,20 @@ ipcMain.handle('terminal:create', async (_event, { cols, rows, cwd }) => {
   return terminalManager.createSession(mainWindow, cols, rows, cwd);
 });
 
+ipcMain.handle('terminal:create-ssh', async (_event, { cols, rows, server }: { cols: number; rows: number; server: SshSessionConfig }) => {
+  if (!mainWindow) throw new Error('Main window not available');
+  if (!server?.host?.trim() || !server?.user?.trim()) {
+    throw new Error('SSH host and user are required.');
+  }
+
+  return terminalManager.createSshSession(mainWindow, cols, rows, {
+    ...server,
+    host: server.host.trim(),
+    user: server.user.trim(),
+    identityFile: server.identityFile?.trim() || undefined,
+  });
+});
+
 ipcMain.on('terminal:write', (_event, sessionId, data) => {
   terminalManager.write(sessionId, data);
 });
@@ -481,15 +495,19 @@ ipcMain.handle('store:get-ssh-servers', async () => {
   return data.sshServers || [];
 });
 
-ipcMain.handle('store:add-ssh-server', async (_event, server: { id: string; name: string; host: string; user: string }) => {
+ipcMain.handle('store:add-ssh-server', async (_event, server: { id: string; name: string; host: string; user: string; port?: number; identityFile?: string }) => {
   const data = await readStore();
   const servers = data.sshServers || [];
-  const exists = servers.some((s: any) => s.host === server.host && s.user === server.user);
-  if (!exists) {
-    servers.unshift(server);
-    data.sshServers = servers.slice(0, 10);
-    await writeStore(data);
-  }
+  const normalized = {
+    ...server,
+    host: server.host.trim(),
+    user: server.user.trim(),
+    port: server.port || 22,
+    identityFile: server.identityFile?.trim() || undefined,
+  };
+  const filteredServers = servers.filter((s: any) => !(s.host === normalized.host && s.user === normalized.user && (s.port || 22) === normalized.port));
+  data.sshServers = [normalized, ...filteredServers].slice(0, 10);
+  await writeStore(data);
   return data.sshServers;
 });
 
