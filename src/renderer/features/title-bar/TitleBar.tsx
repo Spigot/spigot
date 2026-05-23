@@ -186,7 +186,7 @@ export const TitleBar: React.FC = () => {
   };
 
   return (
-    <header className="h-10 bg-zinc-950/40 backdrop-blur-md flex items-center justify-between border-b border-editor-border select-none app-draggable z-50 px-2">
+    <header className="h-10 bg-editor-titleBar flex items-center justify-between border-b border-editor-border select-none app-draggable z-50 px-2">
       {/* Left: Brand Icon, navigation and menus */}
       <div className="flex items-center gap-2.5 h-full app-non-draggable">
         {/* Brand Icon */}
@@ -197,12 +197,12 @@ export const TitleBar: React.FC = () => {
 
 
         {/* Layout indicator */}
-        <button title="Layout" className="p-1 text-zinc-500 hover:text-zinc-300 rounded transition-colors mr-2">
+        <button title="Layout" className="p-1 text-editor-textDark hover:text-editor-text rounded transition-colors mr-2">
           <LayoutGrid className="w-4 h-4" />
         </button>
         
         {/* Top-bar Navigation Menus */}
-        <nav className="hidden lg:flex items-center gap-1 text-[12px] text-zinc-500 font-normal relative">
+        <nav className="hidden lg:flex items-center gap-1 text-[12px] text-editor-text font-medium relative">
           {['Archivo', 'Ver', 'Proyectos', 'Tools', 'MCP', 'SSH', 'Ayuda'].map((menu) => {
             const hasDropdown = menu === 'Archivo' || menu === 'Proyectos' || menu === 'Ver' || menu === 'SSH' || menu === 'Ayuda';
             const isOpen = activeDropdown === menu;
@@ -225,8 +225,8 @@ export const TitleBar: React.FC = () => {
                       }
                     }
                   }}
-                  className={`px-2 py-0.5 rounded transition-all-custom hover:bg-zinc-900/40 hover:text-zinc-200 ${
-                    isOpen ? 'bg-zinc-900/60 text-white' : ''
+                  className={`px-2 py-0.5 rounded transition-all-custom hover:bg-editor-hover hover:text-editor-text ${
+                    isOpen ? 'bg-editor-active text-white' : ''
                   }`}
                 >
                   {menu}
@@ -241,15 +241,15 @@ export const TitleBar: React.FC = () => {
                     />
                     
                     {/* Glassmorphic Dropdown Menu */}
-                    <div className="absolute left-0 mt-1 w-52 bg-zinc-950/95 backdrop-blur-md border border-zinc-800/80 rounded-md shadow-2xl py-1 z-50 text-[12px] text-zinc-300 animate-in fade-in slide-in-from-top-1 duration-100 ease-out font-sans">
+                    <div className="absolute left-0 mt-1 w-52 bg-editor-bg border border-editor-border rounded-md shadow-2xl py-1 z-50 text-[12px] text-editor-text font-medium animate-in fade-in slide-in-from-top-1 duration-100 ease-out font-sans">
                       <button
                         onClick={async () => {
                           setActiveDropdown(null);
                           await handleNewFile();
                         }}
-                        className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-white flex items-center gap-2 transition-colors"
+                        className="w-full text-left px-3 py-1.5 hover:bg-editor-hover hover:text-editor-accent flex items-center gap-2 transition-colors"
                       >
-                        <Plus className="w-4 h-4 text-zinc-400" />
+                        <Plus className="w-4 h-4 text-editor-textDark" />
                         <span>Nuevo Archivo</span>
                       </button>
                       
@@ -258,9 +258,9 @@ export const TitleBar: React.FC = () => {
                           setActiveDropdown(null);
                           await selectWorkspace();
                         }}
-                        className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-white flex items-center gap-2 transition-colors"
+                        className="w-full text-left px-3 py-1.5 hover:bg-editor-hover hover:text-editor-accent flex items-center gap-2 transition-colors"
                       >
-                        <Folder className="w-4 h-4 text-zinc-400" />
+                        <Folder className="w-4 h-4 text-editor-textDark" />
                         <span>Abrir Carpeta...</span>
                       </button>
                       
@@ -272,15 +272,15 @@ export const TitleBar: React.FC = () => {
                         disabled={!activeTabPath}
                         className={`w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors ${
                           activeTabPath 
-                            ? 'hover:bg-zinc-800 hover:text-white' 
-                            : 'opacity-40 cursor-not-allowed text-zinc-500'
+                            ? 'hover:bg-editor-hover hover:text-editor-accent' 
+                            : 'opacity-40 cursor-not-allowed text-editor-textDark'
                         }`}
                       >
-                        <Save className="w-4 h-4 text-zinc-400" />
+                        <Save className="w-4 h-4 text-editor-textDark" />
                         <span>Guardar</span>
                       </button>
                       
-                      <div className="my-1 border-t border-zinc-800/60" />
+                      <div className="my-1 border-t border-editor-border" />
                       
                       <button
                         onClick={() => {
@@ -305,19 +305,19 @@ export const TitleBar: React.FC = () => {
                     />
                     
                     {/* Glassmorphic Dropdown Menu */}
-                    <div className="absolute left-0 mt-1 w-44 bg-zinc-950/95 backdrop-blur-md border border-zinc-800/80 rounded-md shadow-2xl py-1 z-50 text-[12px] text-zinc-300 animate-in fade-in slide-in-from-top-1 duration-100 ease-out font-sans">
+                    <div className="absolute left-0 mt-1 w-44 bg-editor-bg border border-editor-border rounded-md shadow-2xl py-1 z-50 text-[12px] text-editor-text font-medium animate-in fade-in slide-in-from-top-1 duration-100 ease-out font-sans">
                       <button
                         onClick={() => {
                           setActiveDropdown(null);
                           (window as any).api.app.zoomIn();
                         }}
-                        className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-white flex items-center justify-between transition-colors"
+                        className="w-full text-left px-3 py-1.5 hover:bg-editor-hover hover:text-editor-accent flex items-center justify-between transition-colors"
                       >
                         <div className="flex items-center gap-2">
-                          <ZoomIn className="w-3.5 h-3.5 text-zinc-400" />
+                          <ZoomIn className="w-3.5 h-3.5 text-editor-textDark" />
                           <span>Zoom In</span>
                         </div>
-                        <span className="text-zinc-500 text-[10px]">Ctrl+</span>
+                        <span className="text-editor-textDark text-[10px]">Ctrl+</span>
                       </button>
                       
                       <button
@@ -325,13 +325,13 @@ export const TitleBar: React.FC = () => {
                           setActiveDropdown(null);
                           (window as any).api.app.zoomOut();
                         }}
-                        className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-white flex items-center justify-between transition-colors"
+                        className="w-full text-left px-3 py-1.5 hover:bg-editor-hover hover:text-editor-accent flex items-center justify-between transition-colors"
                       >
                         <div className="flex items-center gap-2">
-                          <ZoomOut className="w-3.5 h-3.5 text-zinc-400" />
+                          <ZoomOut className="w-3.5 h-3.5 text-editor-textDark" />
                           <span>Zoom Out</span>
                         </div>
-                        <span className="text-zinc-500 text-[10px]">Ctrl-</span>
+                        <span className="text-editor-textDark text-[10px]">Ctrl-</span>
                       </button>
                       
                       <button
@@ -339,13 +339,13 @@ export const TitleBar: React.FC = () => {
                           setActiveDropdown(null);
                           (window as any).api.app.zoomReset();
                         }}
-                        className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-white flex items-center justify-between transition-colors"
+                        className="w-full text-left px-3 py-1.5 hover:bg-editor-hover hover:text-editor-accent flex items-center justify-between transition-colors"
                       >
                         <div className="flex items-center gap-2">
-                          <RefreshCw className="w-3.5 h-3.5 text-zinc-400" />
+                          <RefreshCw className="w-3.5 h-3.5 text-editor-textDark" />
                           <span>Reset Zoom</span>
                         </div>
-                        <span className="text-zinc-500 text-[10px]">Ctrl0</span>
+                        <span className="text-editor-textDark text-[10px]">Ctrl0</span>
                       </button>
                     </div>
                   </>
@@ -361,13 +361,13 @@ export const TitleBar: React.FC = () => {
                     />
                     
                     {/* Glassmorphic Dropdown Menu */}
-                    <div className="absolute left-0 mt-1 w-64 bg-zinc-950/95 backdrop-blur-md border border-zinc-800/80 rounded-md shadow-2xl py-1.5 z-50 text-[12px] text-zinc-300 animate-in fade-in slide-in-from-top-1 duration-100 ease-out font-sans">
-                      <div className="px-3 py-1 text-[10px] text-zinc-500 font-bold uppercase tracking-wider border-b border-zinc-800/60 pb-1.5 mb-1.5">
+                    <div className="absolute left-0 mt-1 w-64 bg-editor-bg border border-editor-border rounded-md shadow-2xl py-1.5 z-50 text-[12px] text-editor-text font-medium animate-in fade-in slide-in-from-top-1 duration-100 ease-out font-sans">
+                      <div className="px-3 py-1 text-[10px] text-editor-textDark font-bold uppercase tracking-wider border-b border-editor-border pb-1.5 mb-1.5">
                         Proyectos Recientes
                       </div>
                       
                       {recentProjects.length === 0 ? (
-                        <div className="px-3 py-2 text-zinc-500 italic text-[11px]">
+                        <div className="px-3 py-2 text-editor-textDark italic text-[11px]">
                           No hay proyectos abiertos recientemente
                         </div>
                       ) : (
@@ -382,12 +382,12 @@ export const TitleBar: React.FC = () => {
                                   setActiveDropdown(null);
                                   await setWorkspacePath(p);
                                 }}
-                                className={`w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-white flex items-center gap-2 transition-colors ${
+                                className={`w-full text-left px-3 py-1.5 hover:bg-editor-hover hover:text-editor-accent flex items-center gap-2 transition-colors ${
                                   isCurrent ? 'bg-indigo-500/10 text-indigo-300 font-semibold border-l-2 border-indigo-400 pl-2.5' : ''
                                 }`}
                                 title={p}
                               >
-                                <Folder className={`w-3.5 h-3.5 ${isCurrent ? 'text-indigo-400' : 'text-zinc-500'}`} />
+                                <Folder className={`w-3.5 h-3.5 ${isCurrent ? 'text-indigo-400' : 'text-editor-textDark'}`} />
                                 <span className="truncate text-[12.5px] font-medium">{folderName}</span>
                               </button>
                             );
@@ -395,16 +395,16 @@ export const TitleBar: React.FC = () => {
                         </div>
                       )}
                       
-                      <div className="my-1.5 border-t border-zinc-800/60" />
+                      <div className="my-1.5 border-t border-editor-border" />
                       
                       <button
                         onClick={async () => {
                           setActiveDropdown(null);
                           await selectWorkspace();
                         }}
-                        className="w-full text-left px-3 py-2 hover:bg-zinc-800 hover:text-white flex items-center gap-2 transition-colors font-medium"
+                        className="w-full text-left px-3 py-2 hover:bg-editor-hover hover:text-editor-accent flex items-center gap-2 transition-colors font-medium"
                       >
-                        <Folder className="w-4 h-4 text-zinc-400" />
+                        <Folder className="w-4 h-4 text-editor-textDark" />
                         <span>Abrir otra carpeta...</span>
                       </button>
                     </div>
@@ -420,8 +420,8 @@ export const TitleBar: React.FC = () => {
                     />
                     
                     {/* Glassmorphic Dropdown Menu */}
-                    <div className="absolute left-0 mt-1 w-64 bg-zinc-950/95 backdrop-blur-md border border-zinc-800/80 rounded-md shadow-2xl py-1.5 z-50 text-[12px] text-zinc-300 animate-in fade-in slide-in-from-top-1 duration-100 ease-out font-sans">
-                      <div className="px-3 py-1 text-[10px] text-zinc-500 font-bold uppercase tracking-wider border-b border-zinc-800/60 pb-1.5 mb-1.5">
+                    <div className="absolute left-0 mt-1 w-64 bg-editor-bg border border-editor-border rounded-md shadow-2xl py-1.5 z-50 text-[12px] text-editor-text font-medium animate-in fade-in slide-in-from-top-1 duration-100 ease-out font-sans">
+                      <div className="px-3 py-1 text-[10px] text-editor-textDark font-bold uppercase tracking-wider border-b border-editor-border pb-1.5 mb-1.5">
                         Conexión SSH
                       </div>
                       
@@ -430,7 +430,7 @@ export const TitleBar: React.FC = () => {
                           setActiveDropdown(null);
                           await handleNewSSHConnection();
                         }}
-                        className="w-full text-left px-3 py-2 hover:bg-zinc-800 hover:text-white flex items-center gap-2 transition-colors font-medium text-[12.5px]"
+                        className="w-full text-left px-3 py-2 hover:bg-editor-hover hover:text-editor-accent flex items-center gap-2 transition-colors font-medium text-[12.5px]"
                       >
                         <Plus className="w-4 h-4 text-emerald-400" />
                         <span>Nueva Conexión VPS...</span>
@@ -441,21 +441,21 @@ export const TitleBar: React.FC = () => {
                           setActiveDropdown(null);
                           alert('Spigot usa OpenSSH del sistema. Podés usar password interactivo, ssh-agent o indicar una clave privada al crear la conexión.');
                         }}
-                        className="w-full text-left px-3 py-2 hover:bg-zinc-800 hover:text-white flex items-center gap-2 transition-colors font-medium text-[12.5px]"
+                        className="w-full text-left px-3 py-2 hover:bg-editor-hover hover:text-editor-accent flex items-center gap-2 transition-colors font-medium text-[12.5px]"
                       >
-                        <Key className="w-4 h-4 text-zinc-400" />
+                        <Key className="w-4 h-4 text-editor-textDark" />
                         <span>Claves y Credenciales...</span>
                       </button>
 
-                      <div className="my-1.5 border-t border-zinc-800/60" />
+                      <div className="my-1.5 border-t border-editor-border" />
 
-                      <div className="px-3 py-1 text-[10px] text-zinc-500 font-bold uppercase tracking-wider pb-1">
+                      <div className="px-3 py-1 text-[10px] text-editor-textDark font-bold uppercase tracking-wider pb-1">
                         Servidores Recientes
                       </div>
 
                       <div className="max-h-40 overflow-y-auto custom-scrollbar">
                         {sshServers.length === 0 ? (
-                          <div className="px-3 py-2 text-zinc-500 italic text-[11px]">
+                          <div className="px-3 py-2 text-editor-textDark italic text-[11px]">
                             No hay servidores recientes
                           </div>
                         ) : (
@@ -466,13 +466,13 @@ export const TitleBar: React.FC = () => {
                                 setActiveDropdown(null);
                                 void handleConnectSSH(server);
                               }}
-                              className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 hover:text-white flex flex-col transition-colors animate-in fade-in-5 duration-150"
+                              className="w-full text-left px-3 py-1.5 hover:bg-editor-hover hover:text-editor-accent flex flex-col transition-colors animate-in fade-in-5 duration-150"
                             >
                               <div className="flex items-center gap-2">
-                                <Server className="w-3.5 h-3.5 text-zinc-400" />
-                                <span className="font-semibold text-zinc-200">{server.name}</span>
+                                <Server className="w-3.5 h-3.5 text-editor-textDark" />
+                                <span className="font-semibold text-editor-text">{server.name}</span>
                               </div>
-                              <span className="text-[10px] text-zinc-500 pl-[22px]">{server.user}@{server.host}:{server.port || 22}</span>
+                              <span className="text-[10px] text-editor-textDark pl-[22px]">{server.user}@{server.host}:{server.port || 22}</span>
                             </button>
                           ))
                         )}
@@ -488,18 +488,18 @@ export const TitleBar: React.FC = () => {
                       className="fixed inset-0 z-40 cursor-default"
                       onClick={() => setActiveDropdown(null)}
                     />
-                    <div className="absolute left-0 mt-1 w-80 bg-zinc-950/95 backdrop-blur-md border border-zinc-800/80 rounded-md shadow-2xl py-2 z-50 text-[12px] text-zinc-300 animate-in fade-in slide-in-from-top-1 duration-100 ease-out font-sans">
-                      <div className="px-3 pb-2 border-b border-zinc-800/60 flex items-center gap-2">
+                    <div className="absolute left-0 mt-1 w-80 bg-editor-bg border border-editor-border rounded-md shadow-2xl py-2 z-50 text-[12px] text-editor-text font-medium animate-in fade-in slide-in-from-top-1 duration-100 ease-out font-sans">
+                      <div className="px-3 pb-2 border-b border-editor-border flex items-center gap-2">
                         <HelpCircle className="w-4 h-4 text-indigo-400" />
                         <div>
                           <div className="text-zinc-100 font-semibold">Ayuda de Spigot</div>
-                          <div className="text-[10px] text-zinc-500">Versión actual: {appInfo?.version || 'cargando...'}</div>
+                          <div className="text-[10px] text-editor-textDark">Versión actual: {appInfo?.version || 'cargando...'}</div>
                         </div>
                       </div>
 
                       <div className="px-3 py-2 space-y-2">
-                        <div className="rounded-md bg-zinc-900/60 border border-zinc-800 p-2">
-                          <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold mb-1">Sistema</div>
+                        <div className="rounded-md bg-editor-active border border-editor-border p-2">
+                          <div className="text-[10px] uppercase tracking-wider text-editor-textDark font-bold mb-1">Sistema</div>
                           <div>App: {appInfo?.name || 'Spigot'}</div>
                           <div>Versión: {appInfo?.version || '...'}</div>
                         </div>
@@ -509,9 +509,9 @@ export const TitleBar: React.FC = () => {
                             setActiveDropdown(null);
                             (window as any).api.app.openExternal('https://github.com/Spigot/spigot');
                           }}
-                          className="w-full rounded-md bg-zinc-900/60 border border-zinc-800 p-2 hover:bg-zinc-800 hover:text-white transition-colors flex items-center gap-2 text-left"
+                          className="w-full rounded-md bg-editor-active border border-editor-border p-2 hover:bg-editor-hover hover:text-editor-accent transition-colors flex items-center gap-2 text-left"
                         >
-                          <Github className="w-4 h-4 text-zinc-400" />
+                          <Github className="w-4 h-4 text-editor-textDark" />
                           <span>GitHub</span>
                         </button>
                       </div>
@@ -526,11 +526,11 @@ export const TitleBar: React.FC = () => {
 
       {/* Center: Workspace name and file name indicator */}
       <div className="text-[12.5px] font-normal flex items-center gap-1.5 absolute left-1/2 -translate-x-1/2 pointer-events-none">
-        <span className="font-semibold text-zinc-200">{workspaceName}</span>
+        <span className="font-semibold text-editor-text">{workspaceName}</span>
         {activeFileName && (
           <>
-            <span className="text-zinc-600 font-light">&gt;</span>
-            <span className="text-zinc-400 font-medium">{activeFileName}</span>
+            <span className="text-editor-textDark font-light">&gt;</span>
+            <span className="text-editor-textDark font-medium">{activeFileName}</span>
           </>
         )}
       </div>
@@ -548,12 +548,12 @@ export const TitleBar: React.FC = () => {
         )}
 
         {/* Quick Drawer Toggles */}
-        <div className="flex items-center border-r border-zinc-800/60 pr-1.5 mr-1 text-zinc-400">
+        <div className="flex items-center border-r border-editor-border pr-1.5 mr-1 text-editor-textDark">
           <button 
             onClick={toggleConsole}
             title="Consola/Terminal (Toggle)"
-            className={`p-1 rounded hover:bg-zinc-900/50 hover:text-white transition-all-custom mr-0.5 ${
-              isConsoleOpen ? 'text-white bg-zinc-800/40' : ''
+            className={`p-1 rounded hover:bg-editor-hover hover:text-editor-accent transition-all-custom mr-0.5 ${
+              isConsoleOpen ? 'text-white bg-editor-active' : ''
             }`}
           >
             <Terminal className="w-4 h-4" />
@@ -561,8 +561,8 @@ export const TitleBar: React.FC = () => {
           <button 
             onClick={toggleAIPanel}
             title="Agente IA (Toggle)"
-            className={`p-1 rounded hover:bg-zinc-900/50 hover:text-white transition-all-custom mr-0.5 ${
-              isAIPanelOpen ? 'text-amber-500 hover:text-amber-400 bg-zinc-800/40' : ''
+            className={`p-1 rounded hover:bg-editor-hover hover:text-editor-accent transition-all-custom mr-0.5 ${
+              isAIPanelOpen ? 'text-amber-500 hover:text-amber-400 bg-editor-active' : ''
             }`}
           >
             <Sparkles className="w-4 h-4" />
@@ -573,7 +573,7 @@ export const TitleBar: React.FC = () => {
               setSidebarOpen(true);
             }}
             title="Ajustes (Toggle)"
-            className="p-1 rounded hover:bg-zinc-900/50 hover:text-white transition-all-custom"
+            className="p-1 rounded hover:bg-editor-hover hover:text-editor-accent transition-all-custom"
           >
             <Settings className="w-4 h-4" />
           </button>
@@ -582,21 +582,21 @@ export const TitleBar: React.FC = () => {
         {/* OS Standard Controls */}
         <button
           onClick={handleMinimize}
-          className="w-11 h-full flex items-center justify-center hover:bg-zinc-900/45 text-zinc-400 hover:text-white transition-all-custom"
+          className="w-11 h-full flex items-center justify-center hover:bg-editor-sidebar/45 text-editor-textDark hover:text-editor-accent transition-all-custom"
           title="Minimizar"
         >
           <Minus className="w-4 h-4" />
         </button>
         <button
           onClick={handleMaximize}
-          className="w-11 h-full flex items-center justify-center hover:bg-zinc-900/45 text-zinc-400 hover:text-white transition-all-custom"
+          className="w-11 h-full flex items-center justify-center hover:bg-editor-sidebar/45 text-editor-textDark hover:text-editor-accent transition-all-custom"
           title="Maximizar"
         >
           <Square className="w-4 h-4" />
         </button>
         <button
           onClick={handleClose}
-          className="w-11 h-full flex items-center justify-center hover:bg-red-650/85 text-zinc-400 hover:text-white transition-all-custom"
+          className="w-11 h-full flex items-center justify-center hover:bg-red-650/85 text-editor-textDark hover:text-editor-accent transition-all-custom"
           title="Cerrar"
         >
           <X className="w-4 h-4" />
@@ -605,42 +605,42 @@ export const TitleBar: React.FC = () => {
 
       {isSshFormOpen && (
         <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/60 pt-14 app-non-draggable">
-          <form onSubmit={handleSaveSSHConnection} className="w-[420px] max-h-[calc(100vh-72px)] overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-950 p-4 shadow-2xl text-sm text-zinc-200">
+          <form onSubmit={handleSaveSSHConnection} className="w-[420px] max-h-[calc(100vh-72px)] overflow-y-auto rounded-xl border border-editor-border bg-editor-bg p-4 shadow-2xl text-sm text-editor-text">
             <div className="flex items-center gap-2 mb-3">
               <Server className="w-4 h-4 text-emerald-400" />
               <div>
                 <h2 className="font-semibold text-white">Nueva conexión SSH</h2>
-                <p className="text-[11px] text-zinc-500">Guardá un host y abrilo en la terminal integrada.</p>
+                <p className="text-[11px] text-editor-textDark">Guardá un host y abrilo en la terminal integrada.</p>
               </div>
             </div>
 
             <div className="space-y-3">
               <label className="block">
-                <span className="text-[11px] text-zinc-500">Alias</span>
-                <input value={sshDraft.name} onChange={(e) => setSshDraft({ ...sshDraft, name: e.target.value })} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 outline-none focus:border-emerald-500" placeholder="mi-servidor-vps" />
+                <span className="text-[11px] text-editor-textDark">Alias</span>
+                <input value={sshDraft.name} onChange={(e) => setSshDraft({ ...sshDraft, name: e.target.value })} className="mt-1 w-full rounded-md border border-editor-border bg-editor-sidebar px-3 py-2 outline-none focus:border-emerald-500" placeholder="mi-servidor-vps" />
               </label>
               <label className="block">
-                <span className="text-[11px] text-zinc-500">Host / IP</span>
-                <input value={sshDraft.host} onChange={(e) => setSshDraft({ ...sshDraft, host: e.target.value })} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 outline-none focus:border-emerald-500" placeholder="186.23.12.9 o vps.midominio.com" autoFocus />
+                <span className="text-[11px] text-editor-textDark">Host / IP</span>
+                <input value={sshDraft.host} onChange={(e) => setSshDraft({ ...sshDraft, host: e.target.value })} className="mt-1 w-full rounded-md border border-editor-border bg-editor-sidebar px-3 py-2 outline-none focus:border-emerald-500" placeholder="186.23.12.9 o vps.midominio.com" autoFocus />
               </label>
               <div className="grid grid-cols-[1fr_100px] gap-3">
                 <label className="block">
-                  <span className="text-[11px] text-zinc-500">Usuario</span>
-                  <input value={sshDraft.user} onChange={(e) => setSshDraft({ ...sshDraft, user: e.target.value })} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 outline-none focus:border-emerald-500" placeholder="ubuntu" />
+                  <span className="text-[11px] text-editor-textDark">Usuario</span>
+                  <input value={sshDraft.user} onChange={(e) => setSshDraft({ ...sshDraft, user: e.target.value })} className="mt-1 w-full rounded-md border border-editor-border bg-editor-sidebar px-3 py-2 outline-none focus:border-emerald-500" placeholder="ubuntu" />
                 </label>
                 <label className="block">
-                  <span className="text-[11px] text-zinc-500">Puerto</span>
-                  <input value={sshDraft.port} onChange={(e) => setSshDraft({ ...sshDraft, port: e.target.value })} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 outline-none focus:border-emerald-500" placeholder="22" />
+                  <span className="text-[11px] text-editor-textDark">Puerto</span>
+                  <input value={sshDraft.port} onChange={(e) => setSshDraft({ ...sshDraft, port: e.target.value })} className="mt-1 w-full rounded-md border border-editor-border bg-editor-sidebar px-3 py-2 outline-none focus:border-emerald-500" placeholder="22" />
                 </label>
               </div>
               <label className="block">
-                <span className="text-[11px] text-zinc-500">Clave privada opcional</span>
-                <input value={sshDraft.identityFile} onChange={(e) => setSshDraft({ ...sshDraft, identityFile: e.target.value })} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 outline-none focus:border-emerald-500" placeholder="C:\Users\vos\.ssh\id_rsa" />
+                <span className="text-[11px] text-editor-textDark">Clave privada opcional</span>
+                <input value={sshDraft.identityFile} onChange={(e) => setSshDraft({ ...sshDraft, identityFile: e.target.value })} className="mt-1 w-full rounded-md border border-editor-border bg-editor-sidebar px-3 py-2 outline-none focus:border-emerald-500" placeholder="C:\Users\vos\.ssh\id_rsa" />
               </label>
             </div>
 
             <div className="mt-4 flex justify-end gap-2">
-              <button type="button" onClick={() => setIsSshFormOpen(false)} className="rounded-md px-3 py-1.5 text-zinc-400 hover:bg-zinc-900 hover:text-white">Cancelar</button>
+              <button type="button" onClick={() => setIsSshFormOpen(false)} className="rounded-md px-3 py-1.5 text-editor-textDark hover:bg-editor-sidebar hover:text-editor-accent">Cancelar</button>
               <button type="submit" className="rounded-md bg-emerald-500 px-3 py-1.5 font-semibold text-black hover:bg-emerald-400">Guardar y conectar</button>
             </div>
           </form>
