@@ -1,3 +1,5 @@
+import { useDiagnosticsStore } from '../../store/diagnosticsStore';
+
 const LSP_MARKER_OWNER = 'spigot-lsp';
 
 type Monaco = typeof import('monaco-editor');
@@ -99,6 +101,9 @@ export const initializeLspDiagnosticsBridge = (monaco: Monaco) => {
 
   diagnosticsDisposer = (window as any).api?.lsp?.onDiagnostics?.(
     (payload: { uri: string; diagnostics: LspDiagnostic[] }) => {
+      // Save in our global state first so other UI components (FileTree, Problems tab) can read it
+      useDiagnosticsStore.getState().setDiagnostics(payload.uri, payload.diagnostics);
+
       const model = monaco.editor.getModels().find((candidate) => candidate.uri.toString() === payload.uri);
       if (!model) return;
 
@@ -237,6 +242,7 @@ export const saveLspDocument = async (workspacePath: string | null, filePath: st
 
 export const clearLspMarkersForFile = (monaco: Monaco, filePath: string) => {
   const uri = toFileUri(filePath);
+  useDiagnosticsStore.getState().clearDiagnostics(uri);
   const model = monaco.editor.getModels().find((candidate) => candidate.uri.toString() === uri);
   if (model) {
     monaco.editor.setModelMarkers(model, LSP_MARKER_OWNER, []);

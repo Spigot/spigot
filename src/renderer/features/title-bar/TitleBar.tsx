@@ -5,8 +5,8 @@ import { useTerminalStore } from '../../store/terminalStore';
 import logoSpigotUrl from '../../assets/logoSpigot.png';
 import { 
   Minus, Square, X, Plus, Folder, Save, LogOut,
-  Sparkles, Terminal, Settings, LayoutGrid,
-  ZoomIn, ZoomOut, RefreshCw, Server, Key, HelpCircle, Github
+  Terminal, Settings, LayoutGrid,
+  ZoomIn, ZoomOut, RefreshCw, Server, Key, HelpCircle, Github, FolderClosed, Bot
 } from 'lucide-react';
 
 
@@ -16,6 +16,7 @@ export const TitleBar: React.FC = () => {
   const { 
     activeTabPath, 
     selectWorkspace, 
+    createNewProject,
     saveActiveFile, 
     createItem, 
     workspacePath,
@@ -25,7 +26,8 @@ export const TitleBar: React.FC = () => {
   const {
     isConsoleOpen, toggleConsole,
     isAIPanelOpen, toggleAIPanel,
-    setSidebarTab, setSidebarOpen, setConsoleOpen
+    setSidebarTab, setSidebarOpen, setConsoleOpen,
+    isAgentModeOpen, toggleAgentMode
   } = useLayoutStore();
   const { createSshSession } = useTerminalStore();
   
@@ -252,6 +254,17 @@ export const TitleBar: React.FC = () => {
                         <Plus className="w-4 h-4 text-editor-textDark" />
                         <span>Nuevo Archivo</span>
                       </button>
+
+                      <button
+                        onClick={async () => {
+                          setActiveDropdown(null);
+                          await createNewProject();
+                        }}
+                        className="w-full text-left px-3 py-1.5 hover:bg-editor-hover hover:text-editor-accent flex items-center gap-2 transition-colors"
+                      >
+                        <FolderClosed className="w-4 h-4 text-editor-textDark" />
+                        <span>Nuevo Proyecto...</span>
+                      </button>
                       
                       <button
                         onClick={async () => {
@@ -397,6 +410,17 @@ export const TitleBar: React.FC = () => {
                       
                       <div className="my-1.5 border-t border-editor-border" />
                       
+                      <button
+                        onClick={async () => {
+                          setActiveDropdown(null);
+                          await createNewProject();
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-editor-hover hover:text-editor-accent flex items-center gap-2 transition-colors font-medium"
+                      >
+                        <FolderClosed className="w-4 h-4 text-editor-textDark" />
+                        <span>Nuevo Proyecto...</span>
+                      </button>
+
                       <button
                         onClick={async () => {
                           setActiveDropdown(null);
@@ -549,6 +573,26 @@ export const TitleBar: React.FC = () => {
 
         {/* Quick Drawer Toggles */}
         <div className="flex items-center border-r border-editor-border pr-1.5 mr-1 text-editor-textDark">
+          <button
+            onClick={toggleAgentMode}
+            title="Spy Agent"
+            className={`p-1 rounded flex items-center justify-center hover:bg-editor-hover hover:text-editor-accent transition-all-custom mr-0.5 ${
+              isAgentModeOpen ? 'text-white bg-editor-active' : ''
+            }`}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 507.965 507.965"
+              className="w-4 h-4"
+              fill="currentColor"
+              stroke="none"
+              style={{ display: 'block', width: '16px', height: '16px' }}
+            >
+              <path d="M507.083,238.166c-2.7-7.3-10.8-11-18.1-8.3c-20,7.4-40.4,13.7-61,19.1l-35.7-172.3c-8-40.8-50.9-67.6-93.8-52.7c-28.7,10.3-60.3,10.3-89,0c-40.6-13.9-84,8.8-93.9,52.7l-35.6,172.3c-20.7-5.4-41-11.7-61-19.1c-7.3-2.7-15.4,1-18.1,8.3c-2.7,7.3,1,15.4,8.3,18.1c160.5,57.6,328.9,57.8,489.6,0C506.083,253.566,509.783,245.466,507.083,238.166z M107.483,255.566l13.1-63.2h35.6c7.8,0,14.1-6.3,14.1-14.1c0-7.8-6.3-14.1-14.1-14.1h-29.7l5.8-28.2h59.2c7.8,0,14.1-6.3,14.1-14.1s-6.3-14.1-14.1-14.1h-53.3l5.2-25.3c4.4-22.1,29-41.2,56.7-31.8c34.8,12.5,73.2,12.5,108,0c29.3-9.5,52.5,10.7,56.7,31.8l35.8,173.1C304.483,276.466,203.483,276.466,107.483,255.566z" />
+              <path d="M450.183,399.566c-8.2-34.8-46.9-61.3-93.3-61.3c-44.3,0-81.4,24-91.9,56.4c-7.7-1.8-14.1-1.8-21.8,0c-10.5-32.4-47.7-56.5-92-56.5c-46.5,0-85.2,26.5-93.3,61.3c-6.2,1.5-10.9,7-10.9,13.7s4.7,12.2,10.9,13.7c8.2,34.8,46.9,61.3,93.3,61.3c48,0,87.7-28.3,94-64.8c7-2.4,10.7-2.5,17.6-0.1c6.2,36.6,46,64.9,94.1,64.9c46.5,0,85.1-26.5,93.3-61.3c6.2-1.5,10.9-7,10.9-13.7C461.083,406.666,456.383,401.066,450.183,399.566z M151.183,460.066c-36.2,0-66.8-21.4-66.8-46.7c0-25.3,30.6-46.8,66.8-46.8s66.8,21.4,66.8,46.8C217.983,438.766,187.383,460.066,151.183,460.066z M356.783,460.066c-36.2,0-66.8-21.4-66.8-46.7c0-25.3,30.6-46.8,66.8-46.8c36.2,0,66.8,21.4,66.8,46.8C423.583,438.766,392.983,460.066,356.783,460.066z" />
+            </svg>
+          </button>
+          
           <button 
             onClick={toggleConsole}
             title="Consola/Terminal (Toggle)"
@@ -558,15 +602,18 @@ export const TitleBar: React.FC = () => {
           >
             <Terminal className="w-4 h-4" />
           </button>
-          <button 
-            onClick={toggleAIPanel}
-            title="Agente IA (Toggle)"
-            className={`p-1 rounded hover:bg-editor-hover hover:text-editor-accent transition-all-custom mr-0.5 ${
-              isAIPanelOpen ? 'text-amber-500 hover:text-amber-400 bg-editor-active' : ''
-            }`}
-          >
-            <Sparkles className="w-4 h-4" />
-          </button>
+
+          {!isAgentModeOpen && (
+            <button 
+              onClick={toggleAIPanel}
+              title="Modo Agente (Toggle)"
+              className={`p-1 rounded hover:bg-editor-hover hover:text-editor-accent transition-all-custom mr-0.5 ${
+                isAIPanelOpen ? 'text-amber-500 hover:text-amber-400 bg-editor-active' : ''
+              }`}
+            >
+              <Bot className="w-4 h-4" />
+            </button>
+          )}
           <button 
             onClick={() => {
               setSidebarTab('settings');

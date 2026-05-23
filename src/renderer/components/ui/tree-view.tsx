@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useCallback } from "react";
 import { ChevronRight, Folder, File, FolderOpen } from "lucide-react";
@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 // Types
 export type TreeNode = {
   id: string;
-  label: string;
+  label: React.ReactNode;
   icon?: React.ReactNode;
   children?: TreeNode[];
   data?: any;

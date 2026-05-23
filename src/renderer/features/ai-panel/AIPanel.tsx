@@ -31,30 +31,39 @@ interface ParsedThought {
 }
 
 function parseThinking(content: string): ParsedThought {
+  let thought = '';
+  let response = '';
+  let isThinking = false;
+
+  let temp = content;
   const startTag = '<think>';
   const endTag = '</think>';
 
-  const startIndex = content.indexOf(startTag);
-  if (startIndex === -1) {
-    return { thought: '', response: content, isThinking: false };
+  while (temp.length > 0) {
+    const startIndex = temp.indexOf(startTag);
+    if (startIndex === -1) {
+      response += temp;
+      break;
+    }
+
+    response += temp.slice(0, startIndex);
+    temp = temp.slice(startIndex + startTag.length);
+
+    const endIndex = temp.indexOf(endTag);
+    if (endIndex === -1) {
+      thought += temp;
+      isThinking = true;
+      break;
+    }
+
+    thought += temp.slice(0, endIndex) + '\n';
+    temp = temp.slice(endIndex + endTag.length);
   }
 
-  const endIndex = content.indexOf(endTag);
-  if (endIndex === -1) {
-    const thought = content.slice(startIndex + startTag.length);
-    return {
-      thought,
-      response: '',
-      isThinking: true,
-    };
-  }
-
-  const thought = content.slice(startIndex + startTag.length, endIndex);
-  const response = content.slice(endIndex + endTag.length);
   return {
-    thought,
+    thought: thought.trim(),
     response: response.trim(),
-    isThinking: false,
+    isThinking
   };
 }
 
@@ -229,6 +238,8 @@ export const AIPanel: React.FC = () => {
     { cmd: '/explain', label: 'Explicar código', desc: 'Explica el código seleccionado en detalle' },
     { cmd: '/fix', label: 'Corregir errores', desc: 'Encuentra y corrige errores en el contexto activo' },
     { cmd: '/refactor', label: 'Refactorizar', desc: 'Optimiza, limpia y refactoriza el código' },
+    { cmd: '/git', label: 'Estado de Git', desc: 'Analiza el estado de Git del repositorio' },
+    { cmd: '/files', label: 'Archivos del proyecto', desc: 'Muestra la estructura de archivos en tu workspace' },
     { cmd: '/clear', label: 'Limpiar chat', desc: 'Limpia el historial de chat actual' },
     { cmd: '/help', label: 'Ayuda', desc: 'Muestra los comandos disponibles' },
   ];
@@ -246,6 +257,10 @@ export const AIPanel: React.FC = () => {
       handleSend('Buscá posibles fallos, bugs o problemas de rendimiento en este código y mostrá cómo corregirlos.');
     } else if (cmd === '/refactor') {
       handleSend('Refactorizá este código para que sea más legible, limpio y eficiente, aplicando principios SOLID.');
+    } else if (cmd === '/git') {
+      handleSend('Analizá el estado actual de Git en mi workspace (status y diff), indícame qué archivos cambiaron y sugíreme mensajes de commit apropiados.');
+    } else if (cmd === '/files') {
+      handleSend('Listá los archivos del proyecto utilizando la herramienta list_dir para ver la estructura del workspace.');
     }
   };
 
@@ -700,13 +715,25 @@ export const AIPanel: React.FC = () => {
             onValueChange={setPrompt}
             onSend={async (message, files) => {
               let base64Image: string | null = null;
+              let finalMessage = message;
+
               if (files && files.length > 0) {
                 const file = files[0];
-                base64Image = await new Promise<string>((resolve) => {
-                  const reader = new FileReader();
-                  reader.onload = (e) => resolve(e.target?.result as string);
-                  reader.readAsDataURL(file);
-                });
+                if (file.type.startsWith("image/")) {
+                  base64Image = await new Promise<string>((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target?.result as string);
+                    reader.readAsDataURL(file);
+                  });
+                } else {
+                  // Read non-image files as text and append to message
+                  const fileContent = await new Promise<string>((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target?.result as string || '');
+                    reader.readAsText(file);
+                  });
+                  finalMessage = `${message}\n\n### Archivo Adjunto: ${file.name}\n\`\`\`\n${fileContent}\n\`\`\``;
+                }
               }
 
               // Compile active context
@@ -718,7 +745,7 @@ export const AIPanel: React.FC = () => {
                 console.error('Failed to compile context:', e);
               }
 
-              await sendMessage(message, contextText, base64Image);
+              await sendMessage(finalMessage, contextText, base64Image);
             }}
           />
         </div>

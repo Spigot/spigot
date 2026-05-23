@@ -23,8 +23,8 @@ export interface WorkspaceState {
   imageBuffers: Record<string, string>; // Base64 image previews: path -> base64
   theme: ThemeVariant;
   setTheme: (theme: ThemeVariant) => void;
-
   selectWorkspace: () => Promise<void>;
+  createNewProject: () => Promise<void>;
   setWorkspacePath: (path: string) => Promise<void>;
   refreshWorkspace: () => Promise<void>;
   openFile: (filePath: string) => Promise<void>;
@@ -121,6 +121,26 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 
+  createNewProject: async () => {
+    try {
+      // 1. Pick parent folder
+      const parentDir = await (window as any).api.fs.selectWorkspace();
+      if (!parentDir) return;
+      
+      // 2. Prompt for name of new project folder
+      const name = prompt('Ingresá el nombre para la carpeta del nuevo proyecto:');
+      if (!name || !name.trim()) return;
+      
+      // 3. Create the folder on disk
+      const newPath = await (window as any).api.fs.createProject(parentDir, name.trim());
+      if (newPath) {
+        await get().setWorkspacePath(newPath);
+      }
+    } catch (err) {
+      console.error('Error creating new project:', err);
+    }
+  },
+
   setWorkspacePath: async (path: string) => {
     set({ workspacePath: path, openTabs: [], activeTabPath: null, fileBuffers: {}, imageBuffers: {}, dirtyFiles: [] });
     await get().refreshWorkspace();
@@ -150,6 +170,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   openFile: async (filePath: string) => {
+    if (filePath.startsWith('browser://')) {
+      set((state) => ({
+        openTabs: state.openTabs.includes(filePath) ? state.openTabs : [...state.openTabs, filePath],
+        activeTabPath: filePath,
+      }));
+      return;
+    }
+
     const isImageFile = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i.test(filePath);
 
     if (isImageFile) {

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { ChevronsUp, Folder, FolderOpen, FileCode, Plus, FolderPlus, Trash2, FolderClosed } from 'lucide-react';
 import { TreeNode, TreeView } from '@/components/ui/tree-view';
 import { useWorkspaceStore, FileNode } from '../../store/workspaceStore';
+import { useDiagnosticsStore } from '../../store/diagnosticsStore';
 
 type NodeMeta = {
   path: string;
@@ -10,6 +11,9 @@ type NodeMeta = {
 };
 
 export const FileTree: React.FC = () => {
+  // Subscribe to diagnostics to trigger re-renders when errors change
+  const fileDiagnostics = useDiagnosticsStore((state) => state.fileDiagnostics);
+
   const {
     workspacePath,
     fileTree,
@@ -61,18 +65,31 @@ export const FileTree: React.FC = () => {
       const hasChanges = getHasGitChanges(node);
       const isActive = activeTabPath === node.path;
       const isSelected = explorerSelectedPath === node.path;
+      const errorStatus = useDiagnosticsStore.getState().getFileErrorStatus(node.path);
 
-      const iconClassName = hasChanges
-        ? 'text-amber-300 drop-shadow-[0_0_6px_rgba(251,191,36,0.35)]'
-        : node.isDirectory
-          ? 'text-sky-300'
-          : isActive || isSelected
-            ? 'text-zinc-100'
-            : 'text-zinc-400';
+      let iconClassName = '';
+      let labelClassName = '';
+
+      if (errorStatus === 'error') {
+        iconClassName = 'text-red-400 drop-shadow-[0_0_6px_rgba(239,68,68,0.35)]';
+        labelClassName = 'text-red-400 font-medium';
+      } else if (errorStatus === 'warning') {
+        iconClassName = 'text-amber-400 drop-shadow-[0_0_6px_rgba(245,158,11,0.35)]';
+        labelClassName = 'text-amber-400';
+      } else if (hasChanges) {
+        iconClassName = 'text-amber-300 drop-shadow-[0_0_6px_rgba(251,191,36,0.35)]';
+        labelClassName = 'text-amber-300/90';
+      } else if (node.isDirectory) {
+        iconClassName = 'text-sky-300';
+        labelClassName = 'text-zinc-200';
+      } else {
+        iconClassName = isActive || isSelected ? 'text-zinc-100' : 'text-zinc-400';
+        labelClassName = isActive || isSelected ? 'text-zinc-100 font-medium' : 'text-zinc-300';
+      }
 
       return {
         id: node.path,
-        label: node.name,
+        label: <span className={labelClassName}>{node.name}</span>,
         data: { path: node.path, isDirectory: node.isDirectory, hasChanges } satisfies NodeMeta,
         icon: node.isDirectory ? (
           <Folder className={`h-4 w-4 ${iconClassName}`} />
@@ -84,7 +101,7 @@ export const FileTree: React.FC = () => {
     };
 
     return fileTree.map(toTreeNode);
-  }, [activeTabPath, changedPaths, explorerSelectedPath, fileTree]);
+  }, [activeTabPath, changedPaths, explorerSelectedPath, fileTree, fileDiagnostics]);
 
   const selectedNode = explorerSelectedPath ? fileNodeByPath.get(explorerSelectedPath) : undefined;
   const creationBasePath = selectedNode?.isDirectory ? selectedNode.path : workspacePath;

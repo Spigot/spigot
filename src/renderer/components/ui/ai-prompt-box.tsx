@@ -3,6 +3,7 @@ import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { ArrowUp, Paperclip, Square, X, StopCircle, Mic, Globe, BrainCog, FolderCog } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useWorkspaceStore } from "../../store/workspaceStore";
 
 // Utility function for className merging
 const cn = (...classes: (string | undefined | null | false)[]) => classes.filter(Boolean).join(" ");
@@ -471,6 +472,13 @@ export const PromptInputBox = React.forwardRef((props: PromptInputBoxProps, ref:
   const uploadInputRef = React.useRef<HTMLInputElement>(null);
   const promptBoxRef = React.useRef<HTMLDivElement>(null);
 
+  // Hook workspace store openFile for globe web browser trigger
+  const openFile = useWorkspaceStore((state) => state.openFile);
+
+  const handleOpenBrowser = async () => {
+    await openFile("browser://web-view");
+  };
+
   const handleToggleChange = (value: string) => {
     if (value === "search") {
       setShowSearch((prev) => !prev);
@@ -490,18 +498,19 @@ export const PromptInputBox = React.forwardRef((props: PromptInputBoxProps, ref:
   const isImageFile = (file: File) => file.type.startsWith("image/");
 
   const processFile = (file: File) => {
-    if (!isImageFile(file)) {
-      console.log("Only image files are allowed");
-      return;
-    }
     if (file.size > 10 * 1024 * 1024) {
       console.log("File too large (max 10MB)");
       return;
     }
     setFiles([file]);
-    const reader = new FileReader();
-    reader.onload = (e) => setFilePreviews({ [file.name]: e.target?.result as string });
-    reader.readAsDataURL(file);
+
+    if (isImageFile(file)) {
+      const reader = new FileReader();
+      reader.onload = (e) => setFilePreviews({ [file.name]: e.target?.result as string });
+      reader.readAsDataURL(file);
+    } else {
+      setFilePreviews({});
+    }
   };
 
   const handleDragOver = React.useCallback((e: React.DragEvent) => {
@@ -517,9 +526,8 @@ export const PromptInputBox = React.forwardRef((props: PromptInputBoxProps, ref:
   const handleDrop = React.useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const files = Array.from(e.dataTransfer.files);
-    const imageFiles = files.filter((file) => isImageFile(file));
-    if (imageFiles.length > 0) processFile(imageFiles[0]);
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    if (droppedFiles.length > 0) processFile(droppedFiles[0]);
   }, []);
 
   const handleRemoveFile = (index: number) => {
@@ -596,7 +604,7 @@ export const PromptInputBox = React.forwardRef((props: PromptInputBoxProps, ref:
           <div className="flex flex-wrap gap-2 p-0 pb-1 transition-all duration-300">
             {files.map((file, index) => (
               <div key={index} className="relative group">
-                {file.type.startsWith("image/") && filePreviews[file.name] && (
+                {file.type.startsWith("image/") && filePreviews[file.name] ? (
                   <div
                     className="w-16 h-16 rounded-xl overflow-hidden cursor-pointer transition-all duration-300"
                     onClick={() => openImageModal(filePreviews[file.name])}
@@ -614,6 +622,23 @@ export const PromptInputBox = React.forwardRef((props: PromptInputBoxProps, ref:
                       className="absolute top-1 right-1 rounded-full bg-black/70 p-0.5 opacity-100 transition-opacity"
                     >
                       <X className="h-3 w-3 text-white" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 bg-zinc-800/80 border border-zinc-700/50 rounded-xl px-3 py-1.5 text-xs text-zinc-300 relative group pr-8 select-none">
+                    <span className="text-[14px] shrink-0">📄</span>
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-semibold truncate max-w-[120px] text-zinc-200">{file.name}</span>
+                      <span className="text-[9px] text-zinc-500 font-mono">{(file.size / 1024).toFixed(1)} KB</span>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveFile(index);
+                      }}
+                      className="absolute top-1/2 -translate-y-1/2 right-2 rounded-full bg-zinc-900 hover:bg-zinc-950 p-1 opacity-100 transition-opacity"
+                    >
+                      <X className="h-2.5 w-2.5 text-white" />
                     </button>
                   </div>
                 )}
@@ -657,7 +682,7 @@ export const PromptInputBox = React.forwardRef((props: PromptInputBoxProps, ref:
               isRecording ? "opacity-0 invisible h-0" : "opacity-100 visible"
             )}
           >
-            <PromptInputAction tooltip="Upload image">
+            <PromptInputAction tooltip="Añadir archivo al chat">
               <button
                 onClick={() => uploadInputRef.current?.click()}
                 className="flex h-8 w-8 text-[#9CA3AF] cursor-pointer items-center justify-center rounded-full transition-colors hover:bg-gray-600/30 hover:text-[#D1D5DB]"
@@ -672,7 +697,6 @@ export const PromptInputBox = React.forwardRef((props: PromptInputBoxProps, ref:
                     if (e.target.files && e.target.files.length > 0) processFile(e.target.files[0]);
                     if (e.target) e.target.value = "";
                   }}
-                  accept="image/*"
                 />
               </button>
             </PromptInputAction>
@@ -680,36 +704,18 @@ export const PromptInputBox = React.forwardRef((props: PromptInputBoxProps, ref:
             <div className="flex items-center">
               <button
                 type="button"
-                onClick={() => handleToggleChange("search")}
-                className={cn(
-                  "rounded-full transition-all flex items-center gap-1 px-2 py-1 border h-8",
-                  showSearch
-                    ? "bg-[#1EAEDB]/15 border-[#1EAEDB] text-[#1EAEDB]"
-                    : "bg-transparent border-transparent text-[#9CA3AF] hover:text-[#D1D5DB]"
-                )}
+                onClick={handleOpenBrowser}
+                className="rounded-full transition-all flex items-center gap-1 px-2 py-1 border h-8 bg-transparent border-transparent text-[#9CA3AF] hover:text-[#D1D5DB] hover:bg-gray-600/20"
+                title="Abrir Navegador Web"
               >
                 <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
                   <motion.div
-                    animate={{ rotate: showSearch ? 360 : 0, scale: showSearch ? 1.1 : 1 }}
-                    whileHover={{ rotate: showSearch ? 360 : 15, scale: 1.1, transition: { type: "spring", stiffness: 300, damping: 10 } }}
-                    transition={{ type: "spring", stiffness: 260, damping: 25 }}
+                    whileHover={{ rotate: 15, scale: 1.1 }}
+                    transition={{ type: "spring", stiffness: 300, damping: 10 }}
                   >
-                    <Globe className={cn("w-4 h-4", showSearch ? "text-[#1EAEDB]" : "text-inherit")} />
+                    <Globe className="w-4 h-4 text-inherit" />
                   </motion.div>
                 </div>
-                <AnimatePresence>
-                  {showSearch && (
-                    <motion.span
-                      initial={{ width: 0, opacity: 0 }}
-                      animate={{ width: "auto", opacity: 1 }}
-                      exit={{ width: 0, opacity: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="text-xs overflow-hidden whitespace-nowrap text-[#1EAEDB] flex-shrink-0"
-                    >
-                      Search
-                    </motion.span>
-                  )}
-                </AnimatePresence>
               </button>
 
               <CustomDivider />
