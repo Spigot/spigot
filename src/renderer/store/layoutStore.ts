@@ -11,6 +11,8 @@ interface LayoutState {
   consoleHeight: number;
   isAIPanelOpen: boolean;
   aiPanelWidth: number;
+  isAgentModeOpen: boolean;
+  isSettingsModalOpen: boolean;
   
   setSidebarTab: (tab: SidebarTab) => void;
   toggleSidebar: () => void;
@@ -23,6 +25,9 @@ interface LayoutState {
   toggleAIPanel: () => void;
   setAIPanelOpen: (open: boolean) => void;
   setAIPanelWidth: (width: number) => void;
+  toggleAgentMode: () => void;
+  setAgentModeOpen: (open: boolean) => void;
+  setSettingsModalOpen: (open: boolean) => void;
 }
 
 export const useLayoutStore = create<LayoutState>((set) => ({
@@ -34,6 +39,8 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   consoleHeight: 250,
   isAIPanelOpen: true,
   aiPanelWidth: 320,
+  isAgentModeOpen: false,
+  isSettingsModalOpen: false,
 
   setSidebarTab: (tab) => set((state) => ({
     activeSidebarTab: tab,
@@ -60,5 +67,11 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   setAIPanelOpen: (open) => set({ isAIPanelOpen: open }),
 
   setAIPanelWidth: (width) => set({ aiPanelWidth: width }),
+
+  toggleAgentMode: () => set((state) => ({ isAgentModeOpen: !state.isAgentModeOpen })),
+
+  setAgentModeOpen: (open) => set({ isAgentModeOpen: open }),
+
+  setSettingsModalOpen: (open) => set({ isSettingsModalOpen: open }),
 }));
 

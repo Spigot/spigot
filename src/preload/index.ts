@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   fs: {
     selectWorkspace: () => ipcRenderer.invoke('fs:select-workspace'),
+    createProject: (parentPath: string, name: string) => ipcRenderer.invoke('fs:create-project', parentPath, name),
     readDir: (dirPath: string) => ipcRenderer.invoke('fs:read-dir', dirPath),
     readFile: (filePath: string) => ipcRenderer.invoke('fs:read-file', filePath),
     readBinaryFile: (filePath: string) => ipcRenderer.invoke('fs:read-binary-file', filePath),

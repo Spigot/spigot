@@ -5,6 +5,7 @@ import { promises as fsPromises, watch, FSWatcher } from 'fs';
 import { exec, execFile } from 'child_process';
 import { SshSessionConfig, terminalManager } from './terminal';
 import { lspManager } from './lspManager';
+import { runAgentLoop } from './agentRunner';
 
 let mainWindow: BrowserWindow | null = null;
 const workspaceWatchers = new Map<number, FSWatcher>();
@@ -209,6 +210,27 @@ ipcMain.handle('fs:select-workspace', async () => {
   return result.filePaths[0];
 });
 
+// Create new project folder and initialize it IPC
+ipcMain.handle('fs:create-project', async (_event, parentPath: string, name: string) => {
+  try {
+    const projectPath = join(parentPath, name);
+    await fsPromises.mkdir(projectPath, { recursive: true });
+    
+    // Initialize with a default README.md
+    const readmePath = join(projectPath, 'README.md');
+    await fsPromises.writeFile(
+      readmePath,
+      `# ${name}\n\nProyecto creado exitosamente en **Spigot Editor**.\n`,
+      'utf-8'
+    );
+    
+    return projectPath;
+  } catch (err: any) {
+    console.error('Error creating new project:', err);
+    throw err;
+  }
+});
+
 // Structured file node interface
 interface FileNode {
   name: string;
@@ -217,8 +239,17 @@ interface FileNode {
   children?: FileNode[];
 }
 
+// Memory cache for the workspace file tree to prevent redundant high-overhead recursive FS walking
+let cachedTree: FileNode[] | null = null;
+let cachedWorkspacePath: string | null = null;
+
 // Read Workspace Tree recursively with exclude lists
 ipcMain.handle('fs:read-dir', async (_event, dirPath: string): Promise<FileNode[]> => {
+  // If the path matches and the cache is warm, return the cached tree instantly!
+  if (cachedWorkspacePath === dirPath && cachedTree !== null) {
+    return cachedTree;
+  }
+
   const EXCLUDE_LIST = new Set(['.git', 'node_modules', 'dist', 'dist-electron', 'release', '.antigravitycli']);
   
   async function buildTree(currentPath: string): Promise<FileNode[]> {
@@ -259,7 +290,10 @@ ipcMain.handle('fs:read-dir', async (_event, dirPath: string): Promise<FileNode[
     }
   }
 
-  return buildTree(dirPath);
+  const tree = await buildTree(dirPath);
+  cachedWorkspacePath = dirPath;
+  cachedTree = tree;
+  return tree;
 });
 
 // File System CRUD Handlers
@@ -285,6 +319,7 @@ ipcMain.handle('fs:read-binary-file', async (_event, filePath: string) => {
 
 ipcMain.handle('fs:write-file', async (_event, filePath: string, content: string) => {
   try {
+    cachedTree = null; // Invalidate cached tree on write
     await fsPromises.writeFile(filePath, content, 'utf-8');
     return true;
   } catch (err: any) {
@@ -295,6 +330,7 @@ ipcMain.handle('fs:write-file', async (_event, filePath: string, content: string
 
 ipcMain.handle('fs:create-item', async (_event, itemPath: string, type: 'file' | 'directory') => {
   try {
+    cachedTree = null; // Invalidate cached tree on create
     if (type === 'directory') {
       await fsPromises.mkdir(itemPath, { recursive: true });
     } else {
@@ -309,6 +345,7 @@ ipcMain.handle('fs:create-item', async (_event, itemPath: string, type: 'file' |
 
 ipcMain.handle('fs:delete-item', async (_event, itemPath: string) => {
   try {
+    cachedTree = null; // Invalidate cached tree on delete
     const stats = await fsPromises.stat(itemPath);
     if (stats.isDirectory()) {
       await fsPromises.rm(itemPath, { recursive: true, force: true });
@@ -331,6 +368,7 @@ ipcMain.handle('fs:watch-workspace', async (event, workspacePath: string) => {
       workspacePath,
       { recursive: process.platform === 'win32' },
       (_eventType, filename) => {
+        cachedTree = null; // Invalidate cached tree on watch change event
         event.sender.send('workspace:changed', filename?.toString() ?? null);
       },
     );
@@ -633,278 +671,37 @@ ipcMain.handle('ai:stream-chat', async (
   const signal = activeAbortController.signal;
 
   try {
-    let url = '';
-    let headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    let body: any = {};
+    const storeData = await readStore();
+    const workspacePath = storeData.lastWorkspacePath || app.getPath('documents');
 
-    let mimeType = 'image/png';
-    let base64Data = '';
-    if (image && image.startsWith('data:')) {
-      const parts = image.split(';base64,');
-      if (parts.length === 2) {
-        mimeType = parts[0].replace('data:', '');
-        base64Data = parts[1];
-      }
-    }
-
-    // Standardize conversation history format for API calls
-    let formattedMessages = (history || []).map((msg: any) => {
-      if (msg.image) {
-        let hMimeType = 'image/png';
-        let hBase64Data = '';
-        if (msg.image.startsWith('data:')) {
-          const hParts = msg.image.split(';base64,');
-          if (hParts.length === 2) {
-            hMimeType = hParts[0].replace('data:', '');
-            hBase64Data = hParts[1];
-          }
-        }
-        
-        if (provider === 'anthropic') {
-          return {
-            role: msg.role,
-            content: [
-              { type: 'text', text: msg.content },
-              {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: hMimeType,
-                  data: hBase64Data
-                }
-              }
-            ]
-          };
-        } else if (provider === 'gemini') {
-          return msg; // Will be handled separately in geminiContents mapping
-        } else {
-          return {
-            role: msg.role,
-            content: [
-              { type: 'text', text: msg.content },
-              { type: 'image_url', image_url: { url: msg.image } }
-            ]
-          };
-        }
-      }
-      return {
-        role: msg.role,
-        content: msg.content
-      };
-    });
-
-    // Prepend active project context to the latest message, with defensive context window bounds for restrictive providers like MiniMax
-    let activeContext = contextText;
-    if (provider === 'minimax') {
-      // Keep only the last 4 messages of history for MiniMax to save context window space
-      formattedMessages = formattedMessages.slice(-4);
-      if (contextText && contextText.length > 1200) {
-        activeContext = contextText.slice(0, 1200) + '\n\n... [Contexto del proyecto truncado automáticamente por el sistema para no exceder los límites del proveedor MiniMax] ...';
-      }
-    }
-
-    const fullUserPrompt = activeContext 
-      ? `=== CONTEXTO DEL PROYECTO ===\n${activeContext}\n\n=== FIN CONTEXTO ===\n\nPregunta / Instrucción del usuario:\n${prompt}`
-      : prompt;
-
-    // Attach latest message for standard providers
-    if (provider !== 'gemini' && provider !== 'anthropic') {
-      if (image) {
-        formattedMessages.push({
-          role: 'user',
-          content: [
-            { type: 'text', text: fullUserPrompt },
-            { type: 'image_url', image_url: { url: image } }
-          ]
-        });
-      } else {
-        formattedMessages.push({ role: 'user', content: fullUserPrompt });
-      }
-    } else if (provider === 'anthropic') {
-      if (image && base64Data) {
-        formattedMessages.push({
-          role: 'user',
-          content: [
-            { type: 'text', text: fullUserPrompt },
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: mimeType,
-                data: base64Data
-              }
-            }
-          ]
-        });
-      } else {
-        formattedMessages.push({ role: 'user', content: fullUserPrompt });
-      }
-    }
-
-    if (provider === 'openai') {
-      url = 'https://api.openai.com/v1/chat/completions';
-      headers['Authorization'] = `Bearer ${apiKey}`;
-      body = { model, messages: formattedMessages, stream: true };
-    } else if (provider === 'openrouter') {
-      url = 'https://openrouter.ai/api/v1/chat/completions';
-      headers['Authorization'] = `Bearer ${apiKey}`;
-      headers['HTTP-Referer'] = 'https://spigot.gentleman.com';
-      headers['X-Title'] = 'Spigot';
-      body = { model, messages: formattedMessages, stream: true };
-    } else if (provider === 'deepseek') {
-      url = 'https://api.deepseek.com/chat/completions';
-      headers['Authorization'] = `Bearer ${apiKey}`;
-      body = { model, messages: formattedMessages, stream: true };
-    } else if (provider === 'kimi') {
-      url = 'https://api.moonshot.cn/v1/chat/completions';
-      headers['Authorization'] = `Bearer ${apiKey}`;
-      body = { model, messages: formattedMessages, stream: true };
-    } else if (provider === 'minimax') {
-      url = 'https://api.minimax.io/v1/chat/completions';
-      headers['Authorization'] = `Bearer ${apiKey}`;
-      body = { model, messages: formattedMessages, stream: true };
-    } else if (provider === 'qwen') {
-      url = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
-      headers['Authorization'] = `Bearer ${apiKey}`;
-      body = { model, messages: formattedMessages, stream: true };
-    } else if (provider === 'anthropic') {
-      url = 'https://api.anthropic.com/v1/messages';
-      headers['x-api-key'] = apiKey;
-      headers['anthropic-version'] = '2023-06-01';
-      body = { 
-        model, 
-        messages: formattedMessages, 
-        max_tokens: 4000, 
-        stream: true 
-      };
-    } else if (provider === 'gemini') {
-      url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`;
-      
-      const geminiContents = (history || []).map((msg: any) => {
-        const parts: any[] = [{ text: msg.content }];
-        if (msg.image) {
-          let hMimeType = 'image/png';
-          let hBase64Data = '';
-          if (msg.image.startsWith('data:')) {
-            const hParts = msg.image.split(';base64,');
-            if (hParts.length === 2) {
-              hMimeType = hParts[0].replace('data:', '');
-              hBase64Data = hParts[1];
-            }
-          }
-          if (hBase64Data) {
-            parts.push({
-              inlineData: {
-                mimeType: hMimeType,
-                data: hBase64Data
-              }
-            });
-          }
-        }
-        return {
-          role: msg.role === 'assistant' ? 'model' : 'user',
-          parts
-        };
-      });
-
-      const userParts: any[] = [{ text: fullUserPrompt }];
-      if (image && base64Data) {
-        userParts.push({
-          inlineData: {
-            mimeType: mimeType,
-            data: base64Data
-          }
-        });
-      }
-
-      geminiContents.push({
-        role: 'user',
-        parts: userParts
-      });
-      body = { contents: geminiContents };
-    }
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
+    const success = await runAgentLoop({
+      provider,
+      model,
+      apiKey,
+      prompt,
+      contextText,
+      history,
+      image,
+      workspacePath,
+      sendChunk: (chunk: string) => {
+        mainWindow?.webContents.send('ai:stream-chunk', chunk);
+      },
+      sendError: (err: string) => {
+        mainWindow?.webContents.send('ai:stream-error', err);
+      },
+      sendEnd: (aborted?: boolean) => {
+        mainWindow?.webContents.send('ai:stream-end', aborted);
+        activeAbortController = null;
+      },
       signal
     });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`API returned HTTP ${response.status}: ${errText}`);
-    }
-
-    if (!response.body) {
-      throw new Error('Response body is empty');
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder('utf-8');
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-
-        if (provider === 'anthropic') {
-          // Anthropic SSE format
-          if (trimmed.startsWith('data: ')) {
-            try {
-              const dataStr = trimmed.slice(6);
-              if (dataStr.trim() === '[DONE]') continue;
-              const parsed = JSON.parse(dataStr);
-              if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
-                mainWindow?.webContents.send('ai:stream-chunk', parsed.delta.text);
-              }
-            } catch (e) {}
-          }
-        } else if (provider === 'gemini') {
-          // Gemini returns JSON array stream, each chunk is a candidates node
-          try {
-            // Gemini stream can send lines starting with "data: " or direct JSON objects
-            const cleanLine = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed;
-            const parsed = JSON.parse(cleanLine);
-            const content = parsed.candidates?.[0]?.content?.parts?.[0]?.text || '';
-            if (content) {
-              mainWindow?.webContents.send('ai:stream-chunk', content);
-            }
-          } catch (e) {}
-        } else {
-          // OpenAI, DeepSeek, Qwen, Kimi compatible format
-          if (trimmed.startsWith('data: ')) {
-            const dataStr = trimmed.slice(6);
-            if (dataStr.trim() === '[DONE]') continue;
-            try {
-              const parsed = JSON.parse(dataStr);
-              const content = parsed.choices?.[0]?.delta?.content || '';
-              if (content) {
-                mainWindow?.webContents.send('ai:stream-chunk', content);
-              }
-            } catch (e) {}
-          }
-        }
-      }
-    }
-
-    mainWindow?.webContents.send('ai:stream-end');
-    activeAbortController = null;
-    return true;
-
+    return success;
   } catch (err: any) {
     if (err.name === 'AbortError') {
-      mainWindow?.webContents.send('ai:stream-end', true); // Send true to signify aborted
+      mainWindow?.webContents.send('ai:stream-end', true);
     } else {
-      console.error('Error during AI chat completion:', err);
+      console.error('Error during AI agent execution:', err);
       mainWindow?.webContents.send('ai:stream-error', err.message || 'Error desconocido.');
     }
     activeAbortController = null;

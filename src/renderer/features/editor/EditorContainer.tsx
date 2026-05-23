@@ -1,6 +1,7 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import MonacoEditor, { DiffEditor, loader } from '@monaco-editor/react';
 import logoSpigotUrl from '../../assets/logoSpigot.png';
+import { RotateCw, Home, ExternalLink } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import {
   changeLspDocument,
@@ -89,9 +90,114 @@ loader.init().then((monaco) => {
   defineMonacoThemes(monaco);
 });
 
+const BrowserTab: React.FC<{ url: string }> = ({ url }) => {
+  const [currentUrl, setCurrentUrl] = useState('https://google.com');
+  const [inputUrl, setInputUrl] = useState('https://google.com');
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // Sync initial URL
+  useEffect(() => {
+    if (url && url !== 'browser://') {
+      const target = url.replace('browser://', '');
+      if (target && target !== 'web-view') {
+        let formatted = target;
+        if (!/^https?:\/\//i.test(formatted)) {
+          formatted = 'https://' + formatted;
+        }
+        setCurrentUrl(formatted);
+        setInputUrl(formatted);
+      }
+    }
+  }, [url]);
+
+  const handleNavigate = (e: React.FormEvent) => {
+    e.preventDefault();
+    let target = inputUrl.trim();
+    if (!target) return;
+    if (!/^https?:\/\//i.test(target)) {
+      target = 'https://' + target;
+    }
+    setCurrentUrl(target);
+    setInputUrl(target);
+  };
+
+  const handleRefresh = () => {
+    if (iframeRef.current) {
+      iframeRef.current.src = currentUrl;
+    }
+  };
+
+  const handleHome = () => {
+    setCurrentUrl('https://google.com');
+    setInputUrl('https://google.com');
+  };
+
+  return (
+    <div className="flex-1 flex flex-col h-full bg-white select-text relative overflow-hidden">
+      {/* Browser Navbar */}
+      <div className="h-10 bg-zinc-900 border-b border-zinc-800 px-3 flex items-center gap-3 select-none">
+        {/* Navigation actions */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            onClick={handleRefresh}
+            className="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
+            title="Recargar"
+          >
+            <RotateCw className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={handleHome}
+            className="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
+            title="Inicio"
+          >
+            <Home className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* URL Input Form */}
+        <form onSubmit={handleNavigate} className="flex-1 max-w-2xl flex items-center">
+          <div className="flex-1 flex items-center bg-zinc-950 border border-zinc-800 focus-within:border-editor-accent rounded-lg px-3 py-1 text-xs text-zinc-300">
+            <span className="text-zinc-600 mr-1.5 shrink-0 select-none">🌐</span>
+            <input
+              type="text"
+              value={inputUrl}
+              onChange={(e) => setInputUrl(e.target.value)}
+              className="bg-transparent border-none outline-none w-full text-zinc-200 font-sans"
+              placeholder="Escribe una URL (ej: google.com, http://localhost:3000)..."
+            />
+          </div>
+        </form>
+
+        {/* External Link action */}
+        <a
+          href={currentUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors shrink-0 flex items-center gap-1 text-[10px] font-semibold font-sans"
+          title="Abrir en navegador externo"
+        >
+          <span className="hidden sm:inline">Abrir fuera</span>
+          <ExternalLink className="w-3 h-3" />
+        </a>
+      </div>
+
+      {/* Browser Viewframe */}
+      <div className="flex-1 bg-white relative">
+        <iframe
+          ref={iframeRef}
+          src={currentUrl}
+          className="w-full h-full border-none bg-white"
+          sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+          title="Navegador Web"
+        />
+      </div>
+    </div>
+  );
+};
+
 export const EditorContainer: React.FC = () => {
   const {
-    activeTabPath, fileBuffers, updateFileBuffer, selectWorkspace, workspacePath,
+    activeTabPath, fileBuffers, updateFileBuffer, selectWorkspace, createNewProject, workspacePath,
     pendingSelection, setPendingSelection, activeDiffFile, clearDiffFile, imageBuffers,
     theme,
   } = useWorkspaceStore();
@@ -354,16 +460,30 @@ export const EditorContainer: React.FC = () => {
           </div>
 
           {!workspacePath && (
-            <button
-              onClick={selectWorkspace}
-              className="mt-6 bg-white text-black text-xs font-semibold px-4 py-2 rounded-lg shadow hover:bg-zinc-200 active:scale-95 transition-all-custom"
-            >
-              Load Project
-            </button>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={selectWorkspace}
+                className="bg-zinc-800 text-zinc-100 hover:bg-zinc-700 text-xs font-semibold px-4 py-2.5 rounded-lg border border-zinc-700/60 shadow active:scale-95 transition-all-custom"
+              >
+                Cargar Proyecto
+              </button>
+              <button
+                onClick={createNewProject}
+                className="bg-white text-black hover:bg-zinc-200 text-xs font-bold px-4 py-2.5 rounded-lg shadow active:scale-95 transition-all-custom"
+              >
+                Nuevo Proyecto
+              </button>
+            </div>
           )}
         </div>
       </div>
     );
+  }
+
+  const isBrowserActive = activeTabPath?.startsWith('browser://');
+
+  if (isBrowserActive && activeTabPath) {
+    return <BrowserTab url={activeTabPath} />;
   }
 
   const isDiffActive = activeDiffFile !== null && activeDiffFile.filePath === activeTabPath;

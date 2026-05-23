@@ -10,7 +10,8 @@ export const EditorTabs: React.FC = () => {
   return (
     <div className="h-9 bg-editor-sidebar border-b border-editor-border flex items-center overflow-x-auto select-none no-scrollbar">
       {openTabs.map((path) => {
-        const fileName = path.split(/[/\\]/).pop() || '';
+        const isBrowser = path.startsWith('browser://');
+        const fileName = isBrowser ? 'Navegador Web' : (path.split(/[/\\]/).pop() || '');
         const isActive = activeTabPath === path;
         const isDirty = dirtyFiles.includes(path);
         const isDiffActive = activeDiffFile !== null && activeDiffFile.filePath === path;
@@ -25,10 +26,14 @@ export const EditorTabs: React.FC = () => {
                 : 'bg-editor-tabInactive text-editor-textDark hover:bg-zinc-800/60 hover:text-editor-text'
             }`}
           >
-            {/* File Icon or Diff indicator > */}
-            <span className={`font-bold text-[12px] shrink-0 select-none mr-0.5 transition-colors ${isDiffActive ? 'text-amber-500 font-extrabold' : isActive ? 'text-sky-400' : 'text-editor-textDark group-hover:text-sky-400'}`}>
-              &gt;
-            </span>
+            {/* File Icon or Diff indicator > or browser globe */}
+            {isBrowser ? (
+              <span className="text-[11px] shrink-0 mr-0.5 select-none">🌐</span>
+            ) : (
+              <span className={`font-bold text-[12px] shrink-0 select-none mr-0.5 transition-colors ${isDiffActive ? 'text-amber-500 font-extrabold' : isActive ? 'text-sky-400' : 'text-editor-textDark group-hover:text-sky-400'}`}>
+                &gt;
+              </span>
+            )}
             
             {/* File Name */}
             <span className="truncate max-w-[120px]">{fileName}</span>
