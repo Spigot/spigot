@@ -121,7 +121,7 @@ export const FileTree: React.FC = () => {
         </p>
         <button
           onClick={selectWorkspace}
-          className="bg-white text-black text-xs font-semibold px-4 py-2 rounded-lg shadow hover:bg-zinc-200 active:scale-95 transition-all-custom"
+          className="bg-editor-active text-white text-xs font-semibold px-4 py-2 rounded-none shadow-none hover:bg-editor-hover active:scale-95 transition-all-custom"
         >
           Abrir Carpeta
         </button>
@@ -130,8 +130,8 @@ export const FileTree: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col py-2 px-2 gap-2">
-      <div className="px-3 py-2 flex items-center justify-between text-[10px] text-zinc-300 font-bold uppercase tracking-[0.14em] select-none bg-zinc-950/45 border border-zinc-800/80 rounded-xl shadow-sm">
+    <div className="flex flex-col py-1 px-1 gap-1">
+      <div className="flex items-center justify-between text-[10px] text-zinc-300 font-bold uppercase tracking-[0.14em] select-none border-b border-editor-border">
         <div className="min-w-0 flex flex-col leading-tight">
           <span>Archivos</span>
         </div>
@@ -139,21 +139,21 @@ export const FileTree: React.FC = () => {
         <div className="flex items-center gap-1.5 text-zinc-400">
           <button
             onClick={() => setCollapseVersion((version) => version + 1)}
-            className="p-1.5 rounded-lg hover:bg-zinc-800 hover:text-white transition-all-custom"
+            className="p-0.5 rounded-none hover:bg-editor-hover hover:text-white transition-colors"
             title="Colapsar todo"
           >
             <ChevronsUp className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => startCreation('file')}
-            className="p-1.5 rounded-lg hover:bg-zinc-800 hover:text-white transition-all-custom"
+            className="p-0.5 rounded-none hover:bg-editor-hover hover:text-white transition-colors"
             title="Nuevo Archivo"
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => startCreation('directory')}
-            className="p-1.5 rounded-lg hover:bg-zinc-800 hover:text-white transition-all-custom"
+            className="p-0.5 rounded-none hover:bg-editor-hover hover:text-white transition-colors"
             title="Nueva Carpeta"
           >
             <FolderPlus className="w-3.5 h-3.5" />
@@ -161,7 +161,7 @@ export const FileTree: React.FC = () => {
           <button
             onClick={handleDeleteSelected}
             disabled={!selectedNode}
-            className="p-1.5 rounded-lg hover:bg-zinc-800 hover:text-red-300 disabled:opacity-35 disabled:hover:bg-transparent transition-all-custom"
+            className="p-0.5 rounded-none hover:bg-editor-hover hover:text-red-300 disabled:opacity-35 disabled:hover:bg-transparent transition-colors"
             title="Eliminar Seleccionado"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -172,7 +172,7 @@ export const FileTree: React.FC = () => {
       {activeCreation && (
         <form
           onSubmit={handleCreate}
-          className="flex items-center gap-2 py-1.5 px-3 bg-zinc-950/70 border border-zinc-700/80 rounded-xl shadow-inner"
+          className="flex items-center gap-2 py-1 px-2 bg-editor-active/80 border border-editor-border rounded-none"
         >
           {activeCreation.type === 'file' ? (
             <FileCode className="w-4 h-4 text-zinc-300 shrink-0" />
@@ -192,7 +192,7 @@ export const FileTree: React.FC = () => {
       )}
 
       {treeData.length === 0 ? (
-        <div className="px-4 py-5 text-center text-[11px] text-zinc-500 italic border border-zinc-800/70 rounded-xl bg-zinc-950/30">
+        <div className="px-3 py-4 text-center text-[11px] text-zinc-500 italic border border-editor-border rounded-none bg-editor-active/15">
           El directorio está vacío.
         </div>
       ) : (
@@ -211,7 +211,7 @@ export const FileTree: React.FC = () => {
           defaultExpandedIds={[]}
           indent={16}
           animateExpand
-          className="bg-zinc-950/25 border-zinc-800/80 text-zinc-200 shadow-[0_16px_40px_rgba(0,0,0,0.16)] [&_.bg-accent\/80]:bg-zinc-800/90 [&_.hover\:bg-accent\/50:hover]:bg-zinc-800/65 [&_.border-border\/40]:border-zinc-700/45 [&_.text-muted-foreground]:text-zinc-400 [&_.text-sm]:text-[12.5px] [&_.text-sm]:font-semibold [&_.text-sm]:text-zinc-200 [&_.rounded-md]:rounded-lg [&_.py-2]:py-1.5"
+          className="bg-editor-bg text-zinc-200 [&_.bg-accent\/80]:bg-editor-hover [&_.hover\:bg-accent\/50:hover]:bg-editor-hover [&_.border-border\/40]:border-editor-border [&_.text-muted-foreground]:text-zinc-400 [&_.text-sm]:text-[12.5px] [&_.text-sm]:font-normal [&_.text-sm]:text-zinc-200 [&_.rounded-none]:rounded-none [&_.py-1]:py-1"
         />
       )}
     </div>
@@ -219,3 +219,4 @@ export const FileTree: React.FC = () => {
 };
 
 export default FileTree;
+

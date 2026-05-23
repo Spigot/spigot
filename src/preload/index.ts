@@ -106,6 +106,8 @@ contextBridge.exposeInMainWorld('api', {
     getLog: (workspacePath: string) => ipcRenderer.invoke('git:log', workspacePath),
     getAheadBehind: (workspacePath: string) => ipcRenderer.invoke('git:get-ahead-behind', workspacePath),
     push: (workspacePath: string) => ipcRenderer.invoke('git:push', workspacePath),
+    stage: (workspacePath: string, filePath: string) => ipcRenderer.invoke('git:stage', workspacePath, filePath),
+    unstage: (workspacePath: string, filePath: string) => ipcRenderer.invoke('git:unstage', workspacePath, filePath),
   },
   lsp: {
     openDocument: (args: any) => ipcRenderer.invoke('lsp:open-document', args),

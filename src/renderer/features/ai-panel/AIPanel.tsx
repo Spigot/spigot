@@ -371,7 +371,7 @@ export const AIPanel: React.FC = () => {
       />
 
       {/* 2. Top bar header */}
-      <div className="h-9 min-h-[36px] bg-editor-titleBar border-b border-editor-border flex items-center justify-between pl-3 pr-2 select-none app-non-draggable">
+      <div className="h-9 min-h-[36px] bg-editor-sidebar border-b border-editor-border flex items-center justify-between pl-3 pr-2 select-none app-non-draggable">
         <div className="flex items-center gap-1.5 min-w-0">
           <Sparkles className="w-3.5 h-3.5 text-editor-accent shrink-0" />
           
@@ -448,7 +448,7 @@ export const AIPanel: React.FC = () => {
       {/* Chat History Panel Popover */}
       {showHistoryPanel && (
         <div className="absolute top-9 right-2 w-64 bg-editor-bg border border-editor-border rounded-xl shadow-2xl overflow-hidden glass-panel z-50 animate-slide-down select-none max-h-[350px] flex flex-col">
-          <div className="px-3 py-2 border-b border-editor-border bg-editor-titleBar flex items-center justify-between">
+          <div className="px-3 py-2 border-b border-editor-border bg-editor-sidebar flex items-center justify-between">
             <span className="text-[10px] font-bold text-white uppercase tracking-wider">Historial de Chats</span>
             <button 
               onClick={() => setShowHistoryPanel(false)}
@@ -629,11 +629,11 @@ export const AIPanel: React.FC = () => {
       </div>
 
       {/* 4. Bottom Input Area with Premium PromptInputBox */}
-      <div className="p-3 border-t border-editor-border bg-editor-titleBar flex flex-col gap-2 relative">
+      <div className="p-3 border-t border-editor-border bg-editor-sidebar flex flex-col gap-2 relative">
         {/* Slash Command Popover Flotante */}
         {showCommands && (
           <div className="absolute left-3 bottom-[calc(100%+8px)] right-3 bg-editor-bg border border-editor-border rounded-xl shadow-2xl overflow-hidden glass-panel z-50 animate-slide-up select-none max-w-sm">
-            <div className="px-3 py-2 border-b border-editor-border bg-editor-titleBar flex items-center justify-between">
+            <div className="px-3 py-2 border-b border-editor-border bg-editor-sidebar flex items-center justify-between">
               <span className="text-[10px] font-bold text-white uppercase tracking-wider">Comandos del Agente</span>
               <button 
                 onClick={() => setShowCommands(false)}

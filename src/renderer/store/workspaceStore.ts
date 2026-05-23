@@ -7,7 +7,9 @@ export interface FileNode {
   children?: FileNode[];
 }
 
-interface WorkspaceState {
+export type ThemeVariant = 'spigot-dark' | 'grayish-dark' | 'solarized-dark';
+
+export interface WorkspaceState {
   workspacePath: string | null;
   fileTree: FileNode[];
   openTabs: string[]; // Paths of currently open files
@@ -19,6 +21,8 @@ interface WorkspaceState {
   activeDiffFile: { filePath: string; original: string; modified: string } | null;
   gitChangedFiles: string[]; // Absolute paths of files changed in Git
   imageBuffers: Record<string, string>; // Base64 image previews: path -> base64
+  theme: ThemeVariant;
+  setTheme: (theme: ThemeVariant) => void;
 
   selectWorkspace: () => Promise<void>;
   setWorkspacePath: (path: string) => Promise<void>;
@@ -38,6 +42,34 @@ interface WorkspaceState {
   setGitChangedFiles: (files: string[]) => void;
 }
 
+const themeClassMap: Record<WorkspaceState['theme'], string> = {
+  'spigot-dark': 'theme-spigot',
+  'grayish-dark': 'theme-grayish',
+  'solarized-dark': 'theme-solarized',
+};
+
+const getInitialTheme = (): WorkspaceState['theme'] => {
+  if (typeof window === 'undefined') return 'spigot-dark';
+  try {
+    const stored = window.localStorage.getItem('spigot-theme');
+    if (stored === 'spigot-dark' || stored === 'grayish-dark' || stored === 'solarized-dark') {
+      return stored;
+    }
+  } catch {
+    // ignore
+  }
+  return 'spigot-dark';
+};
+
+const applyThemeClass = (theme: WorkspaceState['theme']) => {
+  if (typeof document === 'undefined') return;
+  document.body.classList.remove(...Object.values(themeClassMap));
+  document.body.classList.add(themeClassMap[theme]);
+};
+
+const initialTheme = getInitialTheme();
+applyThemeClass(initialTheme);
+
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   workspacePath: null,
   fileTree: [],
@@ -50,12 +82,22 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   explorerSelectedPath: null,
   activeDiffFile: null,
   gitChangedFiles: [],
+  theme: initialTheme,
 
   setPendingSelection: (selection) => set({ pendingSelection: selection }),
   setExplorerSelectedPath: (path) => set({ explorerSelectedPath: path }),
   setDiffFile: (diffFile) => set({ activeDiffFile: diffFile }),
   clearDiffFile: () => set({ activeDiffFile: null }),
   setGitChangedFiles: (files) => set({ gitChangedFiles: files }),
+  setTheme: (theme) => {
+    set({ theme });
+    try {
+      window.localStorage.setItem('spigot-theme', theme);
+    } catch {
+      // ignore
+    }
+    applyThemeClass(theme);
+  },
 
   restoreLastWorkspace: async () => {
     try {

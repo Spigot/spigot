@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { join, relative } from 'path';
 import { promises as fsPromises, watch, FSWatcher } from 'fs';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { SshSessionConfig, terminalManager } from './terminal';
 import { lspManager } from './lspManager';
 
@@ -913,6 +913,14 @@ ipcMain.handle('ai:stream-chat', async (
 });
 
 // 4. Git Source Control Handlers
+const runGit = (workspacePath: string, args: string[]) =>
+  new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    execFile('git', args, { cwd: workspacePath, maxBuffer: 1024 * 1024 * 10 }, (err, stdout, stderr) => {
+      if (err) reject(err);
+      else resolve({ stdout, stderr });
+    });
+  });
+
 ipcMain.handle('git:status', async (_event, workspacePath: string) => {
   try {
     const { stdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
@@ -931,6 +939,26 @@ ipcMain.handle('git:status', async (_event, workspacePath: string) => {
   } catch (err) {
     console.error('Error running git status:', err);
     return [];
+  }
+});
+
+ipcMain.handle('git:stage', async (_event, workspacePath: string, filePath: string) => {
+  try {
+    await runGit(workspacePath, ['add', '--', filePath]);
+    return { success: true };
+  } catch (err: any) {
+    console.error('Error staging git file:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('git:unstage', async (_event, workspacePath: string, filePath: string) => {
+  try {
+    await runGit(workspacePath, ['restore', '--staged', '--', filePath]);
+    return { success: true };
+  } catch (err: any) {
+    console.error('Error unstaging git file:', err);
+    return { success: false, error: err.message };
   }
 });
 

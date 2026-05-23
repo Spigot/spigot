@@ -1,6 +1,6 @@
 # Dependency Directories
 node_modules/
-
+vscode/
 # Production / Build Outputs
 dist/
 dist-electron/

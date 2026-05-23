@@ -12,13 +12,11 @@ import {
 } from './lspMonacoBridge';
 
 // Define premium Cursor-like Pitch-Black theme configuration
-const defineMonacoTheme = (monaco: any) => {
-  monaco.editor.defineTheme('cursor-dark', {
+const defineMonacoThemes = (monaco: any) => {
+  monaco.editor.defineTheme('spigot-dark', {
     base: 'vs-dark',
     inherit: true,
-    rules: [
-      { token: '', background: '0a0a0a' },
-    ],
+    rules: [{ token: '', background: '0a0a0a' }],
     colors: {
       'editor.background': '#0a0a0a',
       'editor.lineHighlightBackground': '#18181b',
@@ -33,7 +31,49 @@ const defineMonacoTheme = (monaco: any) => {
       'editorSuggestWidget.border': '#1c1c1e',
       'editorSuggestWidget.selectedBackground': '#27272a',
       'editorSuggestWidget.highlightForeground': '#ffffff',
-    }
+    },
+  });
+
+  monaco.editor.defineTheme('grayish-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [{ token: '', background: '14161d' }],
+    colors: {
+      'editor.background': '#14161d',
+      'editor.lineHighlightBackground': '#1f222a',
+      'editorLineNumber.foreground': '#6b7280',
+      'editorLineNumber.activeForeground': '#f8fafc',
+      'editor.selectionBackground': '#2e3342',
+      'editor.inactiveSelectionBackground': '#181c25',
+      'minimap.background': '#10131a',
+      'editorWidget.background': '#181b24',
+      'editorWidget.border': '#343a47',
+      'editorSuggestWidget.background': '#181b24',
+      'editorSuggestWidget.border': '#343a47',
+      'editorSuggestWidget.selectedBackground': '#2e3342',
+      'editorSuggestWidget.highlightForeground': '#f8fafc',
+    },
+  });
+
+  monaco.editor.defineTheme('solarized-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [{ token: '', background: '002b36' }],
+    colors: {
+      'editor.background': '#002b36',
+      'editor.lineHighlightBackground': '#073642',
+      'editorLineNumber.foreground': '#586e75',
+      'editorLineNumber.activeForeground': '#93a1a1',
+      'editor.selectionBackground': '#073642',
+      'editor.inactiveSelectionBackground': '#002b36',
+      'minimap.background': '#002b36',
+      'editorWidget.background': '#073642',
+      'editorWidget.border': '#586e75',
+      'editorSuggestWidget.background': '#073642',
+      'editorSuggestWidget.border': '#586e75',
+      'editorSuggestWidget.selectedBackground': '#073642',
+      'editorSuggestWidget.highlightForeground': '#fdf6e3',
+    },
   });
 };
 
@@ -46,13 +86,14 @@ loader.config({
 
 // Initialize globally as early as possible as fallback
 loader.init().then((monaco) => {
-  defineMonacoTheme(monaco);
+  defineMonacoThemes(monaco);
 });
 
 export const EditorContainer: React.FC = () => {
-  const { 
+  const {
     activeTabPath, fileBuffers, updateFileBuffer, selectWorkspace, workspacePath,
-    pendingSelection, setPendingSelection, activeDiffFile, clearDiffFile, imageBuffers
+    pendingSelection, setPendingSelection, activeDiffFile, clearDiffFile, imageBuffers,
+    theme,
   } = useWorkspaceStore();
 
   const editorRef = useRef<any>(null);
@@ -132,7 +173,7 @@ export const EditorContainer: React.FC = () => {
     monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions(diagnosticsOptions);
     monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions(diagnosticsOptions);
 
-    monaco.editor.setTheme('cursor-dark');
+    monaco.editor.setTheme(theme);
     registerLspCompletionProvider(monaco, getLanguage(activeTabPath), workspacePath);
 
     if (activeTabPath) {
@@ -157,6 +198,7 @@ export const EditorContainer: React.FC = () => {
     editor.updateOptions({
       fontSize: 16,
       fontFamily: 'Consolas, "Courier New", monospace',
+      fontWeight: '400',
       minimap: { enabled: true },
       lineNumbers: 'on',
       roundedSelection: false,
@@ -175,11 +217,12 @@ export const EditorContainer: React.FC = () => {
   };
 
   const handleDiffOnMount = (editor: any, monaco: any) => {
-    monaco.editor.setTheme('cursor-dark');
+    monaco.editor.setTheme(theme);
 
     editor.getModifiedEditor().updateOptions({
       fontSize: 16,
       fontFamily: 'Consolas, "Courier New", monospace',
+      fontWeight: '400',
       minimap: { enabled: true },
       lineNumbers: 'on',
       roundedSelection: false,
@@ -195,6 +238,7 @@ export const EditorContainer: React.FC = () => {
     editor.getOriginalEditor().updateOptions({
       fontSize: 16,
       fontFamily: 'Consolas, "Courier New", monospace',
+      fontWeight: '400',
       minimap: { enabled: false },
       lineNumbers: 'on',
       roundedSelection: false,
@@ -205,6 +249,12 @@ export const EditorContainer: React.FC = () => {
       tabSize: 2,
     });
   };
+
+  useEffect(() => {
+    if (monacoRef.current) {
+      monacoRef.current.editor.setTheme(theme);
+    }
+  }, [theme]);
 
   // Listen for pending selection events (e.g. from Sidebar search matches)
   useEffect(() => {
@@ -391,8 +441,8 @@ export const EditorContainer: React.FC = () => {
           modifiedModelPath={diffModifiedModelPath}
           keepCurrentOriginalModel
           keepCurrentModifiedModel
-          theme="cursor-dark"
-          beforeMount={defineMonacoTheme}
+          theme={theme}
+          beforeMount={defineMonacoThemes}
           onMount={handleDiffOnMount}
           loading={
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-editor-bg gap-3 z-50">
@@ -413,8 +463,8 @@ export const EditorContainer: React.FC = () => {
         language={language}
         path={toFileUri(activeTabPath)} // Align Monaco model URI with LSP document URI.
         value={activeContent}
-        theme="cursor-dark"
-        beforeMount={defineMonacoTheme}
+        theme={theme}
+        beforeMount={defineMonacoThemes}
         onChange={handleEditorChange}
         onMount={handleEditorDidMount}
         options={{

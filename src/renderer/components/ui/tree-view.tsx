@@ -194,7 +194,7 @@ export function TreeView({
           )}
 
           {/* Label */}
-          <span className="text-sm font truncate flex-1">
+          <span className="text-sm font-normal truncate flex-1">
             {node.label}
           </span>
 
