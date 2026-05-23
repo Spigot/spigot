@@ -23,7 +23,8 @@
 
     "paths": {
       "@/*": ["./src/renderer/*"]
-    }
+    },
+    "experimentalDecorators": true
   },
   "include": ["src"]
 }

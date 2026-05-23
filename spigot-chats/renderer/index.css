@@ -1,0 +1,235 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: #0a0a0a;
+    --border: #27272a;
+    --accent: #27272a;
+    --accent-foreground: #ffffff;
+    --muted-foreground: #a1a1aa;
+    --editor-bg: #0a0a0a;
+    --editor-sidebar: #05080a;
+    --editor-activity: #070708;
+    --editor-statusBar: #ffffff;
+    --editor-statusBarBg: #070708;
+    --editor-titleBar: #070708;
+    --editor-panel: #05080a;
+    --editor-border: #1c1c1e;
+    --editor-accent: #ffffff;
+    --editor-text: #e4e4e7;
+    --editor-textDark: #71717a;
+    --editor-hover: #18181b;
+    --editor-active: #27272a;
+    --editor-tabActive: #0e0e0f;
+    --editor-tabInactive: #070708;
+  }
+
+  body.theme-grayish {
+    --background: #121318;
+    --border: #3a3c46;
+    --accent: #4b5563;
+    --accent-foreground: #e5e7eb;
+    --muted-foreground: #9ca3af;
+    --editor-bg: #14161d;
+    --editor-sidebar: #0b0e14;
+    --editor-activity: #10131a;
+    --editor-statusBar: #d1d5db;
+    --editor-statusBarBg: #11151d;
+    --editor-titleBar: #10131a;
+    --editor-panel: #0b0e14;
+    --editor-border: #343a47;
+    --editor-accent: #9ca3af;
+    --editor-text: #d4d4d8;
+    --editor-textDark: #8f92a0;
+    --editor-hover: #22262f;
+    --editor-active: #2a2d38;
+    --editor-tabActive: #181b24;
+    --editor-tabInactive: #11151d;
+  }
+
+  body.theme-solarized {
+    --background: #002b36;
+    --border: #073642;
+    --accent: #268bd2;
+    --accent-foreground: #fdf6e3;
+    --muted-foreground: #586e75;
+    --editor-bg: #002b36;
+    --editor-sidebar: #001f26;
+    --editor-activity: #002b36;
+    --editor-statusBar: #fdf6e3;
+    --editor-statusBarBg: #073642;
+    --editor-titleBar: #073642;
+    --editor-panel: #001f26;
+    --editor-border: #073642;
+    --editor-accent: #b58900;
+    --editor-text: #eee8d5;
+    --editor-textDark: #586e75;
+    --editor-hover: #073642;
+    --editor-active: #002b36;
+    --editor-tabActive: #073642;
+    --editor-tabInactive: #002b36;
+  }
+
+  body {
+    @apply bg-editor-bg text-editor-text font-sans m-0 p-0 overflow-hidden select-none;
+    height: 100vh;
+  }
+
+  /* Custom Scrollbar styled for IDEs */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #27272a;
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3f3f46;
+  }
+}
+
+/* Glassmorphic panel styling for overlays and modals */
+.glass-panel {
+  background: rgba(30, 30, 30, 0.7);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Micro-animations */
+.transition-all-custom {
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@layer components {
+  .spigot-scm-view {
+    contain: layout paint;
+  }
+
+  .spigot-scm-group {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .spigot-scm-group-row {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    height: 24px;
+    padding: 0 10px 0 8px;
+    color: var(--editor-textDark);
+    font-size: 11px;
+    line-height: 24px;
+    text-transform: uppercase;
+  }
+
+  .spigot-scm-group-row:hover {
+    background: var(--editor-hover);
+  }
+
+  .spigot-scm-resource-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 18px;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    height: 28px;
+    min-width: 0;
+    padding: 0 8px 0 22px;
+    color: var(--editor-text);
+    font-size: 13px;
+    line-height: 28px;
+  }
+
+  .spigot-scm-resource-row:hover {
+    background: var(--editor-hover);
+  }
+
+  .spigot-scm-resource-button {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr) 18px;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    overflow: hidden;
+    text-align: left;
+  }
+
+  .spigot-scm-resource-label {
+    display: flex;
+    align-items: baseline;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .spigot-scm-resource-name,
+  .spigot-scm-resource-description {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .spigot-scm-resource-name {
+    flex: 0 1 auto;
+  }
+
+  .spigot-scm-resource-description {
+    flex: 1 1 auto;
+    margin-left: 4px;
+    color: var(--editor-textDark);
+    font-size: 12px;
+  }
+
+  .spigot-scm-resource-status {
+    width: 18px;
+    min-width: 18px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .spigot-scm-resource-action {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    justify-self: end;
+    width: 18px;
+    height: 18px;
+    color: var(--editor-text);
+  }
+
+  .spigot-scm-resource-row:hover .spigot-scm-resource-action {
+    display: flex;
+  }
+
+  .spigot-scm-resource-action:hover {
+    background: var(--editor-hover);
+  }
+}
+
+/* Monaco container adjustments */
+.monaco-editor-wrapper {
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden;
+}
+
+/* Draggable app region for title bar */
+.app-draggable {
+  -webkit-app-region: drag;
+}
+
+.app-non-draggable {
+  -webkit-app-region: no-drag;
+}
