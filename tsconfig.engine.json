@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "types": ["node"],
+    "paths": {
+      "src/*": ["./spigot-chats/*"],
+      "bun:bundle": ["./spigot-chats/shims/bun-bundle.ts"]
+    },
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": [
+    "spigot-chats/engineCompatibilityEntry.ts",
+    "spigot-chats/shims/**/*.ts"
+  ]
+}

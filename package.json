@@ -17,6 +17,7 @@
     "rebuild:native": "electron-builder install-app-deps",
     "rebuild": "corepack pnpm run rebuild:native",
     "test": "vitest run",
+    "engine:check": "tsc -p tsconfig.engine.json",
     "test:e2e": "playwright test",
     "security:audit": "corepack pnpm audit --prod",
     "security:signatures": "npm audit signatures",
