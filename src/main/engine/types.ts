@@ -13,6 +13,10 @@ export type EngineTurnRequest = {
   image?: string | null;
   workspacePath: string;
   signal: AbortSignal;
+  requestToolPermission?: (input: {
+    tool: string;
+    input: unknown;
+  }) => Promise<string | null>;
 };
 
 export type EngineEvent =
@@ -24,6 +28,25 @@ export type EngineEvent =
       name: string;
       status: 'start' | 'progress' | 'end';
       data?: unknown;
+    }
+  | {
+      type: 'permission:request';
+      turnId: string;
+      id: string;
+      tool: string;
+      input: unknown;
+    }
+  | {
+      type: 'permission:result';
+      turnId: string;
+      id: string;
+      granted: boolean;
+    }
+  | {
+      type: 'history:file';
+      turnId: string;
+      path: string;
+      action: 'snapshot' | 'restore';
     }
   | { type: 'bridge'; turnId: string; name: string; data: unknown }
   | { type: 'end'; turnId: string; aborted?: boolean }
