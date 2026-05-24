@@ -374,6 +374,21 @@ function pruneContextAndHistory(
 // 4. Recursive Agent Loop
 // ==========================================
 
+export type AgentRunOptions = {
+  provider: string;
+  model: string;
+  apiKey: string;
+  prompt: string;
+  contextText: string | null;
+  history: any[];
+  image: string | null;
+  workspacePath: string;
+  sendChunk: (chunk: string) => void;
+  sendError: (err: string) => void;
+  sendEnd: (aborted?: boolean) => void;
+  signal: AbortSignal;
+};
+
 export async function runAgentLoop({
   provider,
   model,
@@ -387,20 +402,7 @@ export async function runAgentLoop({
   sendError,
   sendEnd,
   signal
-}: {
-  provider: string;
-  model: string;
-  apiKey: string;
-  prompt: string;
-  contextText: string | null;
-  history: any[];
-  image: string | null;
-  workspacePath: string;
-  sendChunk: (chunk: string) => void;
-  sendError: (err: string) => void;
-  sendEnd: (aborted?: boolean) => void;
-  signal: AbortSignal;
-}): Promise<boolean> {
+}: AgentRunOptions): Promise<boolean> {
   let turn = 0;
   const maxTurns = 8;
 

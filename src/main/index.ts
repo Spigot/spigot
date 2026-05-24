@@ -6,6 +6,10 @@ import { exec, execFile } from 'child_process';
 import { SshSessionConfig, terminalManager } from './terminal';
 import { lspManager } from './lspManager';
 import { runAgentLoop } from './agentRunner';
+import { isSpigotChatsEngineEnabled } from './engine/featureGate';
+import { SpigotChatsEngineAdapter } from './engine/SpigotChatsEngineAdapter';
+import { EngineSessionService } from './engine/EngineSessionService';
+import { mapEngineEventToIpc } from './engine/types';
 
 let mainWindow: BrowserWindow | null = null;
 const workspaceWatchers = new Map<number, FSWatcher>();
@@ -652,12 +656,18 @@ ipcMain.handle('ai:fetch-models', async (_event, provider: string, apiKey: strin
 
 // 3. Unified Stream Chat SSE Handler
 let activeAbortController: AbortController | null = null;
+const engineSessionService = new EngineSessionService(new SpigotChatsEngineAdapter(), {
+  enabled: isSpigotChatsEngineEnabled(process.env.SPIGOT_CHATS_ENGINE),
+  legacyRunner: runAgentLoop,
+});
 
 ipcMain.on('ai:abort-chat', () => {
   if (activeAbortController) {
     activeAbortController.abort();
     activeAbortController = null;
   }
+
+  engineSessionService.abortActiveTurn();
 });
 
 ipcMain.handle('ai:stream-chat', async (
@@ -668,33 +678,35 @@ ipcMain.handle('ai:stream-chat', async (
     activeAbortController.abort();
   }
   activeAbortController = new AbortController();
-  const signal = activeAbortController.signal;
 
   try {
     const storeData = await readStore();
     const workspacePath = storeData.lastWorkspacePath || app.getPath('documents');
 
-    const success = await runAgentLoop({
-      provider,
-      model,
-      apiKey,
-      prompt,
-      contextText,
-      history,
-      image,
-      workspacePath,
-      sendChunk: (chunk: string) => {
-        mainWindow?.webContents.send('ai:stream-chunk', chunk);
+    const success = await engineSessionService.startTurn(
+      {
+        sessionId: 'default',
+        mode: 'chat',
+        provider,
+        model,
+        apiKey,
+        prompt,
+        contextText,
+        history,
+        image,
+        workspacePath,
       },
-      sendError: (err: string) => {
-        mainWindow?.webContents.send('ai:stream-error', err);
+      event => {
+        const mapped = mapEngineEventToIpc(event);
+        if (mapped.channel) {
+          mainWindow?.webContents.send(mapped.channel, mapped.payload);
+        }
+
+        if (event.type === 'end' || event.type === 'error') {
+          activeAbortController = null;
+        }
       },
-      sendEnd: (aborted?: boolean) => {
-        mainWindow?.webContents.send('ai:stream-end', aborted);
-        activeAbortController = null;
-      },
-      signal
-    });
+    );
 
     return success;
   } catch (err: any) {
