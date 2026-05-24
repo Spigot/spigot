@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 
 import type { AgentRunOptions } from '../agentRunner';
+import { PermissionBroker, type PermissionDecision } from './PermissionBroker';
 import type { EngineAdapter } from './SpigotChatsEngineAdapter';
 import type { EngineEvent, EngineEventListener, EngineTurnRequest } from './types';
 
@@ -22,6 +23,8 @@ export type LegacyRunner = (opts: AgentRunOptions) => Promise<boolean>;
 type ActiveTurn = {
   turnId: string;
   abortController: AbortController;
+  permissionBroker: PermissionBroker;
+  emit: EngineEventListener;
 };
 
 export class EngineSessionService {
@@ -43,7 +46,7 @@ export class EngineSessionService {
 
     const abortController = new AbortController();
     const turnId = randomUUID();
-    this.activeTurn = { turnId, abortController };
+    const permissionBroker = new PermissionBroker();
 
     const emit = (event: EngineEvent) => {
       if (event.type === 'end' || event.type === 'error') {
@@ -53,6 +56,8 @@ export class EngineSessionService {
       onEvent(event);
     };
 
+    this.activeTurn = { turnId, abortController, permissionBroker, emit };
+
     if (!this.options.enabled && this.options.legacyRunner) {
       return this.runLegacy(input, turnId, abortController.signal, emit);
     }
@@ -61,6 +66,36 @@ export class EngineSessionService {
       ...input,
       turnId,
       signal: abortController.signal,
+      requestToolPermission: async ({ tool, input: permissionInput }) => {
+        const active = this.activeTurn;
+        if (!active || active.turnId !== turnId) {
+          return null;
+        }
+
+        const pending = active.permissionBroker.requestPermission({
+          turnId,
+          tool,
+          input: permissionInput,
+        });
+
+        active.emit({
+          type: 'permission:request',
+          turnId,
+          id: pending.request.id,
+          tool,
+          input: permissionInput,
+        });
+
+        const result = await pending.promise;
+        active.emit({
+          type: 'permission:result',
+          turnId,
+          id: pending.request.id,
+          granted: result.granted,
+        });
+
+        return result.granted ? pending.request.id : null;
+      },
     };
 
     const success = await this.adapter.startTurn(request, emit);
@@ -78,6 +113,14 @@ export class EngineSessionService {
     this.activeTurn.abortController.abort();
     this.adapter.abortTurn(this.activeTurn.turnId);
     this.activeTurn = null;
+  }
+
+  resolvePermissionRequest(requestId: string, decision: PermissionDecision): boolean {
+    if (!this.activeTurn) {
+      return false;
+    }
+
+    return this.activeTurn.permissionBroker.resolvePermission({ requestId, decision });
   }
 
   private async runLegacy(

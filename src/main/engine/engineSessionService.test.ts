@@ -145,4 +145,46 @@ describe('EngineSessionService', () => {
     expect(legacyRunner).toHaveBeenCalledTimes(1);
     expect(events).toEqual(['content', 'end']);
   });
+
+  it('emits inline permission request/result events and resolves grant', async () => {
+    const adapter = {
+      startTurn: vi.fn(async (request, onEvent) => {
+        const permissionId = await request.requestToolPermission?.({
+          tool: 'read_file',
+          input: { filePath: 'README.md' },
+        });
+        onEvent({ type: 'content', turnId: request.turnId, text: permissionId ? 'granted' : 'denied' });
+        onEvent({ type: 'end', turnId: request.turnId, aborted: false });
+        return true;
+      }),
+      abortTurn: vi.fn(),
+    };
+
+    const service = new EngineSessionService(adapter);
+    const events: string[] = [];
+
+    const run = service.startTurn(
+      {
+        sessionId: 's1',
+        mode: 'chat',
+        provider: 'openai',
+        model: 'gpt-5',
+        apiKey: 'k',
+        prompt: 'hello',
+        contextText: null,
+        history: [],
+        workspacePath: 'C:/repo',
+      },
+      event => {
+        events.push(event.type);
+        if (event.type === 'permission:request') {
+          service.resolvePermissionRequest(event.id, 'grant');
+        }
+      },
+    );
+
+    const success = await run;
+    expect(success).toBe(true);
+    expect(events).toEqual(['permission:request', 'permission:result', 'content', 'end']);
+  });
 });
