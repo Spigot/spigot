@@ -13,6 +13,7 @@ export type EngineTurnRequest = {
   image?: string | null;
   workspacePath: string;
   signal: AbortSignal;
+  fileHistory?: Array<{ path: string; action: 'snapshot' | 'restore' }>;
   requestToolPermission?: (input: {
     tool: string;
     input: unknown;
