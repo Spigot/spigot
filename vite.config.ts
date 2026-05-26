@@ -8,6 +8,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, './src/renderer'),
+      src: resolve(__dirname, './spigot-chats'),
+      'bun:bundle': resolve(__dirname, './spigot-chats/shims/bun-bundle.ts'),
     },
   },
   plugins: [
