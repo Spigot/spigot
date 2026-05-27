@@ -725,7 +725,7 @@ ipcMain.handle('ai:stream-chat', async (
 const runGit = (workspacePath: string, args: string[]) =>
   new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
     execFile('git', args, { cwd: workspacePath, maxBuffer: 1024 * 1024 * 10 }, (err, stdout, stderr) => {
-      if (err) reject(err);
+      if (err) reject(Object.assign(err, { stdout, stderr }));
       else resolve({ stdout, stderr });
     });
   });
@@ -828,16 +828,12 @@ ipcMain.handle('git:current-branch', async (_event, workspacePath: string) => {
 
 ipcMain.handle('git:commit', async (_event, workspacePath: string, message: string) => {
   try {
-    const { stdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-      exec('git add -A && git commit -m "' + message.replace(/"/g, '\\"') + '"', { cwd: workspacePath }, (err, stdout, stderr) => {
-        if (err) reject(err);
-        else resolve({ stdout, stderr });
-      });
-    });
-    return { success: true, output: stdout };
+    await runGit(workspacePath, ['add', '-A']);
+    const { stdout, stderr } = await runGit(workspacePath, ['commit', '-m', message]);
+    return { success: true, output: `${stdout}${stderr}`.trim() };
   } catch (err: any) {
     console.error('Error running git commit:', err);
-    return { success: false, error: err.message };
+    return { success: false, error: err.stderr || err.message };
   }
 });
 
@@ -896,15 +892,59 @@ ipcMain.handle('git:get-ahead-behind', async (_event, workspacePath: string) => 
 
 ipcMain.handle('git:push', async (_event, workspacePath: string) => {
   try {
-    const { stdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-      exec('git push', { cwd: workspacePath }, (err, stdout, stderr) => {
-        if (err) reject(err);
+    let pushArgs = ['push'];
+
+    try {
+      await runGit(workspacePath, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
+    } catch {
+      const { stdout: branchStdout } = await runGit(workspacePath, ['branch', '--show-current']);
+      const branch = branchStdout.trim();
+      if (branch) {
+        pushArgs = ['push', '--set-upstream', 'origin', branch];
+      }
+    }
+
+    const { stdout, stderr } = await runGit(workspacePath, pushArgs);
+    return { success: true, output: `${stdout}${stderr}`.trim() };
+  } catch (err: any) {
+    console.error('Error running git push:', err);
+    return { success: false, error: err.stderr || err.message };
+  }
+});
+
+ipcMain.handle('git:create-pull-request', async (_event, workspacePath: string, args: {
+  title: string;
+  body: string;
+  base?: string;
+  draft?: boolean;
+}) => {
+  try {
+    const base = args.base?.trim() || 'main';
+    const prArgs = [
+      'pr',
+      'create',
+      '--base',
+      base,
+      '--title',
+      args.title.trim(),
+      '--body',
+      args.body.trim() || 'Ready for review.',
+    ];
+
+    if (args.draft) {
+      prArgs.push('--draft');
+    }
+
+    const { stdout, stderr } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      execFile('gh', prArgs, { cwd: workspacePath, maxBuffer: 1024 * 1024 * 10 }, (err, stdout, stderr) => {
+        if (err) reject(Object.assign(err, { stdout, stderr }));
         else resolve({ stdout, stderr });
       });
     });
-    return { success: true, output: stdout };
+
+    return { success: true, url: stdout.trim(), output: `${stdout}${stderr}`.trim() };
   } catch (err: any) {
-    console.error('Error running git push:', err);
-    return { success: false, error: err.message };
+    console.error('Error creating pull request:', err);
+    return { success: false, error: err.stderr || err.message };
   }
 });

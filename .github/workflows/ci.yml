@@ -66,6 +66,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Rebuild Electron runtime
+        run: pnpm rebuild electron
+
       - name: Run Vite production build check (Prepare for E2E)
         run: pnpm run build:electron
 

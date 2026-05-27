@@ -1,6 +1,6 @@
 import React from 'react';
 import { useLayoutStore, SidebarTab } from '../../store/layoutStore';
-import { Files, Search, Blocks, Terminal, GitBranch, Bot } from 'lucide-react';
+import { Files, Search, Terminal, GitBranch, Bot, GitPullRequest } from 'lucide-react';
 
 export const ActivityBar: React.FC = () => {
   const { 
@@ -13,7 +13,7 @@ export const ActivityBar: React.FC = () => {
     { id: 'explorer' as SidebarTab, icon: Files, label: 'Explorador' },
     { id: 'search' as SidebarTab, icon: Search, label: 'Buscar' },
     { id: 'source-control' as SidebarTab, icon: GitBranch, label: 'Control de Código Fuente' },
-    { id: 'extensions' as SidebarTab, icon: Blocks, label: 'Extensiones' },
+    { id: 'pull-request' as SidebarTab, icon: GitPullRequest, label: 'Crear pull request' },
   ];
 
   return (
@@ -40,6 +40,7 @@ export const ActivityBar: React.FC = () => {
             </button>
           );
         })}
+
       </div>
 
       {/* Bottom Option Triggers */}

@@ -109,6 +109,8 @@ contextBridge.exposeInMainWorld('api', {
     push: (workspacePath: string) => ipcRenderer.invoke('git:push', workspacePath),
     stage: (workspacePath: string, filePath: string) => ipcRenderer.invoke('git:stage', workspacePath, filePath),
     unstage: (workspacePath: string, filePath: string) => ipcRenderer.invoke('git:unstage', workspacePath, filePath),
+    createPullRequest: (workspacePath: string, args: { title: string; body: string; base?: string; draft?: boolean }) =>
+      ipcRenderer.invoke('git:create-pull-request', workspacePath, args),
   },
   lsp: {
     openDocument: (args: any) => ipcRenderer.invoke('lsp:open-document', args),

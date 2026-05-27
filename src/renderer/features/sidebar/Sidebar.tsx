@@ -3,7 +3,7 @@ import { useLayoutStore } from '../../store/layoutStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { FileTree } from './FileTree';
 import { SourceControlView } from './SourceControlView';
-import { Search, Replace, FileCode, Check, Folder, RefreshCw } from 'lucide-react';
+import { GitPullRequest, Loader2, Search, Replace, FileCode, Check, Folder, RefreshCw } from 'lucide-react';
 import { buildSearchRegex, collectSearchableFilePaths, MAX_SEARCH_FILE_BYTES, MAX_SEARCH_RESULTS, searchInContent } from './searchEngine';
 import type { SearchMatch } from './searchEngine';
 
@@ -24,6 +24,12 @@ export const Sidebar: React.FC = () => {
   const [results, setResults] = useState<SearchMatch[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const searchRunIdRef = useRef(0);
+  const [pullRequestTitle, setPullRequestTitle] = useState('');
+  const [pullRequestBody, setPullRequestBody] = useState('');
+  const [pullRequestBase, setPullRequestBase] = useState('main');
+  const [isDraftPullRequest, setIsDraftPullRequest] = useState(false);
+  const [isCreatingPullRequest, setIsCreatingPullRequest] = useState(false);
+  const [pullRequestFeedback, setPullRequestFeedback] = useState('');
 
   // Resize handler
   const handleResizeMouseDown = (e: React.MouseEvent) => {
@@ -242,6 +248,67 @@ export const Sidebar: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    if (activeSidebarTab !== 'pull-request' || !workspacePath) return;
+
+    let isMounted = true;
+
+    const loadPullRequestDraft = async () => {
+      try {
+        const [branch, diff] = await Promise.all([
+          (window as any).api.git.getCurrentBranch(workspacePath),
+          (window as any).api.git.getDiff(workspacePath, ''),
+        ]);
+
+        if (!isMounted) return;
+
+        const branchName = branch || 'main';
+        setPullRequestTitle((current) => current || branchName.replace(/[-_/]+/g, ' ').replace(/\b\w/g, (char: string) => char.toUpperCase()));
+        setPullRequestBody((current) => current || [
+          '## Summary',
+          '- Describe the change here.',
+          '',
+          '## Verification',
+          diff?.trim() ? '- Pending local verification.' : '- No local diff detected.',
+        ].join('\n'));
+      } catch {
+        // Keep the form editable even if Git metadata is unavailable.
+      }
+    };
+
+    loadPullRequestDraft();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeSidebarTab, workspacePath]);
+
+  const handleCreatePullRequest = async () => {
+    if (!workspacePath || !pullRequestTitle.trim()) return;
+
+    setIsCreatingPullRequest(true);
+    setPullRequestFeedback('');
+
+    try {
+      const res = await (window as any).api.git.createPullRequest(workspacePath, {
+        title: pullRequestTitle.trim(),
+        body: pullRequestBody.trim(),
+        base: pullRequestBase.trim() || 'main',
+        draft: isDraftPullRequest,
+      });
+
+      if (res.success) {
+        setPullRequestFeedback(`Pull request created: ${res.url}`);
+      } else {
+        setPullRequestFeedback(`Error: ${res.error}`);
+      }
+    } catch (err: any) {
+      setPullRequestFeedback(`Error: ${err.message || 'Unable to create pull request.'}`);
+    } finally {
+      setIsCreatingPullRequest(false);
+    }
+  };
+
   if (!isSidebarOpen) return null;
 
   return (
@@ -261,7 +328,7 @@ export const Sidebar: React.FC = () => {
           {activeSidebarTab === 'explorer' && 'EXPLORADOR'}
           {activeSidebarTab === 'search' && 'BUSCAR'}
           {activeSidebarTab === 'source-control' && 'CODIGO FUENTE'}
-          {activeSidebarTab === 'extensions' && 'EXTENSIONES'}
+          {activeSidebarTab === 'pull-request' && 'PULL REQUEST'}
           {activeSidebarTab === 'settings' && 'CONFIGURACIÓN'}
         </span>
         {activeSidebarTab === 'explorer' && (
@@ -477,31 +544,79 @@ export const Sidebar: React.FC = () => {
         <SourceControlView />
       )}
 
-      {activeSidebarTab === 'extensions' && (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
-            {/* Premium Mock Extensions list */}
-            {[
-              { name: 'Python LSP', desc: 'Soporte inteligente para Python', author: 'Microsoft', inst: true },
-              { name: 'GitLens', desc: 'Visualización del historial de Git', author: 'GitKraken', inst: false },
-              { name: 'Prettier', desc: 'Formateador de código automático', author: 'Prettier Org', inst: true },
-              { name: 'Dracula Theme', desc: 'Tema oscuro premium', author: 'Dracula', inst: false },
-            ].map((ext) => (
-              <div key={ext.name} className="p-2.5 bg-editor-bg rounded-none border border-editor-border flex flex-col gap-1.5 hover:border-editor-textDark transition-all-custom">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="text-xs font-semibold text-white">{ext.name}</h3>
-                    <p className="text-[10px] text-editor-textDark font-medium">por {ext.author}</p>
-                  </div>
-                  <button className={`text-[10px] font-semibold px-2 py-0.5 rounded-none transition-all-custom ${
-                    ext.inst ? 'bg-editor-active text-white' : 'bg-editor-bg text-editor-textDark hover:bg-editor-hover'
-                  }`}>
-                    {ext.inst ? 'Instalado' : 'Instalar'}
-                  </button>
-                </div>
-                <p className="text-[10px] text-editor-textDark leading-relaxed">{ext.desc}</p>
+      {activeSidebarTab === 'pull-request' && (
+        <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
+          <div className="rounded-lg border border-editor-border bg-editor-bg/50 p-3">
+            <div className="flex items-center gap-2 border-b border-editor-border pb-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-editor-active text-editor-accent">
+                <GitPullRequest className="h-4 w-4" />
               </div>
-            ))}
+              <div className="min-w-0">
+                <h3 className="text-[13px] font-semibold text-editor-text">Create Pull Request</h3>
+                <p className="text-[11px] text-editor-textDark">Create it from Spigot without leaving the editor.</p>
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-col gap-3">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-editor-textDark">Base branch</span>
+                <input
+                  value={pullRequestBase}
+                  onChange={(event) => setPullRequestBase(event.target.value)}
+                  className="rounded-md border border-editor-border bg-editor-sidebar px-3 py-2 text-[12px] text-editor-text outline-none focus:border-editor-accent"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-editor-textDark">Title</span>
+                <input
+                  value={pullRequestTitle}
+                  onChange={(event) => setPullRequestTitle(event.target.value)}
+                  placeholder="feat: add a focused change"
+                  className="rounded-md border border-editor-border bg-editor-sidebar px-3 py-2 text-[12px] text-editor-text outline-none focus:border-editor-accent"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-editor-textDark">Description</span>
+                <textarea
+                  value={pullRequestBody}
+                  onChange={(event) => setPullRequestBody(event.target.value)}
+                  rows={10}
+                  className="min-h-[180px] resize-y rounded-md border border-editor-border bg-editor-sidebar px-3 py-2 font-mono text-[12px] leading-5 text-editor-text outline-none focus:border-editor-accent"
+                />
+              </label>
+
+              <label className="flex items-center gap-2 text-[12px] text-editor-text">
+                <input
+                  type="checkbox"
+                  checked={isDraftPullRequest}
+                  onChange={(event) => setIsDraftPullRequest(event.target.checked)}
+                  className="accent-editor-accent"
+                />
+                Create as draft
+              </label>
+
+              <button
+                type="button"
+                onClick={handleCreatePullRequest}
+                disabled={isCreatingPullRequest || !workspacePath || !pullRequestTitle.trim()}
+                className="flex h-9 items-center justify-center gap-2 rounded-md bg-editor-accent px-3 text-[13px] font-semibold text-black hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isCreatingPullRequest ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitPullRequest className="h-4 w-4" />}
+                Create Pull Request
+              </button>
+
+              {pullRequestFeedback && (
+                <div className={`rounded-md border px-3 py-2 text-[12px] leading-5 ${
+                  pullRequestFeedback.startsWith('Error')
+                    ? 'border-red-500/40 bg-red-950/30 text-red-400'
+                    : 'border-emerald-500/40 bg-emerald-950/30 text-emerald-400'
+                }`}>
+                  {pullRequestFeedback}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

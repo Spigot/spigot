@@ -187,6 +187,7 @@ export const AgentModeView: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const diffFiles = useMemo(() => parseUnifiedDiffFiles(diffText), [diffText]);
+  const hasDiffChanges = diffStats.added > 0 || diffStats.deleted > 0;
 
   // Re-sync chats when project changes to ensure isolation
   useEffect(() => {
@@ -906,10 +907,12 @@ export const AgentModeView: React.FC = () => {
                 >
                   <FilePlus className="w-4 h-4 text-editor-textDark" />
                   <span className="flex-1 text-left">Cambios</span>
-                  <span className="ml-auto flex items-center gap-1 font-mono text-[12px] tabular-nums">
-                    <span className="text-emerald-400">+{diffStats.added}</span>
-                    <span className="text-red-400">-{diffStats.deleted}</span>
-                  </span>
+                  {hasDiffChanges && (
+                    <span className="ml-auto flex items-center gap-1 font-mono text-[12px] tabular-nums">
+                      <span className="text-emerald-400">+{diffStats.added}</span>
+                      <span className="text-red-400">-{diffStats.deleted}</span>
+                    </span>
+                  )}
                 </button>
                 
                 <button className="flex items-center gap-2.5 px-2 py-1.5 rounded hover:bg-white/10 text-editor-text transition-colors text-[13px]">
@@ -955,10 +958,12 @@ export const AgentModeView: React.FC = () => {
                 <div className="min-w-0 flex-1 text-[13px] text-editor-textDark">
                   Cambios locales
                 </div>
-                <div className="flex items-center gap-1 font-mono text-[13px] tabular-nums">
-                  <span className="text-emerald-400">+{diffStats.added}</span>
-                  <span className="text-red-400">-{diffStats.deleted}</span>
-                </div>
+                {hasDiffChanges && (
+                  <div className="flex items-center gap-1 font-mono text-[13px] tabular-nums">
+                    <span className="text-emerald-400">+{diffStats.added}</span>
+                    <span className="text-red-400">-{diffStats.deleted}</span>
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={() => setIsChangesPanelOpen(false)}

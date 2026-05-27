@@ -30,6 +30,11 @@ type GitCommit = {
   branch: string;
 };
 
+type AheadBehindCounts = {
+  ahead: number;
+  behind: number;
+};
+
 type SourceControlResource = GitFile & {
   indexStatus: string;
   workTreeStatus: string;
@@ -55,6 +60,27 @@ const getStatusLabel = (status: string) => {
 };
 
 const normalizePath = (path: string) => path.replace(/\\/g, '/');
+
+const isRateLimitError = (message: string) => (
+  message.includes('HTTP 429')
+  || message.includes('rate_limit_error')
+  || message.toLowerCase().includes('usage limit exceeded')
+);
+
+const createFallbackCommitMessage = (diff: string) => {
+  const changedFiles = diff
+    .split('\n')
+    .filter((line) => line.startsWith('diff --git '))
+    .map((line) => line.match(/^diff --git a\/(.+) b\/(.+)$/)?.[2])
+    .filter(Boolean) as string[];
+
+  if (changedFiles.length === 1) {
+    const fileName = changedFiles[0].split('/').pop()?.replace(/\.[^.]+$/, '');
+    return fileName ? `chore: update ${fileName}` : 'chore: update local changes';
+  }
+
+  return 'chore: update local changes';
+};
 
 export const SourceControlView: React.FC = () => {
   const {
@@ -82,8 +108,8 @@ export const SourceControlView: React.FC = () => {
   const [sourceControlHeight, setSourceControlHeight] = useState(68);
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
 
-  const refreshGitStatus = async () => {
-    if (!workspacePath) return;
+  const refreshGitStatus = async (): Promise<AheadBehindCounts> => {
+    if (!workspacePath) return { ahead: 0, behind: 0 };
     setIsLoadingGit(true);
     try {
       const [files, branch, log, counts] = await Promise.all([
@@ -97,8 +123,10 @@ export const SourceControlView: React.FC = () => {
       setCurrentBranch(branch || 'main');
       setGitLog(log || []);
       setAheadCount(counts?.ahead || 0);
+      return counts || { ahead: 0, behind: 0 };
     } catch (err) {
       console.error('Error fetching git source control state:', err);
+      return { ahead: 0, behind: 0 };
     } finally {
       setIsLoadingGit(false);
     }
@@ -181,8 +209,9 @@ export const SourceControlView: React.FC = () => {
     if (!workspacePath) return;
     setIsGeneratingCommit(true);
     setCommitFeedback('');
+    let diff = '';
     try {
-      const diff = await (window as any).api.git.getDiff(workspacePath, '');
+      diff = await (window as any).api.git.getDiff(workspacePath, '');
       if (!diff || !diff.trim()) {
         setCommitFeedback('Error: There are no saved local changes to commit.');
         return;
@@ -195,7 +224,14 @@ export const SourceControlView: React.FC = () => {
       setCommitFeedback('Commit message generated.');
     } catch (err: any) {
       console.error('Failed generating commit message:', err);
-      setCommitFeedback(`Error: ${err.message || 'Failed to generate commit message.'}`);
+      const errorMessage = err.message || 'Failed to generate commit message.';
+      if (isRateLimitError(errorMessage)) {
+        setCommitMessage(createFallbackCommitMessage(diff));
+        setCommitFeedback('AI usage limit reached. Drafted a fallback commit message locally.');
+        return;
+      }
+
+      setCommitFeedback(`Error: ${errorMessage}`);
     } finally {
       setIsGeneratingCommit(false);
     }
@@ -211,9 +247,13 @@ export const SourceControlView: React.FC = () => {
       const res = await (window as any).api.git.commit(workspacePath, commitMessage.trim());
       if (res.success) {
         setCommitMessage('');
-        setCommitFeedback('Commit completed.');
-        await refreshGitStatus();
-        window.setTimeout(() => setCommitFeedback(''), 3000);
+        const counts = await refreshGitStatus();
+        setCommitFeedback(
+          counts.ahead > 0
+            ? `Commit completed. ${counts.ahead} commit${counts.ahead === 1 ? '' : 's'} ready to sync.`
+            : 'Commit completed.'
+        );
+        window.setTimeout(() => setCommitFeedback(''), 4000);
       } else {
         setCommitFeedback(`Error: ${res.error}`);
       }
@@ -231,7 +271,7 @@ export const SourceControlView: React.FC = () => {
     try {
       const res = await (window as any).api.git.push(workspacePath);
       if (res.success) {
-        setCommitFeedback('Pushed to remote.');
+        setCommitFeedback('Synced with remote.');
         await refreshGitStatus();
         window.setTimeout(() => setCommitFeedback(''), 3000);
       } else {
@@ -357,7 +397,7 @@ export const SourceControlView: React.FC = () => {
           <div className="flex h-[35px] shrink-0 items-center gap-2 border-b border-editor-border px-3 text-[12px] tracking-wide text-editor-textDark">
             <GitBranch className="h-3.5 w-3.5" />
             <span className="min-w-0 flex-1 truncate font-semibold">{currentBranch}</span>
-            {aheadCount > 0 && <span className="text-editor-text">?{aheadCount}</span>}
+            {aheadCount > 0 && <span className="text-editor-text">↑{aheadCount}</span>}
             <button
               type="button"
               onClick={refreshGitStatus}
@@ -423,7 +463,7 @@ export const SourceControlView: React.FC = () => {
                     className="mt-2 flex h-[26px] w-full items-center justify-center gap-1 rounded-[2px] bg-editor-active text-[13px] text-white hover:bg-editor-hover disabled:bg-editor-active disabled:text-editor-textDark"
                   >
                     {isPushing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUp className="h-3.5 w-3.5" />}
-                    Sync Changes
+                    Sync Changes ({aheadCount})
                   </button>
                 )}
 
