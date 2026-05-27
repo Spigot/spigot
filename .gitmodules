@@ -1,0 +1,6 @@
+[submodule "tools/vendor/engram"]
+	path = tools/vendor/engram
+	url = https://github.com/Spigot/engram.git
+[submodule "tools/vendor/gentle-ai"]
+	path = tools/vendor/gentle-ai
+	url = https://github.com/Spigot/gentle-ai.git
