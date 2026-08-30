@@ -10,28 +10,53 @@ import { useLayoutStore } from '../../store/layoutStore';
 import { compileContext } from '../ai-panel/contextCompiler';
 import ConsolePanel from '../terminal/ConsolePanel';
 
-// Helper to parse <think> blocks
-function parseThinking(content: string) {
+interface ParsedThought {
+  thought: string;
+  response: string;
+  isThinking: boolean;
+}
+
+function parseThinking(content: string): ParsedThought {
+  let thought = '';
+  let response = '';
+  let isThinking = false;
+
+  let temp = content;
   const startTag = '<think>';
   const endTag = '</think>';
 
-  const startIndex = content.indexOf(startTag);
-  if (startIndex === -1) {
-    return { thought: '', response: content, isThinking: false };
+  while (temp.length > 0) {
+    const startIndex = temp.indexOf(startTag);
+    if (startIndex === -1) {
+      response += temp;
+      break;
+    }
+
+    response += temp.slice(0, startIndex);
+    temp = temp.slice(startIndex + startTag.length);
+
+    const endIndex = temp.indexOf(endTag);
+    if (endIndex === -1) {
+      thought += temp;
+      isThinking = true;
+      break;
+    }
+
+    thought += temp.slice(0, endIndex) + '\n';
+    temp = temp.slice(endIndex + endTag.length);
   }
 
-  const endIndex = content.indexOf(endTag);
-  if (endIndex === -1) {
-    const thought = content.slice(startIndex + startTag.length);
-    return { thought, response: '', isThinking: true };
-  }
-
-  const thought = content.slice(startIndex + startTag.length, endIndex);
-  const response = content.slice(endIndex + endTag.length);
-  return { thought, response: response.trim(), isThinking: false };
+  return {
+    thought: thought.trim(),
+    response: response.trim(),
+    isThinking
+  };
 }
 
-const ThoughtBlock: React.FC<{ thought: string; isThinking: boolean }> = ({ thought, isThinking }) => {
+const ThoughtBlock: React.FC<{
+  thought: string;
+  isThinking: boolean;
+}> = ({ thought, isThinking }) => {
   const [isOpen, setIsOpen] = useState(false);
 
   if (!thought.trim() && isThinking) {
@@ -43,30 +68,75 @@ const ThoughtBlock: React.FC<{ thought: string; isThinking: boolean }> = ({ thou
     );
   }
 
+  const renderThoughtLine = (line: string, index: number) => {
+    const isExecuting = line.includes('🔧 Ejecutando herramienta');
+    const isCompleted = line.includes('✅ Herramienta') || line.includes('completada');
+    const isWarning = line.includes('⚠️');
+
+    if (isExecuting) {
+      const toolMatch = line.match(/`([^`]+)`/);
+      const toolName = toolMatch ? toolMatch[1] : 'herramienta';
+      return (
+        <div key={index} className="flex items-center gap-2 py-1 px-1.5 text-zinc-400 text-[10.5px] font-sans">
+          <Loader2 className="w-3 h-3 animate-spin text-sky-400 shrink-0" />
+          <span>Ejecutando <code className="px-1.5 py-0.5 rounded bg-zinc-800/80 font-mono text-[9.5px] text-sky-300 border border-zinc-700/30 font-bold">{toolName}</code> en el workspace...</span>
+        </div>
+      );
+    }
+
+    if (isCompleted) {
+      const toolMatch = line.match(/`([^`]+)`/);
+      const toolName = toolMatch ? toolMatch[1] : 'herramienta';
+      return (
+        <div key={index} className="flex items-center gap-2 py-1 px-1.5 text-zinc-300 text-[10.5px] font-sans">
+          <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+          <span>Herramienta <code className="px-1.5 py-0.5 rounded bg-emerald-950/30 font-mono text-[9.5px] text-emerald-300 border border-emerald-900/30 font-bold">{toolName}</code> completada con éxito.</span>
+        </div>
+      );
+    }
+
+    if (isWarning) {
+      return (
+        <div key={index} className="flex items-start gap-2 py-1 px-1.5 text-amber-300 text-[10.5px] font-sans">
+          <span className="shrink-0">⚠️</span>
+          <span>{line.replace('⚠️', '').trim()}</span>
+        </div>
+      );
+    }
+
+    return (
+      <div key={index} className="text-zinc-500 text-[10.5px] font-mono leading-relaxed pl-1.5 border-l border-zinc-800/80 py-0.5 my-0.5 select-text selection:bg-zinc-800">
+        {line}
+      </div>
+    );
+  };
+
+  const thoughtLines = thought.split('\n').filter(l => l.trim().length > 0);
+
   return (
-    <div className="mb-3 border border-editor-border/40 rounded-lg overflow-hidden bg-editor-hover/10">
+    <div className="mb-3 border border-editor-border/40 rounded-xl overflow-hidden bg-editor-hover/10 shadow-sm transition-all duration-300">
       <button
-        onClick={() => !isThinking && setIsOpen(!isOpen)}
-        disabled={isThinking}
-        className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-editor-hover/20 text-[10px] text-editor-textDark font-medium transition-colors select-none"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-3 py-2 hover:bg-editor-hover/20 text-[10.5px] text-editor-textDark font-semibold transition-colors select-none"
       >
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           {isThinking ? (
             <Loader2 className="w-3 h-3 animate-spin text-editor-accent" />
           ) : (
-            <Brain className="w-3 h-3 text-editor-accent" />
+            <Brain className="w-3.5 h-3.5 text-editor-accent" />
           )}
-          <span>{isThinking ? 'Pensando...' : 'Proceso de pensamiento'}</span>
+          <span className="text-zinc-300">{isThinking ? 'Agente ejecutando tareas...' : 'Proceso de pensamiento y comandos'}</span>
         </div>
-        {!isThinking && (
-          <span className="text-[9px] uppercase tracking-wider text-editor-textDark/60">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[9px] uppercase tracking-wider text-editor-textDark/60 font-bold">
             {isOpen ? 'Ocultar' : 'Mostrar'}
           </span>
-        )}
+          <ChevronDown className={`w-3.5 h-3.5 text-editor-textDark/60 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+        </div>
       </button>
-      {isOpen && !isThinking && (
-        <div className="px-3 py-2 border-t border-editor-border/20 text-[10px] text-editor-textDark leading-relaxed font-mono whitespace-pre-wrap select-text selection:bg-zinc-800 bg-editor-hover/5">
-          {thought}
+      {isOpen && (
+        <div className="px-3 py-2 border-t border-editor-border/20 bg-editor-hover/5 flex flex-col gap-1">
+          {thoughtLines.map((line, idx) => renderThoughtLine(line, idx))}
         </div>
       )}
     </div>

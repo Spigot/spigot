@@ -8,7 +8,7 @@ import { buildSearchRegex, collectSearchableFilePaths, MAX_SEARCH_FILE_BYTES, MA
 import type { SearchMatch } from './searchEngine';
 
 export const Sidebar: React.FC = () => {
-  const { activeSidebarTab, isSidebarOpen, sidebarWidth, setSidebarWidth } = useLayoutStore();
+  const { activeSidebarTab, isSidebarOpen, sidebarWidth } = useLayoutStore();
   const { 
     activeTabPath, fileBuffers, fileTree, updateFileBuffer, openFile, openTabs, setPendingSelection,
     workspacePath, theme, setTheme
@@ -30,27 +30,6 @@ export const Sidebar: React.FC = () => {
   const [isDraftPullRequest, setIsDraftPullRequest] = useState(false);
   const [isCreatingPullRequest, setIsCreatingPullRequest] = useState(false);
   const [pullRequestFeedback, setPullRequestFeedback] = useState('');
-
-  // Resize handler
-  const handleResizeMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startWidth = sidebarWidth;
-
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaX = moveEvent.clientX - startX;
-      const newWidth = Math.max(160, Math.min(600, startWidth + deltaX));
-      setSidebarWidth(newWidth);
-    };
-
-    const handleMouseUp = () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  };
 
   // Perform search matches recursively or active-only
   const performSearch = async (runId: number) => {
@@ -314,28 +293,22 @@ export const Sidebar: React.FC = () => {
   return (
     <aside 
       style={{ width: `${sidebarWidth}px` }}
-      className="bg-editor-sidebar border-r border-editor-border flex flex-col select-none z-30 relative animate-fade-in shadow-[inset_-1px_0_0_rgba(255,255,255,0.02)]"
+      className="bg-editor-sidebar border border-editor-border rounded-[8px] flex flex-col select-none z-30 relative animate-fade-in shadow-sm shrink-0 overflow-hidden"
     >
-      {/* Drag Resize Handle */}
-      <div
-        onMouseDown={handleResizeMouseDown}
-        className="absolute top-0 right-0 bottom-0 w-1.5 cursor-ew-resize bg-transparent hover:bg-editor-accent/30 z-30 transition-colors"
-      />
-
-      {/* Sidebar Header showing current active tab title */}
-      <div className="h-11 border-b border-editor-border flex items-center justify-between px-4 bg-editor-active/25 shrink-0 select-none">
-        <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-300">
+      {/* Sidebar Header showing current active tab title (VS Code Style) */}
+      <div className="h-[35px] min-h-[35px] border-b border-editor-border flex items-center justify-between px-3 bg-editor-sidebar shrink-0 select-none">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-editor-text">
           {activeSidebarTab === 'explorer' && 'EXPLORADOR'}
           {activeSidebarTab === 'search' && 'BUSCAR'}
-          {activeSidebarTab === 'source-control' && 'CODIGO FUENTE'}
+          {activeSidebarTab === 'source-control' && 'CONTROL DE CÓDIGO'}
           {activeSidebarTab === 'pull-request' && 'PULL REQUEST'}
           {activeSidebarTab === 'settings' && 'CONFIGURACIÓN'}
         </span>
         {activeSidebarTab === 'explorer' && (
           <button 
             onClick={handleOpenExplorer}
-            className="p-1 rounded-none text-zinc-400 hover:text-zinc-200 transition-colors"
-            title="Abrir en Explorador de Archivos"
+            className="p-1 rounded text-editor-textDark hover:text-editor-text hover:bg-editor-hover transition-colors"
+            title="Abrir carpeta en el explorador del sistema"
           >
             <Folder className="w-3.5 h-3.5" />
           </button>
@@ -343,10 +316,8 @@ export const Sidebar: React.FC = () => {
       </div>
 
       {activeSidebarTab === 'explorer' && (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto">
-            <FileTree />
-          </div>
+        <div className="flex-1 flex flex-col overflow-hidden bg-editor-sidebar">
+          <FileTree />
         </div>
       )}
 

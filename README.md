@@ -80,4 +80,12 @@ La seguridad es un pilar fundamental en Spigot:
 
 ---
 
+## 💖 Agradecimientos / Acknowledgements
+
+Este proyecto utiliza como base el trabajo y las herramientas creadas por [Gentleman-Programming](https://github.com/Gentleman-Programming/), a quien agradecemos enormemente su gran aporte al ecosistema de desarrollo y sus herramientas especializadas para agentes de IA:
+- **Engram**: Su solución para la gestión persistente de memoria y contexto en agentes de IA.
+- **Gentle AI**: Su ecosistema diseñado para facilitar el desarrollo de flujos y agentes inteligentes.
+
+---
+
 *Spigot está pensado para brindar una experiencia de programación sin fricciones, rápida y fuertemente apoyada por inteligencia artificial.*

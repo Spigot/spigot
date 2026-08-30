@@ -5,7 +5,7 @@ import { useTerminalStore } from '../../store/terminalStore';
 import logoSpigotUrl from '../../assets/logoSpigot.png';
 import { 
   Minus, Square, X, Plus, Folder, Save, LogOut,
-  Terminal, Settings, LayoutGrid,
+  Terminal, Settings,
   ZoomIn, ZoomOut, RefreshCw, Server, Key, HelpCircle, Github, FolderClosed, Bot
 } from 'lucide-react';
 
@@ -188,23 +188,16 @@ export const TitleBar: React.FC = () => {
   };
 
   return (
-    <header className="h-10 bg-editor-titleBar flex items-center justify-between border-b border-editor-border select-none app-draggable z-50 px-2">
+    <header className="h-[30px] min-h-[30px] bg-editor-titleBar flex items-center justify-between border-b border-editor-border select-none app-draggable z-50 px-2 font-sans">
       {/* Left: Brand Icon, navigation and menus */}
-      <div className="flex items-center gap-2.5 h-full app-non-draggable">
+      <div className="flex items-center gap-1.5 h-full app-non-draggable">
         {/* Brand Icon */}
-        <div className="flex items-center text-editor-accent pl-1">
-          <img src={logoSpigotUrl} alt="Spigot" width="16" height="16" className="w-4.5 h-4.5 select-none pointer-events-none object-contain opacity-80" />
+        <div className="flex items-center pl-0.5 pr-1">
+          <img src={logoSpigotUrl} alt="Spigot" width="16" height="16" className="w-4 h-4 select-none pointer-events-none object-contain" />
         </div>
 
-
-
-        {/* Layout indicator */}
-        <button title="Layout" className="p-1 text-editor-textDark hover:text-editor-text rounded transition-colors mr-2">
-          <LayoutGrid className="w-4 h-4" />
-        </button>
-        
         {/* Top-bar Navigation Menus */}
-        <nav className="hidden lg:flex items-center gap-1 text-[12px] text-editor-text font-medium relative">
+        <nav className="hidden lg:flex items-center gap-0.5 text-[12px] text-[#cccccc] font-normal relative">
           {['Archivo', 'Ver', 'Proyectos', 'Tools', 'MCP', 'SSH', 'Ayuda'].map((menu) => {
             const hasDropdown = menu === 'Archivo' || menu === 'Proyectos' || menu === 'Ver' || menu === 'SSH' || menu === 'Ayuda';
             const isOpen = activeDropdown === menu;
@@ -227,8 +220,8 @@ export const TitleBar: React.FC = () => {
                       }
                     }
                   }}
-                  className={`px-2 py-0.5 rounded transition-all-custom hover:bg-editor-hover hover:text-editor-text ${
-                    isOpen ? 'bg-editor-active text-white' : ''
+                  className={`px-2 py-0.5 rounded-[3px] transition-colors hover:bg-white/10 hover:text-white ${
+                    isOpen ? 'bg-white/15 text-white' : 'text-[#cccccc]'
                   }`}
                 >
                   {menu}
@@ -549,12 +542,12 @@ export const TitleBar: React.FC = () => {
       </div>
 
       {/* Center: Workspace name and file name indicator */}
-      <div className="text-[12.5px] font-normal flex items-center gap-1.5 absolute left-1/2 -translate-x-1/2 pointer-events-none">
-        <span className="font-semibold text-editor-text">{workspaceName}</span>
+      <div className="text-[12px] font-normal flex items-center gap-1.5 absolute left-1/2 -translate-x-1/2 pointer-events-none select-none">
+        <span className="font-normal text-white">{workspaceName}</span>
         {activeFileName && (
           <>
-            <span className="text-editor-textDark font-light">&gt;</span>
-            <span className="text-editor-textDark font-medium">{activeFileName}</span>
+            <span className="text-[#858585] font-light">-</span>
+            <span className="text-[#cccccc] font-normal">{activeFileName}</span>
           </>
         )}
       </div>
@@ -564,7 +557,7 @@ export const TitleBar: React.FC = () => {
         {updateReady && (
           <button
             onClick={handleInstallUpdate}
-            className="h-7 px-3 mr-2 rounded-md bg-emerald-500 text-black text-[12px] font-semibold hover:bg-emerald-400 transition-all-custom shadow-lg shadow-emerald-950/30"
+            className="h-6 px-2.5 mr-2 rounded bg-emerald-500 text-black text-[11px] font-semibold hover:bg-emerald-400 transition-colors shadow-sm"
             title={updateReady.version ? `Instalar versión ${updateReady.version}` : 'Instalar actualización descargada'}
           >
             Actualizar versión
@@ -572,21 +565,21 @@ export const TitleBar: React.FC = () => {
         )}
 
         {/* Quick Drawer Toggles */}
-        <div className="flex items-center border-r border-editor-border pr-1.5 mr-1 text-editor-textDark">
+        <div className="flex items-center border-r border-editor-border pr-1 mr-1 text-[#858585]">
           <button
             onClick={toggleAgentMode}
             title="Spy Agent"
-            className={`p-1 rounded flex items-center justify-center hover:bg-editor-hover hover:text-editor-accent transition-all-custom mr-0.5 ${
-              isAgentModeOpen ? 'text-white bg-editor-active' : ''
+            className={`p-1 rounded flex items-center justify-center hover:bg-white/10 hover:text-white transition-colors mr-0.5 ${
+              isAgentModeOpen ? 'text-white bg-white/15' : ''
             }`}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 507.965 507.965"
-              className="w-4 h-4"
+              className="w-3.5 h-3.5"
               fill="currentColor"
               stroke="none"
-              style={{ display: 'block', width: '16px', height: '16px' }}
+              style={{ display: 'block', width: '14px', height: '14px' }}
             >
               <path d="M507.083,238.166c-2.7-7.3-10.8-11-18.1-8.3c-20,7.4-40.4,13.7-61,19.1l-35.7-172.3c-8-40.8-50.9-67.6-93.8-52.7c-28.7,10.3-60.3,10.3-89,0c-40.6-13.9-84,8.8-93.9,52.7l-35.6,172.3c-20.7-5.4-41-11.7-61-19.1c-7.3-2.7-15.4,1-18.1,8.3c-2.7,7.3,1,15.4,8.3,18.1c160.5,57.6,328.9,57.8,489.6,0C506.083,253.566,509.783,245.466,507.083,238.166z M107.483,255.566l13.1-63.2h35.6c7.8,0,14.1-6.3,14.1-14.1c0-7.8-6.3-14.1-14.1-14.1h-29.7l5.8-28.2h59.2c7.8,0,14.1-6.3,14.1-14.1s-6.3-14.1-14.1-14.1h-53.3l5.2-25.3c4.4-22.1,29-41.2,56.7-31.8c34.8,12.5,73.2,12.5,108,0c29.3-9.5,52.5,10.7,56.7,31.8l35.8,173.1C304.483,276.466,203.483,276.466,107.483,255.566z" />
               <path d="M450.183,399.566c-8.2-34.8-46.9-61.3-93.3-61.3c-44.3,0-81.4,24-91.9,56.4c-7.7-1.8-14.1-1.8-21.8,0c-10.5-32.4-47.7-56.5-92-56.5c-46.5,0-85.2,26.5-93.3,61.3c-6.2,1.5-10.9,7-10.9,13.7s4.7,12.2,10.9,13.7c8.2,34.8,46.9,61.3,93.3,61.3c48,0,87.7-28.3,94-64.8c7-2.4,10.7-2.5,17.6-0.1c6.2,36.6,46,64.9,94.1,64.9c46.5,0,85.1-26.5,93.3-61.3c6.2-1.5,10.9-7,10.9-13.7C461.083,406.666,456.383,401.066,450.183,399.566z M151.183,460.066c-36.2,0-66.8-21.4-66.8-46.7c0-25.3,30.6-46.8,66.8-46.8s66.8,21.4,66.8,46.8C217.983,438.766,187.383,460.066,151.183,460.066z M356.783,460.066c-36.2,0-66.8-21.4-66.8-46.7c0-25.3,30.6-46.8,66.8-46.8c36.2,0,66.8,21.4,66.8,46.8C423.583,438.766,392.983,460.066,356.783,460.066z" />
@@ -596,22 +589,22 @@ export const TitleBar: React.FC = () => {
           <button 
             onClick={toggleConsole}
             title="Consola/Terminal (Toggle)"
-            className={`p-1 rounded hover:bg-editor-hover hover:text-editor-accent transition-all-custom mr-0.5 ${
-              isConsoleOpen ? 'text-white bg-editor-active' : ''
+            className={`p-1 rounded hover:bg-white/10 hover:text-white transition-colors mr-0.5 ${
+              isConsoleOpen ? 'text-white bg-white/15' : ''
             }`}
           >
-            <Terminal className="w-4 h-4" />
+            <Terminal className="w-3.5 h-3.5" />
           </button>
 
           {!isAgentModeOpen && (
             <button 
               onClick={toggleAIPanel}
               title="Modo Agente (Toggle)"
-              className={`p-1 rounded hover:bg-editor-hover hover:text-editor-accent transition-all-custom mr-0.5 ${
-                isAIPanelOpen ? 'text-amber-500 hover:text-amber-400 bg-editor-active' : ''
+              className={`p-1 rounded hover:bg-white/10 hover:text-white transition-colors mr-0.5 ${
+                isAIPanelOpen ? 'text-amber-400 bg-white/15' : ''
               }`}
             >
-              <Bot className="w-4 h-4" />
+              <Bot className="w-3.5 h-3.5" />
             </button>
           )}
           <button 
@@ -620,33 +613,33 @@ export const TitleBar: React.FC = () => {
               setSidebarOpen(true);
             }}
             title="Ajustes (Toggle)"
-            className="p-1 rounded hover:bg-editor-hover hover:text-editor-accent transition-all-custom"
+            className="p-1 rounded hover:bg-white/10 hover:text-white transition-colors"
           >
-            <Settings className="w-4 h-4" />
+            <Settings className="w-3.5 h-3.5" />
           </button>
         </div>
 
         {/* OS Standard Controls */}
         <button
           onClick={handleMinimize}
-          className="w-11 h-full flex items-center justify-center hover:bg-editor-sidebar/45 text-editor-textDark hover:text-editor-accent transition-all-custom"
+          className="w-11 h-full flex items-center justify-center hover:bg-white/10 text-[#cccccc] hover:text-white transition-colors"
           title="Minimizar"
         >
-          <Minus className="w-4 h-4" />
+          <Minus className="w-3.5 h-3.5" />
         </button>
         <button
           onClick={handleMaximize}
-          className="w-11 h-full flex items-center justify-center hover:bg-editor-sidebar/45 text-editor-textDark hover:text-editor-accent transition-all-custom"
+          className="w-11 h-full flex items-center justify-center hover:bg-white/10 text-[#cccccc] hover:text-white transition-colors"
           title="Maximizar"
         >
-          <Square className="w-4 h-4" />
+          <Square className="w-3 h-3" />
         </button>
         <button
           onClick={handleClose}
-          className="w-11 h-full flex items-center justify-center hover:bg-red-650/85 text-editor-textDark hover:text-editor-accent transition-all-custom"
+          className="w-11 h-full flex items-center justify-center hover:bg-[#e81123] text-[#cccccc] hover:text-white transition-colors"
           title="Cerrar"
         >
-          <X className="w-4 h-4" />
+          <X className="w-3.5 h-3.5" />
         </button>
       </div>
 

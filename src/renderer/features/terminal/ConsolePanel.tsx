@@ -89,7 +89,7 @@ const getFileParts = (filePath: string, rootPath: string | null) => {
 export const ConsolePanel: React.FC = () => {
   const { 
     isConsoleOpen, isConsoleMaximized, toggleConsole, toggleConsoleMaximize,
-    consoleHeight, setConsoleHeight 
+    consoleHeight 
   } = useLayoutStore();
   const { sessions, activeSessionId, createSession, closeSession, setActiveSession } = useTerminalStore();
   const { workspacePath, theme, openFile, setPendingSelection } = useWorkspaceStore();
@@ -104,26 +104,6 @@ export const ConsolePanel: React.FC = () => {
       ...prev,
       [uri]: !prev[uri]
     }));
-  };
-
-  const handleResizeMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    const startY = e.clientY;
-    const startHeight = consoleHeight;
-
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaY = moveEvent.clientY - startY;
-      const newHeight = Math.max(100, Math.min(600, startHeight - deltaY));
-      setConsoleHeight(newHeight);
-    };
-
-    const handleMouseUp = () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
   };
 
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -307,16 +287,8 @@ export const ConsolePanel: React.FC = () => {
   return (
     <div 
       style={isConsoleMaximized ? { height: '100%' } : { height: `${consoleHeight}px` }}
-      className="bg-editor-panel border-t border-editor-border flex flex-col z-20 relative"
+      className="bg-editor-panel border-t border-editor-border rounded-b-[8px] flex flex-col z-20 relative overflow-hidden"
     >
-      {/* Drag Resize Handle */}
-      {!isConsoleMaximized && (
-        <div
-          onMouseDown={handleResizeMouseDown}
-          className="absolute top-0 left-0 right-0 h-1.5 cursor-ns-resize bg-transparent hover:bg-editor-accent/30 z-30 transition-colors"
-        />
-      )}
-
       {/* Header menu with VS Code-style Tabs */}
       <div className="h-8 bg-editor-sidebar border-b border-editor-border px-4 flex items-center justify-between select-none">
         {/* Left: View Tabs (PROBLEMS / TERMINAL) */}

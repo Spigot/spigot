@@ -733,7 +733,7 @@ const runGit = (workspacePath: string, args: string[]) =>
 ipcMain.handle('git:status', async (_event, workspacePath: string) => {
   try {
     const { stdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-      exec('git status --porcelain', { cwd: workspacePath }, (err, stdout, stderr) => {
+      exec('git status --porcelain --ignored=matching', { cwd: workspacePath }, (err, stdout, stderr) => {
         if (err && !stdout) reject(err);
         else resolve({ stdout, stderr });
       });
@@ -742,7 +742,11 @@ ipcMain.handle('git:status', async (_event, workspacePath: string) => {
     const lines = stdout.split('\n').filter(Boolean);
     return lines.map(line => {
       const status = line.slice(0, 2);
-      const filePath = line.slice(3).trim();
+      let rawPath = line.slice(3).trim();
+      if (rawPath.startsWith('"') && rawPath.endsWith('"')) {
+        rawPath = rawPath.slice(1, -1);
+      }
+      const filePath = rawPath.replace(/\/$/, '');
       return { status, filePath };
     });
   } catch (err) {
@@ -840,30 +844,85 @@ ipcMain.handle('git:commit', async (_event, workspacePath: string, message: stri
 ipcMain.handle('git:log', async (_event, workspacePath: string) => {
   try {
     const { stdout } = await new Promise<{ stdout: string }>((resolve) => {
-      exec('git log -n 10 --oneline --decorate', { cwd: workspacePath }, (err, stdout) => {
+      exec('git log -n 35 --pretty=format:"%h|%d|%s|%an|%cr|%p"', { cwd: workspacePath }, (err, stdout) => {
         if (err) resolve({ stdout: '' });
         else resolve({ stdout });
       });
     });
     const lines = stdout.split('\n').filter(Boolean);
     return lines.map(line => {
-      const firstSpace = line.indexOf(' ');
-      const hash = line.slice(0, firstSpace);
-      let rest = line.slice(firstSpace + 1);
-      
-      let branchName = '';
-      if (rest.startsWith('(')) {
-        const closingParen = rest.indexOf(')');
-        const refStr = rest.slice(1, closingParen);
-        const headMatch = refStr.match(/HEAD -> ([^,)]+)/);
-        if (headMatch) {
-          branchName = headMatch[1];
-        } else {
-          branchName = refStr.split(',')[0].trim();
-        }
-        rest = rest.slice(closingParen + 1).trim();
+      const parts = line.split('|');
+      const hash = parts[0] || '';
+      const rawDecorations = parts[1] || '';
+      const message = parts[2] || '';
+      const author = parts[3] || '';
+      const date = parts[4] || '';
+      const rawParents = parts[5] || '';
+      const parents = rawParents.trim().split(/\s+/).filter(Boolean);
+
+      let branch = '';
+      const tags: string[] = [];
+      if (rawDecorations.trim()) {
+        const cleaned = rawDecorations.trim().replace(/^\(/, '').replace(/\)$/, '');
+        cleaned.split(',').forEach(item => {
+          const trimmed = item.trim();
+          if (trimmed.startsWith('HEAD ->')) {
+            branch = trimmed.replace('HEAD ->', '').trim();
+          } else if (trimmed.startsWith('tag:')) {
+            tags.push(trimmed.replace('tag:', '').trim());
+          } else if (trimmed && !branch) {
+            branch = trimmed;
+          }
+        });
       }
-      return { hash, message: rest, branch: branchName };
+
+      return { hash, message, branch, author, date, parents, tags };
+    });
+  } catch {
+    return [];
+  }
+});
+
+ipcMain.handle('git:repositories', async (_event, workspacePath: string) => {
+  try {
+    const rootName = workspacePath.split(/[/\\]/).pop() || 'root';
+    const repos = [{ name: rootName, path: workspacePath, isRoot: true }];
+    const { stdout } = await new Promise<{ stdout: string }>((resolve) => {
+      exec('git submodule status', { cwd: workspacePath }, (err, stdout) => {
+        if (err) resolve({ stdout: '' });
+        else resolve({ stdout });
+      });
+    });
+    const lines = stdout.split('\n').filter(Boolean);
+    for (const line of lines) {
+      const parts = line.trim().split(/\s+/);
+      const subPath = parts[1];
+      if (subPath) {
+        const name = subPath.split(/[/\\]/).pop() || subPath;
+        const fullPath = `${workspacePath}/${subPath}`.replace(/\/+/g, '/');
+        repos.push({ name, path: fullPath, isRoot: false });
+      }
+    }
+    return repos;
+  } catch {
+    return [{ name: workspacePath.split(/[/\\]/).pop() || 'root', path: workspacePath, isRoot: true }];
+  }
+});
+
+ipcMain.handle('git:commit-files', async (_event, workspacePath: string, hash: string) => {
+  try {
+    const { stdout } = await new Promise<{ stdout: string }>((resolve) => {
+      exec(`git show --name-status --oneline "${hash}"`, { cwd: workspacePath }, (err, stdout) => {
+        if (err) resolve({ stdout: '' });
+        else resolve({ stdout });
+      });
+    });
+    const lines = stdout.split('\n').filter(Boolean).slice(1);
+    return lines.map(line => {
+      const parts = line.trim().split(/\s+/);
+      const status = parts[0] || 'M';
+      const filePath = parts.slice(1).join(' ') || '';
+      return { status, filePath };
     });
   } catch {
     return [];

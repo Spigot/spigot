@@ -489,19 +489,41 @@ export async function runAgentLoop({
           headers['X-Title'] = 'Spigot';
         }
 
+        const openaiMessages: any[] = [];
+        for (const m of formattedMessages) {
+          if (m.tool_results) {
+            for (const r of m.tool_results) {
+              openaiMessages.push({
+                role: 'tool',
+                tool_call_id: r.tool_use_id,
+                name: r.name,
+                content: r.content
+              });
+            }
+          } else if (m.tool_calls) {
+            openaiMessages.push({
+              role: 'assistant',
+              content: m.content || null,
+              tool_calls: m.tool_calls.map((tc: any) => ({
+                id: tc.id,
+                type: 'function',
+                function: {
+                  name: tc.name,
+                  arguments: typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input)
+                }
+              }))
+            });
+          } else {
+            openaiMessages.push({
+              role: m.role,
+              content: m.content
+            });
+          }
+        }
+
         body = {
           model,
-          messages: formattedMessages.map(m => {
-            if (m.role === 'tool') return m;
-            if (m.tool_calls) {
-              return {
-                role: 'assistant',
-                content: m.content || null,
-                tool_calls: m.tool_calls
-              };
-            }
-            return { role: m.role, content: m.content };
-          }),
+          messages: openaiMessages,
           tools: openAITools,
           tool_choice: 'auto',
           stream: true

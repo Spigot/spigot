@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import TitleBar from './features/title-bar/TitleBar';
 import Sidebar from './features/sidebar/Sidebar';
@@ -14,11 +14,100 @@ import { useLayoutStore } from './store/layoutStore';
 import { useGlobalShortcuts } from './features/keyboard/useGlobalShortcuts';
 import './index.css';
 
+const VerticalSash: React.FC<{
+  onResize: (delta: number) => void;
+}> = ({ onResize }) => {
+  const startXRef = useRef(0);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    startXRef.current = e.clientX;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - startXRef.current;
+      startXRef.current = moveEvent.clientX;
+      onResize(deltaX);
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  return (
+    <div
+      onMouseDown={handleMouseDown}
+      className="w-2 h-full cursor-ew-resize flex items-center justify-center select-none group shrink-0 transition-colors z-30"
+      title="Arrastrar para redimensionar"
+    >
+      <div className="flex flex-col gap-[2px] items-center justify-center opacity-40 group-hover:opacity-100 transition-opacity">
+        <span className="w-[1.5px] h-[1.5px] rounded-full bg-[#e2c08d]" />
+        <span className="w-[1.5px] h-[1.5px] rounded-full bg-[#e2c08d]" />
+        <span className="w-[1.5px] h-[1.5px] rounded-full bg-[#e2c08d]" />
+      </div>
+    </div>
+  );
+};
+
+const HorizontalSash: React.FC<{
+  onResize: (delta: number) => void;
+}> = ({ onResize }) => {
+  const startYRef = useRef(0);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    startYRef.current = e.clientY;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaY = moveEvent.clientY - startYRef.current;
+      startYRef.current = moveEvent.clientY;
+      onResize(deltaY);
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  return (
+    <div
+      onMouseDown={handleMouseDown}
+      className="h-2 w-full cursor-ns-resize flex items-center justify-center select-none group shrink-0 transition-colors z-30"
+      title="Arrastrar para redimensionar"
+    >
+      <div className="flex gap-[2px] items-center justify-center opacity-40 group-hover:opacity-100 transition-opacity">
+        <span className="w-[1.5px] h-[1.5px] rounded-full bg-[#e2c08d]" />
+        <span className="w-[1.5px] h-[1.5px] rounded-full bg-[#e2c08d]" />
+        <span className="w-[1.5px] h-[1.5px] rounded-full bg-[#e2c08d]" />
+      </div>
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const restoreLastWorkspace = useWorkspaceStore((state) => state.restoreLastWorkspace);
   const workspacePath = useWorkspaceStore((state) => state.workspacePath);
   const refreshWorkspace = useWorkspaceStore((state) => state.refreshWorkspace);
   const isAgentModeOpen = useLayoutStore((state) => state.isAgentModeOpen);
+
+  const isSidebarOpen = useLayoutStore((state) => state.isSidebarOpen);
+  const setSidebarWidth = useLayoutStore((state) => state.setSidebarWidth);
+
+  const isAIPanelOpen = useLayoutStore((state) => state.isAIPanelOpen);
+  const setAIPanelWidth = useLayoutStore((state) => state.setAIPanelWidth);
+
+  const isConsoleOpen = useLayoutStore((state) => state.isConsoleOpen);
+  const isConsoleMaximized = useLayoutStore((state) => state.isConsoleMaximized);
+  const setConsoleHeight = useLayoutStore((state) => state.setConsoleHeight);
+
   useGlobalShortcuts();
 
   useEffect(() => {
@@ -57,29 +146,61 @@ const App: React.FC = () => {
         <AgentModeView />
       ) : (
         <>
-          {/* Main Workspace Layout */}
-          <div className="flex-1 flex overflow-hidden w-full relative">
+          {/* Main Workspace Layout with subtle card separation and rounded corners */}
+          <div className="flex-1 flex overflow-hidden w-full relative p-1.5 bg-editor-bg items-stretch">
             {/* Vertical Left Activity Bar (Files, Search, etc.) */}
             <ActivityBar />
 
+            {/* Gap between ActivityBar and Sidebar */}
+            <div className="w-1.5 shrink-0" />
+
             {/* Dynamic Left Sidebar panel (Filetree, Search, etc.) */}
-            <Sidebar />
+            {isSidebarOpen && (
+              <>
+                <Sidebar />
+                <VerticalSash
+                  onResize={(delta) => {
+                    const current = useLayoutStore.getState().sidebarWidth;
+                    setSidebarWidth(Math.max(160, Math.min(600, current + delta)));
+                  }}
+                />
+              </>
+            )}
 
             {/* Center/Right Main Editor and Console Panel */}
-            <main className="flex-1 flex flex-col overflow-hidden relative">
-              
+            <main className="flex-1 flex flex-col overflow-hidden relative min-h-0 rounded-[8px] border border-editor-border bg-editor-bg shadow-sm">
               {/* Editor Header tabs & Buffer View container */}
               <div className="flex-1 flex flex-col overflow-hidden min-h-0 relative">
                 <EditorTabs />
                 <EditorContainer />
               </div>
 
+              {/* Horizontal Sash between Editor and Console */}
+              {isConsoleOpen && !isConsoleMaximized && (
+                <HorizontalSash
+                  onResize={(delta) => {
+                    const current = useLayoutStore.getState().consoleHeight;
+                    setConsoleHeight(Math.max(100, Math.min(600, current - delta)));
+                  }}
+                />
+              )}
+
               {/* Integrated terminal console drawer panel */}
               <ConsolePanel />
             </main>
 
             {/* Rightmost AI Agent Panel (with dynamic resizer) */}
-            <AIPanel />
+            {isAIPanelOpen && (
+              <>
+                <VerticalSash
+                  onResize={(delta) => {
+                    const current = useLayoutStore.getState().aiPanelWidth;
+                    setAIPanelWidth(Math.max(260, Math.min(700, current - delta)));
+                  }}
+                />
+                <AIPanel />
+              </>
+            )}
           </div>
 
           {/* 3. Bottom Status Bar */}
@@ -89,7 +210,6 @@ const App: React.FC = () => {
     </div>
   );
 };
-
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

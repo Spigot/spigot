@@ -100,11 +100,13 @@ contextBridge.exposeInMainWorld('api', {
   },
   git: {
     getStatus: (workspacePath: string) => ipcRenderer.invoke('git:status', workspacePath),
+    getRepositories: (workspacePath: string) => ipcRenderer.invoke('git:repositories', workspacePath),
     getDiff: (workspacePath: string, filePath: string) => ipcRenderer.invoke('git:diff', workspacePath, filePath),
     showOriginal: (workspacePath: string, filePath: string) => ipcRenderer.invoke('git:show-original', workspacePath, filePath),
     getCurrentBranch: (workspacePath: string) => ipcRenderer.invoke('git:current-branch', workspacePath),
     commit: (workspacePath: string, message: string) => ipcRenderer.invoke('git:commit', workspacePath, message),
     getLog: (workspacePath: string) => ipcRenderer.invoke('git:log', workspacePath),
+    getCommitFiles: (workspacePath: string, hash: string) => ipcRenderer.invoke('git:commit-files', workspacePath, hash),
     getAheadBehind: (workspacePath: string) => ipcRenderer.invoke('git:get-ahead-behind', workspacePath),
     push: (workspacePath: string) => ipcRenderer.invoke('git:push', workspacePath),
     stage: (workspacePath: string, filePath: string) => ipcRenderer.invoke('git:stage', workspacePath, filePath),

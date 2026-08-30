@@ -20,6 +20,7 @@ export interface WorkspaceState {
   explorerSelectedPath: string | null;
   activeDiffFile: { filePath: string; original: string; modified: string } | null;
   gitChangedFiles: string[]; // Absolute paths of files changed in Git
+  gitStatusMap: Record<string, 'M' | 'U' | 'D' | 'I'>; // Map from normalized path to Git status
   imageBuffers: Record<string, string>; // Base64 image previews: path -> base64
   theme: ThemeVariant;
   setTheme: (theme: ThemeVariant) => void;
@@ -82,6 +83,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   explorerSelectedPath: null,
   activeDiffFile: null,
   gitChangedFiles: [],
+  gitStatusMap: {},
   theme: initialTheme,
 
   setPendingSelection: (selection) => set({ pendingSelection: selection }),
@@ -158,8 +160,28 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       try {
         const changed = await (window as any).api.git.getStatus(workspacePath);
         if (changed) {
-          const absPaths = changed.map((f: any) => `${workspacePath}/${f.filePath}`.replace(/\/+/g, '/'));
-          set({ gitChangedFiles: absPaths });
+          const absPaths: string[] = [];
+          const statusMap: Record<string, 'M' | 'U' | 'D' | 'I'> = {};
+          changed.forEach((f: any) => {
+            const normRel = f.filePath.replace(/\\/g, '/').replace(/\/+/g, '/');
+            const abs = `${workspacePath}/${normRel}`.replace(/\\/g, '/').replace(/\/+/g, '/');
+            const trimmed = f.status.trim();
+            let code: 'M' | 'U' | 'D' | 'I' = 'M';
+            if (trimmed === '!!') {
+              code = 'I';
+            } else if (trimmed === '??' || trimmed === 'A') {
+              code = 'U';
+            } else if (trimmed === 'D') {
+              code = 'D';
+            } else {
+              code = 'M';
+            }
+            statusMap[abs] = code;
+            if (code !== 'I') {
+              absPaths.push(abs);
+            }
+          });
+          set({ gitChangedFiles: absPaths, gitStatusMap: statusMap });
         }
       } catch (gitErr) {
         console.error('Error updating git files during workspace refresh:', gitErr);

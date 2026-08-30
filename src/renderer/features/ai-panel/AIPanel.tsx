@@ -9,9 +9,9 @@ import {
   Sparkles, Settings, 
   ShieldAlert, Folder, FileText, 
   Loader2, AlertCircle, Copy, Check, Key, X,
-  Trash2, Brain, Clock, Plus
+  Trash2, Brain, Clock, Plus, ChevronDown, ChevronRight,
+  ArrowUp, Square, Paperclip, Terminal, FileCode2, Wrench
 } from 'lucide-react';
-import { PromptInputBox } from '@/components/ui/ai-prompt-box';
 
 const PROVIDER_LABELS: Record<string, string> = {
   openai: 'OpenAI',
@@ -75,37 +75,86 @@ const ThoughtBlock: React.FC<{
 
   if (!thought.trim() && isThinking) {
     return (
-      <div className="flex items-center gap-2 py-1.5 px-2.5 rounded bg-editor-hover/20 text-editor-textDark text-[11px] mb-2 select-none border border-editor-border/40 w-fit">
+      <div className="flex items-center gap-2 py-1 px-2.5 rounded bg-editor-bg text-editor-textDark text-[11px] mb-2 select-none border border-editor-border w-fit">
         <Loader2 className="w-3 h-3 animate-spin text-editor-accent" />
-        <span className="font-medium animate-pulse">Pensando...</span>
+        <span className="font-medium">Razonando y procesando herramientas...</span>
       </div>
     );
   }
 
+  const renderThoughtLine = (line: string, index: number) => {
+    const isExecuting = line.includes('🔧 Ejecutando herramienta');
+    const isCompleted = line.includes('✅ Herramienta') || line.includes('completada');
+    const isWarning = line.includes('⚠️');
+
+    if (isExecuting) {
+      const toolMatch = line.match(/`([^`]+)`/);
+      const toolName = toolMatch ? toolMatch[1] : 'herramienta';
+      return (
+        <div key={index} className="flex items-center gap-2 py-1 px-1.5 text-editor-textDark text-[11px] font-sans">
+          <Loader2 className="w-3 h-3 animate-spin text-sky-400 shrink-0" />
+          <span>Ejecutando <code className="px-1.5 py-0.5 rounded bg-editor-active font-mono text-[10px] text-sky-300 border border-editor-border font-semibold">{toolName}</code></span>
+        </div>
+      );
+    }
+
+    if (isCompleted) {
+      const toolMatch = line.match(/`([^`]+)`/);
+      const toolName = toolMatch ? toolMatch[1] : 'herramienta';
+      return (
+        <div key={index} className="flex items-center gap-2 py-1 px-1.5 text-editor-text text-[11px] font-sans">
+          <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+          <span>Herramienta <code className="px-1.5 py-0.5 rounded bg-emerald-950/30 font-mono text-[10px] text-emerald-300 border border-emerald-900/40 font-semibold">{toolName}</code> finalizada.</span>
+        </div>
+      );
+    }
+
+    if (isWarning) {
+      return (
+        <div key={index} className="flex items-start gap-2 py-1 px-1.5 text-amber-300 text-[11px] font-sans">
+          <span className="shrink-0">⚠️</span>
+          <span>{line.replace('⚠️', '').trim()}</span>
+        </div>
+      );
+    }
+
+    return (
+      <div key={index} className="text-editor-textDark text-[11px] font-mono leading-relaxed pl-2 border-l border-editor-border py-0.5 my-0.5 select-text selection:bg-editor-active">
+        {line}
+      </div>
+    );
+  };
+
+  const thoughtLines = thought.split('\n').filter(l => l.trim().length > 0);
+
   return (
-    <div className="mb-3 border border-editor-border/40 rounded-lg overflow-hidden bg-editor-hover/10">
+    <div className="mb-3 border border-editor-border rounded-[4px] overflow-hidden bg-editor-bg transition-all">
       <button
-        onClick={() => !isThinking && setIsOpen(!isOpen)}
-        disabled={isThinking}
-        className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-editor-hover/20 text-[10px] text-editor-textDark font-medium transition-colors select-none"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-2.5 py-1.5 hover:bg-editor-hover text-[11px] text-editor-textDark transition-colors select-none"
       >
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
+          {isOpen ? (
+            <ChevronDown className="w-3.5 h-3.5 text-editor-textDark" />
+          ) : (
+            <ChevronRight className="w-3.5 h-3.5 text-editor-textDark" />
+          )}
           {isThinking ? (
             <Loader2 className="w-3 h-3 animate-spin text-editor-accent" />
           ) : (
-            <Brain className="w-3 h-3 text-editor-accent" />
+            <Brain className="w-3.5 h-3.5 text-editor-accent" />
           )}
-          <span>{isThinking ? 'Pensando...' : 'Proceso de pensamiento'}</span>
-        </div>
-        {!isThinking && (
-          <span className="text-[9px] uppercase tracking-wider text-editor-textDark/60">
-            {isOpen ? 'Ocultar' : 'Mostrar'}
+          <span className="text-editor-text font-medium">
+            {isThinking ? 'Razonando y ejecutando tareas...' : 'Proceso de razonamiento'}
           </span>
-        )}
+        </div>
+        <span className="text-[10px] text-editor-textDark">
+          {thoughtLines.length} {thoughtLines.length === 1 ? 'paso' : 'pasos'}
+        </span>
       </button>
-      {isOpen && !isThinking && (
-        <div className="px-3 py-2 border-t border-editor-border/20 text-[10px] text-editor-textDark leading-relaxed font-mono whitespace-pre-wrap select-text selection:bg-zinc-800 bg-editor-hover/5">
-          {thought}
+      {isOpen && (
+        <div className="px-2.5 py-2 border-t border-editor-border bg-editor-sidebar flex flex-col gap-1">
+          {thoughtLines.map((line, idx) => renderThoughtLine(line, idx))}
         </div>
       )}
     </div>
@@ -113,8 +162,8 @@ const ThoughtBlock: React.FC<{
 };
 
 export const AIPanel: React.FC = () => {
-  const { isAIPanelOpen, aiPanelWidth, setAIPanelWidth } = useLayoutStore();
-  const { workspacePath, fileTree, explorerSelectedPath } = useWorkspaceStore();
+  const { isAIPanelOpen, aiPanelWidth } = useLayoutStore();
+  const { workspacePath, fileTree, explorerSelectedPath, activeTabPath, updateFileBuffer } = useWorkspaceStore();
   const { 
     messages, providers, activeProvider, isGenerating, incomingStreamText, error,
     conversations, activeConversationId,
@@ -126,11 +175,13 @@ export const AIPanel: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showCommands, setShowCommands] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [pastedImage, setPastedImage] = useState<string | null>(null);
+  const [appliedId, setAppliedId] = useState<string | null>(null);
+  const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; content?: string; image?: string }>>([]);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Initialize key store on mount and reload on workspace switch
   useEffect(() => {
@@ -146,12 +197,9 @@ export const AIPanel: React.FC = () => {
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(180, textareaRef.current.scrollHeight)}px`;
+      textareaRef.current.style.height = `${Math.min(160, Math.max(38, textareaRef.current.scrollHeight))}px`;
     }
   }, [prompt]);
-
-
-
 
   if (!isAIPanelOpen) return null;
 
@@ -174,13 +222,12 @@ export const AIPanel: React.FC = () => {
     if (explorerSelectedPath && workspacePath) {
       const parts = explorerSelectedPath.split(/[/\\]/);
       contextName = parts[parts.length - 1];
-      // Simple heuristic: if it has an extension, it's a file
       if (contextName.includes('.')) {
         isFolder = false;
       }
     } else if (workspacePath) {
       const parts = workspacePath.split(/[/\\]/);
-      contextName = parts[parts.length - 1] + ' (Raíz)';
+      contextName = parts[parts.length - 1];
     }
 
     const projectMdExists = fileTree.some(n => n.name.toLowerCase() === 'project.md');
@@ -190,36 +237,29 @@ export const AIPanel: React.FC = () => {
 
   const contextInfo = getContextInfo();
 
-  // Resize handler (drag-resizing from left border)
-  const handleResizeMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startWidth = aiPanelWidth;
-
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaX = moveEvent.clientX - startX;
-      // Subtract deltaX because dragging left (negative deltaX) should increase panel width
-      const newWidth = Math.max(260, Math.min(650, startWidth - deltaX));
-      setAIPanelWidth(newWidth);
-    };
-
-    const handleMouseUp = () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  };
-
   // Submit Prompt
   const handleSend = async (customPrompt?: string) => {
-    const textToSend = customPrompt || prompt;
-    if (!textToSend.trim() && !pastedImage) return;
+    const textToSend = customPrompt !== undefined ? customPrompt : prompt;
+    if (!textToSend.trim() && attachedFiles.length === 0) return;
+    if (isGenerating) return;
 
     setPrompt('');
-    setPastedImage(null);
     setShowCommands(false);
+
+    let finalPrompt = textToSend.trim();
+    let attachedImage: string | null = null;
+
+    // Process attached files
+    if (attachedFiles.length > 0) {
+      for (const file of attachedFiles) {
+        if (file.image) {
+          attachedImage = file.image;
+        } else if (file.content) {
+          finalPrompt += `\n\n### Archivo adjunto: ${file.name}\n\`\`\`\n${file.content}\n\`\`\``;
+        }
+      }
+      setAttachedFiles([]);
+    }
 
     // Compile active context
     let contextText = null;
@@ -230,37 +270,69 @@ export const AIPanel: React.FC = () => {
       console.error('Failed to compile context:', e);
     }
 
-    await sendMessage(textToSend.trim(), contextText, pastedImage);
+    await sendMessage(finalPrompt, contextText, attachedImage);
+  };
+
+  const handleStop = () => {
+    try {
+      (window as any).api?.ai?.abortChat?.();
+    } catch (err) {
+      console.error('Failed to abort chat:', err);
+    }
+  };
+
+  // Handle File Attachment
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const image = ev.target?.result as string;
+        setAttachedFiles(prev => [...prev, { name: file.name, image }]);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const content = ev.target?.result as string;
+        setAttachedFiles(prev => [...prev, { name: file.name, content }]);
+      };
+      reader.readAsText(file);
+    }
+
+    if (e.target) e.target.value = '';
   };
 
   // Slash commands
   const commands = [
-    { cmd: '/explain', label: 'Explicar código', desc: 'Explica el código seleccionado en detalle' },
-    { cmd: '/fix', label: 'Corregir errores', desc: 'Encuentra y corrige errores en el contexto activo' },
-    { cmd: '/refactor', label: 'Refactorizar', desc: 'Optimiza, limpia y refactoriza el código' },
-    { cmd: '/git', label: 'Estado de Git', desc: 'Analiza el estado de Git del repositorio' },
-    { cmd: '/files', label: 'Archivos del proyecto', desc: 'Muestra la estructura de archivos en tu workspace' },
-    { cmd: '/clear', label: 'Limpiar chat', desc: 'Limpia el historial de chat actual' },
-    { cmd: '/help', label: 'Ayuda', desc: 'Muestra los comandos disponibles' },
+    { cmd: '/explain', label: 'Explicar código', desc: 'Explica el código o archivo seleccionado en detalle' },
+    { cmd: '/fix', label: 'Corregir errores', desc: 'Encuentra y soluciona errores en el contexto activo' },
+    { cmd: '/refactor', label: 'Refactorizar', desc: 'Optimiza y limpia el código siguiendo buenas prácticas' },
+    { cmd: '/git', label: 'Estado de Git', desc: 'Analiza diffs, cambios pendientes y propone commits' },
+    { cmd: '/files', label: 'Explorar proyecto', desc: 'Revisa la estructura de archivos en el workspace' },
+    { cmd: '/clear', label: 'Limpiar chat', desc: 'Vacía la conversación actual' },
+    { cmd: '/help', label: 'Ayuda', desc: 'Guía rápida de comandos y capacidades' },
   ];
 
   const handleCommandClick = (cmd: string) => {
+    setShowCommands(false);
     if (cmd === '/clear') {
       clearHistory();
-      setShowCommands(false);
     } else if (cmd === '/help') {
-      setPrompt('¿Cómo puedo usar los comandos del agente? Muestra una guía.');
-      setShowCommands(false);
+      handleSend('¿Qué herramientas y comandos tengo disponibles en Spigot Copilot? Muestra una breve guía.');
     } else if (cmd === '/explain') {
-      handleSend('Analizá detalladamente este código, explicá su arquitectura y cómo funciona.');
+      handleSend('Analizá detalladamente este código, explicá su arquitectura y cómo funciona paso a paso.');
     } else if (cmd === '/fix') {
       handleSend('Buscá posibles fallos, bugs o problemas de rendimiento en este código y mostrá cómo corregirlos.');
     } else if (cmd === '/refactor') {
-      handleSend('Refactorizá este código para que sea más legible, limpio y eficiente, aplicando principios SOLID.');
+      handleSend('Refactorizá este código para que sea más legible, limpio y mantenible, aplicando principios SOLID.');
     } else if (cmd === '/git') {
-      handleSend('Analizá el estado actual de Git en mi workspace (status y diff), indícame qué archivos cambiaron y sugíreme mensajes de commit apropiados.');
+      handleSend('Analizá el estado actual de Git (status y diff), indícame qué archivos cambiaron y sugerime mensajes de commit apropiados.');
     } else if (cmd === '/files') {
-      handleSend('Listá los archivos del proyecto utilizando la herramienta list_dir para ver la estructura del workspace.');
+      handleSend('Listá los archivos del proyecto utilizando la herramienta list_dir para ver la estructura.');
     }
   };
 
@@ -268,6 +340,16 @@ export const AIPanel: React.FC = () => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 1500);
+  };
+
+  const applyToActiveEditor = (code: string, id: string) => {
+    if (!activeTabPath) {
+      copyToClipboard(code, id);
+      return;
+    }
+    updateFileBuffer(activeTabPath, code);
+    setAppliedId(id);
+    setTimeout(() => setAppliedId(null), 1800);
   };
 
   // Format assistant message content to display code blocks neatly
@@ -281,7 +363,7 @@ export const AIPanel: React.FC = () => {
           return (
             <code 
               key={`c-${idx}`} 
-              className="px-1 py-0.5 mx-0.5 rounded bg-editor-hover font-mono text-[10px] text-zinc-200 border border-editor-border/40 select-all"
+              className="px-1.5 py-0.5 mx-0.5 rounded bg-editor-hover font-mono text-[11.5px] text-[#ce9178] border border-editor-border select-all"
             >
               {codePart.slice(1, -1)}
             </code>
@@ -296,7 +378,7 @@ export const AIPanel: React.FC = () => {
       return boldParts.map((boldPart, idx) => {
         if (boldPart.startsWith('**') && boldPart.endsWith('**')) {
           return (
-            <strong key={`b-${idx}`} className="font-bold text-white">
+            <strong key={`b-${idx}`} className="font-semibold text-editor-text">
               {renderInlineCode(boldPart.slice(2, -2))}
             </strong>
           );
@@ -313,27 +395,53 @@ export const AIPanel: React.FC = () => {
         const codeId = `${id}-${idx}`;
 
         return (
-          <div key={idx} className="my-3 border border-editor-border rounded-lg overflow-hidden bg-editor-bg">
-            <div className="flex items-center justify-between px-3 py-1.5 bg-editor-hover/50 text-[10px] text-editor-textDark border-b border-editor-border">
-              <span className="font-mono uppercase font-bold">{firstLine || 'code'}</span>
-              <button 
-                onClick={() => copyToClipboard(code, codeId)}
-                className="flex items-center gap-1 hover:text-white transition-colors"
-              >
-                {copiedId === codeId ? (
-                  <>
-                    <Check className="w-3 h-3 text-emerald-400" />
-                    <span className="text-emerald-400">Copiado</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3 h-3" />
-                    <span>Copiar</span>
-                  </>
+          <div key={idx} className="my-2.5 rounded-[5px] overflow-hidden border border-editor-border bg-editor-bg">
+            {/* VS Code CodeBlock Header Bar */}
+            <div className="flex items-center justify-between px-3 py-1.5 bg-editor-sidebar text-[11px] text-editor-textDark border-b border-editor-border font-mono select-none">
+              <span className="font-bold text-editor-text uppercase text-[10px] tracking-wider">
+                {firstLine || 'code'}
+              </span>
+              <div className="flex items-center gap-2">
+                {activeTabPath && (
+                  <button 
+                    onClick={() => applyToActiveEditor(code, codeId)}
+                    className="flex items-center gap-1 text-editor-textDark hover:text-editor-text transition-colors text-[11px]"
+                    title="Insertar en el archivo abierto"
+                  >
+                    {appliedId === codeId ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-emerald-400">Aplicado</span>
+                      </>
+                    ) : (
+                      <>
+                        <FileCode2 className="w-3.5 h-3.5" />
+                        <span>Aplicar en editor</span>
+                      </>
+                    )}
+                  </button>
                 )}
-              </button>
+                <button 
+                  onClick={() => copyToClipboard(code, codeId)}
+                  className="flex items-center gap-1 text-editor-textDark hover:text-editor-text transition-colors text-[11px]"
+                  title="Copiar código"
+                >
+                  {copiedId === codeId ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-400">Copiado</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copiar</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
-            <pre className="p-3 text-[11px] font-mono text-zinc-300 overflow-x-auto leading-relaxed whitespace-pre select-text selection:bg-zinc-800">
+            {/* Code Body */}
+            <pre className="p-3 text-[12px] font-mono text-editor-text overflow-x-auto leading-relaxed whitespace-pre select-text selection:bg-editor-active">
               <code>{code}</code>
             </pre>
           </div>
@@ -343,7 +451,7 @@ export const AIPanel: React.FC = () => {
       return (
         <span 
           key={idx} 
-          className="text-xs leading-relaxed whitespace-pre-wrap select-text selection:bg-zinc-800 break-words"
+          className="text-[13px] leading-relaxed whitespace-pre-wrap select-text selection:bg-editor-active break-words text-editor-text"
         >
           {renderInlineMarkdown(part)}
         </span>
@@ -355,7 +463,7 @@ export const AIPanel: React.FC = () => {
     const { thought, response, isThinking } = parseThinking(content);
 
     return (
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1.5">
         {thought.trim() && (
           <ThoughtBlock thought={thought} isThinking={isThinking} />
         )}
@@ -365,7 +473,7 @@ export const AIPanel: React.FC = () => {
           </div>
         )}
         {!response.trim() && isThinking && (
-          <div className="flex items-center gap-2 text-editor-textDark text-[11px] select-none">
+          <div className="flex items-center gap-2 text-editor-textDark text-[12px] select-none py-1">
             <Loader2 className="w-3.5 h-3.5 animate-spin text-editor-accent" />
             <span>Generando respuesta...</span>
           </div>
@@ -377,83 +485,84 @@ export const AIPanel: React.FC = () => {
   return (
     <div 
       style={{ width: `${aiPanelWidth}px` }}
-      className="h-full bg-editor-sidebar border-l border-editor-border flex flex-col relative select-none shrink-0"
+      className="h-full bg-editor-sidebar border border-editor-border rounded-[8px] flex flex-col relative select-none shrink-0 font-sans shadow-sm overflow-hidden"
     >
-      {/* 1. Left drag resizer handle */}
-      <div 
-        onMouseDown={handleResizeMouseDown}
-        className="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-zinc-700/80 active:bg-white z-40 transition-all-custom"
-      />
+      {/* Top bar header (VS Code Style) */}
+      <div className="h-[35px] min-h-[35px] bg-editor-sidebar border-b border-editor-border flex items-center justify-between px-3 select-none app-non-draggable">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[11px] font-bold text-editor-text tracking-wider uppercase shrink-0">
+            CHAT
+          </span>
 
-      {/* 2. Top bar header */}
-      <div className="h-9 min-h-[36px] bg-editor-sidebar border-b border-editor-border flex items-center justify-between pl-3 pr-2 select-none app-non-draggable">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <Sparkles className="w-3.5 h-3.5 text-editor-accent shrink-0" />
-          
           {activeKeysConfigured ? (
-            <>
+            <div className="flex items-center gap-1.5 min-w-0">
               <StyledSelect
                 value={activeProvider}
                 options={configuredProviderOptions}
                 onChange={setActiveProvider}
                 placeholder="Proveedor"
                 disabled={configuredProviderOptions.length <= 1}
-                className="w-[104px] shrink-0"
-                buttonClassName="border-0 bg-transparent px-0 py-0 text-[11px] font-bold uppercase tracking-wider hover:border-transparent focus:border-transparent"
+                className="w-auto shrink-0"
+                buttonClassName="border border-editor-border bg-editor-active hover:bg-editor-hover px-2 py-0.5 rounded text-[11px] font-medium text-editor-text h-6 flex items-center gap-1"
               />
 
               {hasConfiguredModel && (
-                <>
-                  <span className="text-[10px] text-editor-textDark shrink-0">|</span>
-                  <StyledSelect
-                    value={currentProviderData.activeModel}
-                    options={modelOptions}
-                    onChange={(model) => selectModel(activeProvider, model)}
-                    placeholder="Modelo"
-                    disabled={modelOptions.length <= 1}
-                    className="max-w-[130px] min-w-0 shrink"
-                    buttonClassName="border-0 bg-transparent px-0 py-0 text-[10px] font-medium text-editor-textDark hover:border-transparent hover:text-white focus:border-transparent"
-                  />
-                </>
+                <StyledSelect
+                  value={currentProviderData.activeModel}
+                  options={modelOptions}
+                  onChange={(model) => selectModel(activeProvider, model)}
+                  placeholder="Modelo"
+                  disabled={modelOptions.length <= 1}
+                  className="max-w-[140px] min-w-0 shrink"
+                  buttonClassName="border border-editor-border bg-editor-active hover:bg-editor-hover px-2 py-0.5 rounded text-[11px] font-medium text-editor-text h-6 flex items-center gap-1 truncate"
+                />
               )}
-            </>
-          ) : (
-            <span className="truncate text-[11px] font-bold uppercase tracking-wider text-editor-textDark">
-              Sin proveedor
-            </span>
-          )}
+            </div>
+          ) : null}
         </div>
 
-        <div className="flex items-center gap-1">
-          {/* New conversation button */}
+        {/* Header Action Buttons */}
+        <div className="flex items-center gap-0.5">
           {activeKeysConfigured && (
             <button
               onClick={createConversation}
-              className="p-1 hover:bg-editor-hover text-editor-textDark hover:text-white rounded transition-all-custom"
-              title="Nueva conversación"
+              className="p-1 hover:bg-editor-hover text-editor-textDark hover:text-editor-text rounded transition-colors"
+              title="Nuevo chat (+)"
             >
               <Plus className="w-3.5 h-3.5" />
             </button>
           )}
 
-          {/* Clock icon to toggle chat history popover */}
           <button
             onClick={() => setShowHistoryPanel(!showHistoryPanel)}
-            className={`p-1 rounded transition-all-custom ${
+            className={`p-1 rounded transition-colors ${
               showHistoryPanel 
-                ? 'bg-editor-hover text-white' 
-                : 'hover:bg-editor-hover text-editor-textDark hover:text-white'
+                ? 'bg-editor-active text-editor-text' 
+                : 'hover:bg-editor-hover text-editor-textDark hover:text-editor-text'
             }`}
-            title="Historial de conversaciones"
+            title="Historial de sesiones"
           >
             <Clock className="w-3.5 h-3.5" />
           </button>
 
-          {/* Agent settings button */}
+          {messages.length > 0 && (
+            <button
+              onClick={() => {
+                if (window.confirm('¿Vaciar la conversación actual?')) {
+                  clearHistory();
+                }
+              }}
+              className="p-1 hover:bg-editor-hover text-editor-textDark hover:text-editor-text rounded transition-colors"
+              title="Limpiar conversación"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+
           <button
             onClick={() => setIsModalOpen(true)}
-            className="p-1 hover:bg-editor-hover text-editor-textDark hover:text-white rounded transition-all-custom"
-            title="Ajustes del agente"
+            className="p-1 hover:bg-editor-hover text-editor-textDark hover:text-editor-text rounded transition-colors"
+            title="Configurar proveedores de IA"
           >
             <Settings className="w-3.5 h-3.5" />
           </button>
@@ -462,33 +571,33 @@ export const AIPanel: React.FC = () => {
 
       {/* Chat History Panel Popover */}
       {showHistoryPanel && (
-        <div className="absolute top-9 right-2 w-64 bg-editor-bg border border-editor-border rounded-xl shadow-2xl overflow-hidden glass-panel z-50 animate-slide-down select-none max-h-[350px] flex flex-col">
+        <div className="absolute top-9 right-2 w-72 bg-editor-bg border border-editor-border rounded-[6px] shadow-2xl overflow-hidden z-50 select-none max-h-[380px] flex flex-col animate-slide-down">
           <div className="px-3 py-2 border-b border-editor-border bg-editor-sidebar flex items-center justify-between">
-            <span className="text-[10px] font-bold text-white uppercase tracking-wider">Historial de Chats</span>
+            <span className="text-[11px] font-semibold text-editor-text uppercase tracking-wider">Historial de Conversaciones</span>
             <button 
               onClick={() => setShowHistoryPanel(false)}
-              className="text-editor-textDark hover:text-white p-0.5 rounded"
+              className="text-editor-textDark hover:text-editor-text p-0.5 rounded"
             >
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
           
-          <div className="p-2 border-b border-editor-border/60 bg-editor-hover/10">
+          <div className="p-2 border-b border-editor-border bg-editor-sidebar">
             <button
               onClick={() => {
                 createConversation();
                 setShowHistoryPanel(false);
               }}
-              className="w-full bg-white hover:bg-zinc-200 text-black font-semibold text-xs py-1.5 px-3 rounded-lg shadow active:scale-95 transition-all-custom flex items-center justify-center gap-1.5"
+              className="w-full bg-editor-accent text-editor-sidebar font-semibold text-[12px] py-1 px-3 rounded flex items-center justify-center gap-1.5 transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Nueva conversación</span>
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto flex flex-col p-1.5 gap-1 max-h-[240px]">
+          <div className="flex-1 overflow-y-auto p-1.5 flex flex-col gap-0.5 max-h-[260px]">
             {conversations.length === 0 ? (
-              <div className="text-center py-4 text-[10px] text-editor-textDark">
+              <div className="text-center py-4 text-[11px] text-editor-textDark">
                 Sin conversaciones previas
               </div>
             ) : (
@@ -497,28 +606,28 @@ export const AIPanel: React.FC = () => {
                 return (
                   <div
                     key={conv.id}
-                    className={`group relative flex items-center justify-between px-2.5 py-2 rounded-lg text-xs cursor-pointer transition-colors ${
+                    className={`group relative flex items-center justify-between px-2.5 py-1.5 rounded text-[12px] cursor-pointer transition-colors ${
                       isActive 
-                        ? 'bg-editor-active text-white font-medium' 
-                        : 'hover:bg-editor-hover text-editor-textDark hover:text-white'
+                        ? 'bg-editor-active text-editor-text font-medium border border-editor-border' 
+                        : 'hover:bg-editor-hover text-editor-text'
                     }`}
                     onClick={() => {
                       selectConversation(conv.id);
                       setShowHistoryPanel(false);
                     }}
                   >
-                    <span className="truncate pr-6 select-none max-w-[170px]" title={conv.title}>
+                    <span className="truncate pr-6 select-none max-w-[200px]" title={conv.title}>
                       {conv.title}
                     </span>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (window.confirm('¿Estás seguro de que deseas eliminar esta conversación?')) {
+                        if (window.confirm('¿Eliminar esta conversación?')) {
                           deleteConversation(conv.id);
                         }
                       }}
-                      className="opacity-0 group-hover:opacity-100 hover:text-red-400 p-0.5 rounded transition-all shrink-0 ml-1 absolute right-2 flex items-center justify-center"
-                      title="Eliminar conversación"
+                      className="opacity-0 group-hover:opacity-100 hover:text-red-400 p-0.5 rounded transition-all shrink-0 ml-1 absolute right-2"
+                      title="Eliminar"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -531,20 +640,20 @@ export const AIPanel: React.FC = () => {
       )}
 
       {/* 3. Conversation Area / History */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-4">
+      <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-4">
         {!activeKeysConfigured ? (
           /* Welcome screen when no keys are configured */
           <div className="flex-1 flex flex-col items-center justify-center text-center p-6 select-none">
-            <div className="w-12 h-12 bg-editor-hover rounded-xl flex items-center justify-center border border-zinc-800 shadow-md mb-4">
-              <Sparkles className="w-6 h-6 text-white animate-pulse" />
+            <div className="w-12 h-12 bg-editor-hover rounded-xl flex items-center justify-center border border-editor-border shadow mb-4">
+              <Sparkles className="w-6 h-6 text-editor-accent animate-pulse" />
             </div>
-            <h2 className="text-sm font-semibold text-white mb-2 tracking-wide">Asistente Inteligente</h2>
-            <p className="text-xs text-editor-textDark leading-relaxed mb-6 max-w-[220px]">
-              Ingresá una API Key de tu proveedor preferido para habilitar el agente y empezar a programar juntos.
+            <h2 className="text-[13px] font-semibold text-editor-text mb-1.5 tracking-wide">Spigot Copilot</h2>
+            <p className="text-[12px] text-editor-textDark leading-relaxed mb-5 max-w-[240px]">
+              Configurá una clave de API para activar el asistente de IA y empezar a construir en tu proyecto.
             </p>
             <button
               onClick={() => setIsModalOpen(true)}
-              className="bg-white hover:bg-zinc-200 text-black font-semibold text-xs px-4 py-2 rounded-lg shadow active:scale-95 transition-all-custom flex items-center gap-1.5"
+              className="bg-editor-accent text-editor-sidebar font-semibold text-[12px] px-4 py-1.5 rounded flex items-center gap-1.5 transition-colors shadow-sm"
             >
               <Key className="w-3.5 h-3.5" />
               <span>Configurar API Key</span>
@@ -553,67 +662,137 @@ export const AIPanel: React.FC = () => {
         ) : !hasActiveKey ? (
           /* Warning when the active provider doesn't have a key configured */
           <div className="flex-1 flex flex-col items-center justify-center text-center p-6 select-none">
-            <ShieldAlert className="w-10 h-10 text-amber-500 mb-3" />
-            <h3 className="text-xs font-semibold text-white mb-2">Clave faltante para {PROVIDER_LABELS[activeProvider] || activeProvider.toUpperCase()}</h3>
-            <p className="text-[11px] text-editor-textDark leading-relaxed mb-4 max-w-[200px]">
-              No has configurado una API Key para este proveedor específico.
+            <ShieldAlert className="w-9 h-9 text-amber-500 mb-3" />
+            <h3 className="text-[13px] font-semibold text-editor-text mb-1.5">Falta API Key para {PROVIDER_LABELS[activeProvider] || activeProvider.toUpperCase()}</h3>
+            <p className="text-[12px] text-editor-textDark leading-relaxed mb-4 max-w-[220px]">
+              Ingresá tu clave para este proveedor para continuar utilizando el chat.
             </p>
             <button
               onClick={() => setIsModalOpen(true)}
-              className="border border-editor-border hover:bg-editor-hover text-white text-xs px-3 py-1.5 rounded-lg active:scale-95 transition-all-custom flex items-center gap-1.5"
+              className="border border-editor-border bg-editor-active hover:bg-editor-hover text-editor-text text-[12px] px-3 py-1.5 rounded flex items-center gap-1.5 transition-colors"
             >
               <Key className="w-3.5 h-3.5" />
               <span>Ingresar Clave</span>
             </button>
           </div>
         ) : messages.length === 0 ? (
-          /* Empty Chat Welcome */
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-editor-textDark select-none">
-            <Sparkles className="w-8 h-8 opacity-20 mb-3 animate-pulse" />
-            <span className="text-xs font-medium text-white mb-1">Agente de IA Activo</span>
-            <span className="text-[10px] leading-relaxed max-w-[200px]">
-              Escribí tu consulta abajo. Inyectaremos automáticamente el archivo o carpeta seleccionada como contexto.
-            </span>
+          /* Empty Chat Welcome with VS Code Quick Prompts */
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-4 text-editor-textDark select-none">
+            <div className="w-10 h-10 rounded-full bg-editor-hover border border-editor-border flex items-center justify-center mb-3">
+              <Sparkles className="w-5 h-5 text-editor-accent" />
+            </div>
+            <span className="text-[13px] font-semibold text-editor-text mb-1">Spigot Copilot</span>
+            <p className="text-[11.5px] text-editor-textDark leading-relaxed max-w-[260px] mb-5">
+              Preguntá sobre tu código, generá funciones, encontrá errores o realizá cambios con contexto automático.
+            </p>
+
+            {/* Quick Action Suggestions */}
+            <div className="w-full flex flex-col gap-2 max-w-[280px]">
+              <button
+                onClick={() => handleSend('Analizá el código del archivo activo y explicá su estructura y funcionamiento principal.')}
+                className="w-full text-left p-2 rounded-[5px] bg-editor-bg hover:bg-editor-hover border border-editor-border text-[12px] text-editor-text flex items-center gap-2 transition-all"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                <span className="truncate">Explicar código activo</span>
+              </button>
+
+              <button
+                onClick={() => handleSend('Revisá el código actual en busca de bugs, vulnerabilidades o problemas de rendimiento y proponé soluciones.')}
+                className="w-full text-left p-2 rounded-[5px] bg-editor-bg hover:bg-editor-hover border border-editor-border text-[12px] text-editor-text flex items-center gap-2 transition-all"
+              >
+                <Wrench className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span className="truncate">Buscar y corregir errores</span>
+              </button>
+
+              <button
+                onClick={() => handleSend('Refactorizá este código para hacerlo más limpio, eficiente y mantenible.')}
+                className="w-full text-left p-2 rounded-[5px] bg-editor-bg hover:bg-editor-hover border border-editor-border text-[12px] text-editor-text flex items-center gap-2 transition-all"
+              >
+                <FileCode2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span className="truncate">Refactorizar código</span>
+              </button>
+
+              <button
+                onClick={() => handleSend('Analizá los cambios en Git pendientes en el workspace y sugerime mensajes de commit apropiados.')}
+                className="w-full text-left p-2 rounded-[5px] bg-editor-bg hover:bg-editor-hover border border-editor-border text-[12px] text-editor-text flex items-center gap-2 transition-all"
+              >
+                <Terminal className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                <span className="truncate">Revisar cambios de Git</span>
+              </button>
+            </div>
           </div>
         ) : (
           /* Active Chat Messages */
           <>
-            {messages.map((msg) => (
-              <div 
-                key={msg.id} 
-                className={`flex flex-col max-w-[90%] rounded-xl p-3 shadow-sm ${
-                  msg.role === 'user' 
-                    ? 'self-end bg-zinc-800/80 text-white border border-zinc-700/40' 
-                    : 'self-start bg-editor-hover/40 text-editor-text border border-editor-border'
-                }`}
-              >
-                <div className="text-[9px] text-editor-textDark font-bold uppercase tracking-wider mb-1 select-none">
-                  {msg.role === 'user' ? 'Tú' : 'Agente'}
-                </div>
-                <div className="flex flex-col gap-1">
-                  {msg.role === 'user' ? (
-                    <div className="flex flex-col gap-1.5">
-                      {msg.image && (
-                        <div className="w-full max-w-[200px] rounded-lg overflow-hidden border border-zinc-700/50 mb-1 select-none">
-                          <img src={msg.image} alt="Imagen pegada" className="w-full object-contain" />
+            {messages.map((msg) => {
+              const isUser = msg.role === 'user';
+              return (
+                <div key={msg.id} className="flex flex-col gap-1.5">
+                  {/* Message Header */}
+                  <div className="flex items-center justify-between text-[11px] text-editor-textDark select-none px-1">
+                    <div className="flex items-center gap-1.5 font-medium">
+                      {isUser ? (
+                        <div className="w-4 h-4 rounded-full bg-editor-active text-editor-text flex items-center justify-center text-[9px] font-bold">
+                          U
+                        </div>
+                      ) : (
+                        <div className="w-4 h-4 rounded-full bg-editor-active border border-editor-border text-editor-accent flex items-center justify-center">
+                          <Sparkles className="w-2.5 h-2.5" />
                         </div>
                       )}
-                      <span className="text-xs leading-normal select-text selection:bg-zinc-800 whitespace-pre-wrap">{msg.content}</span>
+                      <span className={isUser ? 'text-editor-text' : 'text-editor-accent'}>
+                        {isUser ? 'Tú' : 'Spigot Copilot'}
+                      </span>
                     </div>
-                  ) : (
-                    renderAssistantMessage(msg.content, msg.id)
-                  )}
+
+                    {isUser && (
+                      <button
+                        onClick={() => copyToClipboard(msg.content, msg.id)}
+                        className="hover:text-editor-text p-0.5 rounded opacity-60 hover:opacity-100 transition-opacity"
+                        title="Copiar consulta"
+                      >
+                        <Copy className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Message Body Container */}
+                  <div 
+                    className={`rounded-[6px] p-3 text-[13px] leading-relaxed ${
+                      isUser 
+                        ? 'bg-editor-active border border-editor-border text-editor-text' 
+                        : 'bg-editor-bg border border-editor-border text-editor-text'
+                    }`}
+                  >
+                    {isUser ? (
+                      <div className="flex flex-col gap-2">
+                        {msg.image && (
+                          <div className="w-full max-w-[240px] rounded overflow-hidden border border-editor-border select-none">
+                            <img src={msg.image} alt="Adjunto" className="w-full object-contain" />
+                          </div>
+                        )}
+                        <span className="select-text selection:bg-editor-hover whitespace-pre-wrap break-words font-sans">
+                          {msg.content}
+                        </span>
+                      </div>
+                    ) : (
+                      renderAssistantMessage(msg.content, msg.id)
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             {/* Dynamic Real-time Incoming SSE Stream */}
             {isGenerating && incomingStreamText && (
-              <div className="flex flex-col max-w-[90%] rounded-xl p-3 bg-editor-hover/40 text-editor-text border border-editor-border self-start">
-                <div className="text-[9px] text-editor-textDark font-bold uppercase tracking-wider mb-1 select-none">
-                  Agente (Streaming...)
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-1.5 text-[11px] text-editor-accent select-none px-1 font-medium">
+                  <div className="w-4 h-4 rounded-full bg-editor-active border border-editor-border text-editor-accent flex items-center justify-center">
+                    <Sparkles className="w-2.5 h-2.5 animate-pulse" />
+                  </div>
+                  <span>Spigot Copilot</span>
                 </div>
-                <div className="flex flex-col gap-1">
+                <div className="rounded-[6px] p-3 text-[13px] leading-relaxed bg-editor-bg border border-editor-border text-editor-text">
                   {renderAssistantMessage(incomingStreamText, 'streaming')}
                 </div>
               </div>
@@ -621,18 +800,18 @@ export const AIPanel: React.FC = () => {
 
             {/* Loader indicator while waiting for the first chunk */}
             {isGenerating && !incomingStreamText && (
-              <div className="flex items-center gap-2 text-editor-textDark text-[11px] self-start bg-editor-hover/20 px-3 py-2 rounded-lg border border-editor-border select-none">
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
-                <span>Generando respuesta...</span>
+              <div className="flex items-center gap-2 text-editor-textDark text-[12px] bg-editor-bg px-3 py-2 rounded-[6px] border border-editor-border select-none w-fit">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-editor-accent" />
+                <span>Analizando contexto y generando...</span>
               </div>
             )}
 
             {/* Error notifications */}
             {error && (
-              <div className="flex items-start gap-2 p-2.5 rounded-lg bg-red-950/20 border border-red-900/40 text-red-400 text-[11px] self-start select-text max-w-[95%]">
+              <div className="flex items-start gap-2 p-2.5 rounded-[5px] bg-red-950/20 border border-red-900/40 text-red-400 text-[12px] select-text">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <div className="flex flex-col gap-1">
-                  <span className="font-bold">Error del Agente:</span>
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-semibold">Error del Agente:</span>
                   <span className="leading-relaxed">{error}</span>
                 </div>
               </div>
@@ -643,18 +822,18 @@ export const AIPanel: React.FC = () => {
         )}
       </div>
 
-      {/* 4. Bottom Input Area with Premium PromptInputBox */}
+      {/* 4. Bottom Input Area (VS Code Copilot Chat Style) */}
       <div className="p-3 border-t border-editor-border bg-editor-sidebar flex flex-col gap-2 relative">
-        {/* Slash Command Popover Flotante */}
+        {/* Slash Command Popover */}
         {showCommands && (
-          <div className="absolute left-3 bottom-[calc(100%+8px)] right-3 bg-editor-bg border border-editor-border rounded-xl shadow-2xl overflow-hidden glass-panel z-50 animate-slide-up select-none max-w-sm">
-            <div className="px-3 py-2 border-b border-editor-border bg-editor-sidebar flex items-center justify-between">
-              <span className="text-[10px] font-bold text-white uppercase tracking-wider">Comandos del Agente</span>
+          <div className="absolute left-3 bottom-[calc(100%+8px)] right-3 bg-editor-bg border border-editor-border rounded-[6px] shadow-2xl overflow-hidden z-50 select-none animate-slide-up">
+            <div className="px-3 py-1.5 border-b border-editor-border bg-editor-sidebar flex items-center justify-between text-[11px] text-editor-textDark font-semibold">
+              <span className="uppercase tracking-wider">Comandos rápidos</span>
               <button 
                 onClick={() => setShowCommands(false)}
-                className="text-editor-textDark hover:text-white p-0.5 rounded"
+                className="hover:text-editor-text p-0.5 rounded"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-3 h-3" />
               </button>
             </div>
             <div className="flex flex-col max-h-[220px] overflow-y-auto">
@@ -662,11 +841,11 @@ export const AIPanel: React.FC = () => {
                 <button
                   key={c.cmd}
                   onClick={() => handleCommandClick(c.cmd)}
-                  className="px-3 py-2 text-left hover:bg-editor-hover transition-colors flex flex-col gap-0.5 border-b border-editor-border/20 last:border-0"
+                  className="px-3 py-2 text-left hover:bg-editor-hover transition-colors flex flex-col gap-0.5 border-b border-editor-border/40 last:border-0"
                 >
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-mono font-bold text-white">{c.cmd}</span>
-                    <span className="text-[10px] text-editor-textDark font-medium">— {c.label}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[12px] font-mono font-bold text-editor-accent">{c.cmd}</span>
+                    <span className="text-[11px] text-editor-text font-medium">— {c.label}</span>
                   </div>
                   <span className="text-[10px] text-editor-textDark truncate">{c.desc}</span>
                 </button>
@@ -675,79 +854,114 @@ export const AIPanel: React.FC = () => {
           </div>
         )}
 
-        <div className="flex flex-col gap-2">
-          {/* Active Context indicator */}
-          <div className="flex items-center justify-between text-[10px] text-editor-textDark px-2 select-none">
-            <div className="flex items-center gap-1.5 truncate">
-              {contextInfo.isFolder ? (
-                <Folder className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-              ) : (
-                <FileText className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-              )}
-              <span className="truncate max-w-[170px]" title={explorerSelectedPath || workspacePath || ''}>
-                {contextInfo.name}
-              </span>
-
-              {/* PROJECT.md exists badge */}
-              {contextInfo.projectMdExists && (
-                <span className="px-1.5 py-0.5 rounded bg-editor-active text-white text-[8px] font-bold uppercase tracking-wider shrink-0 flex items-center gap-0.5 select-none" title="PROJECT.md se incluye automáticamente en el contexto">
-                  + PROJECT.md
-                </span>
-              )}
+        {/* Embedded Input Box */}
+        <div className="bg-editor-bg border border-editor-border focus-within:border-editor-accent focus-within:ring-1 focus-within:ring-editor-accent rounded-[6px] p-2 flex flex-col gap-1.5 transition-all">
+          {/* Active Context Chips & Attached Files */}
+          <div className="flex flex-wrap items-center gap-1.5 select-none">
+            <div className="bg-editor-hover text-editor-accent border border-editor-border text-[10.5px] px-2 py-0.5 rounded-full flex items-center gap-1 font-medium" title="Contexto del workspace incluido">
+              <span>@workspace</span>
             </div>
 
-            {/* Slash commands button */}
-            <button
-              onClick={() => setShowCommands(!showCommands)}
-              className="px-1.5 py-0.5 rounded text-editor-textDark hover:text-white hover:bg-editor-hover flex items-center justify-center font-bold text-[10px] tracking-wider transition-all-custom gap-0.5"
-              title="Comandos rápidos"
-            >
-              <span>Comandos</span>
-              <span className="font-mono text-[9px] bg-editor-hover/50 px-1 rounded">/</span>
-            </button>
+            <div className="bg-editor-active text-editor-text border border-editor-border text-[10.5px] px-2 py-0.5 rounded-full flex items-center gap-1 font-medium truncate max-w-[160px]" title={explorerSelectedPath || workspacePath || ''}>
+              {contextInfo.isFolder ? (
+                <Folder className="w-3 h-3 text-amber-400 shrink-0" />
+              ) : (
+                <FileText className="w-3 h-3 text-sky-400 shrink-0" />
+              )}
+              <span className="truncate">{contextInfo.name}</span>
+            </div>
+
+            {attachedFiles.map((file, idx) => (
+              <div key={idx} className="bg-emerald-950/30 text-emerald-300 border border-emerald-900/40 text-[10.5px] px-2 py-0.5 rounded-full flex items-center gap-1 font-medium">
+                <Paperclip className="w-3 h-3" />
+                <span className="truncate max-w-[100px]">{file.name}</span>
+                <button
+                  onClick={() => setAttachedFiles(prev => prev.filter((_, i) => i !== idx))}
+                  className="hover:text-white"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
           </div>
 
-          <PromptInputBox 
-            placeholder="Pregúntale algo al agente..."
-            isLoading={isGenerating}
-            hasActiveKey={hasActiveKey}
+          {/* Text Input */}
+          <textarea
+            ref={textareaRef}
             value={prompt}
-            onValueChange={setPrompt}
-            onSend={async (message, files) => {
-              let base64Image: string | null = null;
-              let finalMessage = message;
-
-              if (files && files.length > 0) {
-                const file = files[0];
-                if (file.type.startsWith("image/")) {
-                  base64Image = await new Promise<string>((resolve) => {
-                    const reader = new FileReader();
-                    reader.onload = (e) => resolve(e.target?.result as string);
-                    reader.readAsDataURL(file);
-                  });
-                } else {
-                  // Read non-image files as text and append to message
-                  const fileContent = await new Promise<string>((resolve) => {
-                    const reader = new FileReader();
-                    reader.onload = (e) => resolve(e.target?.result as string || '');
-                    reader.readAsText(file);
-                  });
-                  finalMessage = `${message}\n\n### Archivo Adjunto: ${file.name}\n\`\`\`\n${fileContent}\n\`\`\``;
-                }
+            onChange={(e) => {
+              setPrompt(e.target.value);
+              if (e.target.value.startsWith('/') && !showCommands) {
+                setShowCommands(true);
               }
-
-              // Compile active context
-              let contextText = null;
-              try {
-                const compiled = await compileContext(workspacePath, fileTree, explorerSelectedPath);
-                contextText = compiled.text;
-              } catch (e) {
-                console.error('Failed to compile context:', e);
-              }
-
-              await sendMessage(finalMessage, contextText, base64Image);
             }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            placeholder="Preguntale a Spigot (@ para contexto, / para comandos)..."
+            disabled={!hasActiveKey}
+            rows={1}
+            className="w-full bg-transparent border-0 outline-none text-[13px] text-editor-text placeholder:text-editor-textDark resize-none leading-relaxed min-h-[38px] max-h-[160px] p-0 font-sans"
           />
+
+          {/* Bottom Action Row inside Input Box */}
+          <div className="flex items-center justify-between pt-1 border-t border-editor-border/40">
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="p-1 text-editor-textDark hover:text-editor-text hover:bg-editor-hover rounded transition-colors"
+                title="Adjuntar archivo o imagen"
+              >
+                <Paperclip className="w-4 h-4" />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowCommands(!showCommands)}
+                className="px-1.5 py-0.5 text-editor-textDark hover:text-editor-text hover:bg-editor-hover rounded text-[11px] font-mono font-bold transition-colors"
+                title="Comandos rápidos (/)"
+              >
+                /
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              {isGenerating ? (
+                <button
+                  type="button"
+                  onClick={handleStop}
+                  className="bg-red-600 hover:bg-red-500 text-white p-1 rounded-full flex items-center justify-center transition-colors shadow-sm"
+                  title="Detener generación"
+                >
+                  <Square className="w-3.5 h-3.5 fill-current" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleSend()}
+                  disabled={!prompt.trim() && attachedFiles.length === 0}
+                  className={`p-1 rounded-full flex items-center justify-center transition-all ${
+                    prompt.trim() || attachedFiles.length > 0
+                      ? 'bg-editor-accent text-editor-sidebar shadow-sm' 
+                      : 'bg-editor-hover text-editor-textDark cursor-default opacity-50'
+                  }`}
+                  title="Enviar consulta (Enter)"
+                >
+                  <ArrowUp className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -758,4 +972,5 @@ export const AIPanel: React.FC = () => {
     </div>
   );
 };
+
 export default AIPanel;

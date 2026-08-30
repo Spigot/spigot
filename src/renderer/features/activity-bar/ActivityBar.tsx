@@ -17,7 +17,7 @@ export const ActivityBar: React.FC = () => {
   ];
 
   return (
-    <aside className="w-12 bg-editor-activity border-r border-editor-border flex flex-col justify-between items-center py-2 select-none z-40">
+    <aside className="w-12 bg-editor-activity border border-editor-border rounded-[8px] flex flex-col justify-between items-center py-2 select-none z-40 shrink-0 shadow-sm overflow-hidden">
       {/* Top Sidebar triggers */}
       <div className="flex flex-col gap-2 w-full items-center">
         {menuItems.map((item) => {

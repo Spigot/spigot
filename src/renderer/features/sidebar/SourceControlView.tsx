@@ -1,23 +1,32 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowDown,
   ArrowUp,
-  ArrowUpFromLine,
   Check,
   ChevronDown,
   ChevronRight,
-  CircleDot,
-  Download,
-  File,
   GitBranch,
+  GitFork,
+  Layers,
   Loader2,
   MoreHorizontal,
+  Plus,
   RefreshCw,
   Sparkles,
-  Upload,
+  Target,
   X,
+  Cloud,
+  Tag,
 } from 'lucide-react';
 import { useAIStore } from '../../store/aiStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { FileIcon } from './FileIcon';
+
+type GitRepo = {
+  name: string;
+  path: string;
+  isRoot: boolean;
+};
 
 type GitFile = {
   status: string;
@@ -28,6 +37,10 @@ type GitCommit = {
   hash: string;
   message: string;
   branch: string;
+  author?: string;
+  date?: string;
+  parents?: string[];
+  tags?: string[];
 };
 
 type AheadBehindCounts = {
@@ -49,12 +62,12 @@ const getStatusParts = (status: string) => ({
 const getStatusLabel = (status: string) => {
   const normalized = status.trim();
 
-  if (normalized === 'A') return { label: 'A', title: 'Added', className: 'text-emerald-400' };
-  if (normalized === 'D') return { label: 'D', title: 'Deleted', className: 'text-red-400' };
-  if (normalized === 'R') return { label: 'R', title: 'Renamed', className: 'text-emerald-400' };
-  if (normalized === 'C') return { label: 'C', title: 'Copied', className: 'text-emerald-400' };
-  if (normalized === 'U') return { label: 'U', title: 'Unmerged', className: 'text-[#f14c4c]' };
-  if (normalized === '??') return { label: 'U', title: 'Untracked', className: 'text-emerald-400' };
+  if (normalized === 'A') return { label: 'A', title: 'Added', className: 'text-[#73c991]' };
+  if (normalized === 'D') return { label: 'D', title: 'Deleted', className: 'text-[#f85149]' };
+  if (normalized === 'R') return { label: 'R', title: 'Renamed', className: 'text-[#73c991]' };
+  if (normalized === 'C') return { label: 'C', title: 'Copied', className: 'text-[#73c991]' };
+  if (normalized === 'U') return { label: 'U', title: 'Unmerged', className: 'text-[#f85149]' };
+  if (normalized === '??') return { label: 'U', title: 'Untracked', className: 'text-[#73c991]' };
 
   return { label: 'M', title: 'Modified', className: 'text-[#e2c08d]' };
 };
@@ -92,37 +105,53 @@ export const SourceControlView: React.FC = () => {
     setDiffFile,
   } = useWorkspaceStore();
 
+  const [repositories, setRepositories] = useState<GitRepo[]>([]);
   const [gitFiles, setGitFiles] = useState<GitFile[]>([]);
   const [isLoadingGit, setIsLoadingGit] = useState(false);
   const [currentBranch, setCurrentBranch] = useState('main');
   const [gitLog, setGitLog] = useState<GitCommit[]>([]);
-  const [commitMessage, setCommitMessage] = useState('');
+  const [commitMessages, setCommitMessages] = useState<Record<string, string>>({});
   const [isCommitting, setIsCommitting] = useState(false);
-  const [commitFeedback, setCommitFeedback] = useState('');
-  const [isGeneratingCommit, setIsGeneratingCommit] = useState(false);
-  const [aheadCount, setAheadCount] = useState(0);
   const [isPushing, setIsPushing] = useState(false);
-  const isInputOpen = true;
-  const [isChangesOpen, setIsChangesOpen] = useState(true);
-  const [isStagedOpen, setIsStagedOpen] = useState(true);
-  const [sourceControlHeight, setSourceControlHeight] = useState(68);
+  const [isGeneratingCommit, setIsGeneratingCommit] = useState(false);
+  const [commitFeedback, setCommitFeedback] = useState('');
+  const [aheadCount, setAheadCount] = useState(0);
+
+  const [isChangesSectionOpen, setIsChangesSectionOpen] = useState(true);
+  const [isGraphOpen, setIsGraphOpen] = useState(true);
+  const [openRepos, setOpenRepos] = useState<Record<string, boolean>>({});
+  const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
+  const [commitFilesMap, setCommitFilesMap] = useState<Record<string, Array<{ status: string; filePath: string }>>>({});
+  const [isLoadingCommitFiles, setIsLoadingCommitFiles] = useState(false);
+
+  const [sourceControlHeight, setSourceControlHeight] = useState(55);
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
 
   const refreshGitStatus = async (): Promise<AheadBehindCounts> => {
     if (!workspacePath) return { ahead: 0, behind: 0 };
     setIsLoadingGit(true);
     try {
-      const [files, branch, log, counts] = await Promise.all([
+      const [repos, files, branch, log, counts] = await Promise.all([
+        (window as any).api.git.getRepositories?.(workspacePath) || [{ name: workspacePath.split(/[/\\]/).pop() || 'root', path: workspacePath, isRoot: true }],
         (window as any).api.git.getStatus(workspacePath),
         (window as any).api.git.getCurrentBranch(workspacePath),
         (window as any).api.git.getLog(workspacePath),
         (window as any).api.git.getAheadBehind(workspacePath),
       ]);
 
+      setRepositories(repos || []);
       setGitFiles(files || []);
       setCurrentBranch(branch || 'main');
       setGitLog(log || []);
       setAheadCount(counts?.ahead || 0);
+
+      // Default all repositories to open
+      if (repos && Object.keys(openRepos).length === 0) {
+        const initialOpen: Record<string, boolean> = {};
+        repos.forEach((r: GitRepo) => { initialOpen[r.path] = true; });
+        setOpenRepos(initialOpen);
+      }
+
       return counts || { ahead: 0, behind: 0 };
     } catch (err) {
       console.error('Error fetching git source control state:', err);
@@ -148,17 +177,19 @@ export const SourceControlView: React.FC = () => {
 
     const normalizedWorkspacePath = normalizePath(workspacePath);
     const gitRelativePaths = new Set(gitFiles.map((file) => normalizePath(file.filePath)));
-    const gitResources = gitFiles.map((file) => {
-      const { indexStatus, workTreeStatus } = getStatusParts(file.status);
-      const isStaged = indexStatus !== ' ' && indexStatus !== '?';
+    const gitResources = gitFiles
+      .filter((file) => file.status.trim() !== '!!')
+      .map((file) => {
+        const { indexStatus, workTreeStatus } = getStatusParts(file.status);
+        const isStaged = indexStatus !== ' ' && indexStatus !== '?';
 
-      return {
-        ...file,
-        indexStatus,
-        workTreeStatus,
-        group: isStaged ? 'staged' : 'changes',
-      } satisfies SourceControlResource;
-    });
+        return {
+          ...file,
+          indexStatus,
+          workTreeStatus,
+          group: isStaged ? 'staged' : 'changes',
+        } satisfies SourceControlResource;
+      });
 
     const unsavedResources = dirtyFiles
       .map(normalizePath)
@@ -184,16 +215,20 @@ export const SourceControlView: React.FC = () => {
 
   const allResourceCount = resources.staged.length + resources.changes.length;
 
-  const handleResizeGraphMouseDown = (event: React.MouseEvent) => {
-    event.preventDefault();
+  const handleResizeGraphMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
     const container = splitContainerRef.current;
     if (!container) return;
 
-    const rect = container.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const nextHeight = ((moveEvent.clientY - rect.top) / rect.height) * 100;
-      setSourceControlHeight(Math.max(30, Math.min(82, nextHeight)));
+      const offset = moveEvent.clientY - containerRect.top;
+      const totalHeight = containerRect.height;
+      if (totalHeight <= 0) return;
+
+      const percentage = Math.min(80, Math.max(20, (offset / totalHeight) * 100));
+      setSourceControlHeight(percentage);
     };
 
     const handleMouseUp = () => {
@@ -205,29 +240,29 @@ export const SourceControlView: React.FC = () => {
     document.addEventListener('mouseup', handleMouseUp);
   };
 
-  const handleGenerateCommitMessage = async () => {
+  const handleGenerateCommitMessage = async (repoPath: string) => {
     if (!workspacePath) return;
     setIsGeneratingCommit(true);
     setCommitFeedback('');
     let diff = '';
     try {
-      diff = await (window as any).api.git.getDiff(workspacePath, '');
+      diff = await (window as any).api.git.getDiff(repoPath, '');
       if (!diff || !diff.trim()) {
-        setCommitFeedback('Error: There are no saved local changes to commit.');
+        setCommitFeedback('Error: No hay cambios guardados para generar mensaje.');
         return;
       }
 
-      setCommitMessage('');
+      setCommitMessages(prev => ({ ...prev, [repoPath]: '' }));
       await useAIStore.getState().generateCommitMessage(diff, (text) => {
-        setCommitMessage(text);
+        setCommitMessages(prev => ({ ...prev, [repoPath]: text }));
       });
-      setCommitFeedback('Commit message generated.');
+      setCommitFeedback('Mensaje generado.');
     } catch (err: any) {
       console.error('Failed generating commit message:', err);
-      const errorMessage = err.message || 'Failed to generate commit message.';
+      const errorMessage = err.message || 'Error al generar mensaje.';
       if (isRateLimitError(errorMessage)) {
-        setCommitMessage(createFallbackCommitMessage(diff));
-        setCommitFeedback('AI usage limit reached. Drafted a fallback commit message locally.');
+        setCommitMessages(prev => ({ ...prev, [repoPath]: createFallbackCommitMessage(diff) }));
+        setCommitFeedback('Límite de IA alcanzado. Mensaje básico creado.');
         return;
       }
 
@@ -237,48 +272,49 @@ export const SourceControlView: React.FC = () => {
     }
   };
 
-  const handleCommit = async (event?: React.FormEvent) => {
+  const handleCommit = async (repoPath: string, event?: React.FormEvent) => {
     event?.preventDefault();
-    if (!workspacePath || !commitMessage.trim()) return;
+    const msg = commitMessages[repoPath] || '';
+    if (!workspacePath || !msg.trim()) return;
 
     setIsCommitting(true);
     setCommitFeedback('');
     try {
-      const res = await (window as any).api.git.commit(workspacePath, commitMessage.trim());
+      const res = await (window as any).api.git.commit(repoPath, msg.trim());
       if (res.success) {
-        setCommitMessage('');
+        setCommitMessages(prev => ({ ...prev, [repoPath]: '' }));
         const counts = await refreshGitStatus();
         setCommitFeedback(
           counts.ahead > 0
-            ? `Commit completed. ${counts.ahead} commit${counts.ahead === 1 ? '' : 's'} ready to sync.`
-            : 'Commit completed.'
+            ? `Commit completado (${counts.ahead} listos para Sync).`
+            : 'Commit completado.'
         );
         window.setTimeout(() => setCommitFeedback(''), 4000);
       } else {
         setCommitFeedback(`Error: ${res.error}`);
       }
     } catch (err: any) {
-      setCommitFeedback(`Error: ${err.message || 'Unknown failure'}`);
+      setCommitFeedback(`Error: ${err.message || 'Error'}`);
     } finally {
       setIsCommitting(false);
     }
   };
 
-  const handlePush = async () => {
+  const handlePush = async (repoPath: string) => {
     if (!workspacePath) return;
     setIsPushing(true);
     setCommitFeedback('');
     try {
-      const res = await (window as any).api.git.push(workspacePath);
+      const res = await (window as any).api.git.push(repoPath);
       if (res.success) {
-        setCommitFeedback('Synced with remote.');
+        setCommitFeedback('Sincronizado con remoto.');
         await refreshGitStatus();
         window.setTimeout(() => setCommitFeedback(''), 3000);
       } else {
         setCommitFeedback(`Error: ${res.error}`);
       }
     } catch (err: any) {
-      setCommitFeedback(`Error: ${err.message || 'Unknown failure'}`);
+      setCommitFeedback(`Error: ${err.message || 'Error'}`);
     } finally {
       setIsPushing(false);
     }
@@ -316,6 +352,27 @@ export const SourceControlView: React.FC = () => {
     }
   };
 
+  const handleToggleCommitDetails = async (hash: string) => {
+    if (selectedCommitHash === hash) {
+      setSelectedCommitHash(null);
+      return;
+    }
+    setSelectedCommitHash(hash);
+    if (!commitFilesMap[hash] && workspacePath) {
+      setIsLoadingCommitFiles(true);
+      try {
+        const files = await (window as any).api.git.getCommitFiles?.(workspacePath, hash);
+        if (files) {
+          setCommitFilesMap(prev => ({ ...prev, [hash]: files }));
+        }
+      } catch (e) {
+        console.error('Failed loading commit files:', e);
+      } finally {
+        setIsLoadingCommitFiles(false);
+      }
+    }
+  };
+
   const renderResource = (resource: SourceControlResource, action: 'stage' | 'unstage') => {
     const fileName = resource.filePath.split('/').pop() || resource.filePath;
     const relativeDir = resource.filePath.split('/').slice(0, -1).join('/');
@@ -327,7 +384,7 @@ export const SourceControlView: React.FC = () => {
       <div
         key={`${resource.group}:${resource.filePath}:${resource.status}`}
         className={`spigot-scm-resource-row group ${
-          isActive ? 'bg-editor-active' : ''
+          isActive ? 'bg-editor-active text-white' : ''
         }`}
       >
         <button
@@ -336,7 +393,9 @@ export const SourceControlView: React.FC = () => {
           className="spigot-scm-resource-button"
           title={`${resource.filePath} (${status.title})`}
         >
-          <File className="h-3.5 w-3.5 shrink-0 text-editor-textDark" />
+          <div className="w-4 h-4 flex items-center justify-center shrink-0">
+            <FileIcon name={fileName} isDirectory={false} />
+          </div>
           <span className="spigot-scm-resource-label">
             <span className="spigot-scm-resource-name">{fileName}</span>
             {relativeDir && (
@@ -354,235 +413,371 @@ export const SourceControlView: React.FC = () => {
           type="button"
           onClick={() => action === 'stage' ? handleStage(resource.filePath) : handleUnstage(resource.filePath)}
           className="spigot-scm-resource-action"
-          title={action === 'stage' ? 'Stage Changes' : 'Unstage Changes'}
+          title={action === 'stage' ? 'Preparar cambio (Stage)' : 'Despreparar cambio (Unstage)'}
         >
-          {action === 'stage' ? <span className="text-[15px] leading-none">+</span> : <X className="h-3.5 w-3.5" />}
+          {action === 'stage' ? <Plus className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
         </button>
       </div>
     );
   };
 
-  const renderGroup = (
-    title: string,
-    count: number,
-    isOpen: boolean,
-    setIsOpen: (next: boolean) => void,
-    items: SourceControlResource[],
-    action: 'stage' | 'unstage'
-  ) => (
-    <div className="spigot-scm-group">
-      <div className="spigot-scm-group-row">
-        <button
-          type="button"
-          onClick={() => setIsOpen(!isOpen)}
-          className="flex min-w-0 flex-1 items-center text-left"
-        >
-          {isOpen ? <ChevronDown className="mr-1 h-3.5 w-3.5" /> : <ChevronRight className="mr-1 h-3.5 w-3.5" />}
-          <span className="truncate font-semibold">{title}</span>
-          <span className="ml-[6px] text-editor-textDark">{count}</span>
-        </button>
-      </div>
-
-      {isOpen && items.map((item) => renderResource(item, action))}
-    </div>
-  );
-
   return (
-    <div className="spigot-scm-view flex h-full flex-col overflow-hidden bg-editor-sidebar text-editor-text">
+    <div className="spigot-scm-view flex h-full flex-col overflow-hidden bg-editor-sidebar text-editor-text select-none text-[13px]">
       <div ref={splitContainerRef} className="flex min-h-0 flex-1 flex-col">
+        {/* Top Changes & Repositories Section */}
         <section
           className="flex min-h-[160px] flex-col overflow-hidden"
           style={{ height: `${sourceControlHeight}%` }}
         >
-          <div className="flex h-[35px] shrink-0 items-center gap-2 border-b border-editor-border px-3 text-[12px] tracking-wide text-editor-textDark">
-            <GitBranch className="h-3.5 w-3.5" />
-            <span className="min-w-0 flex-1 truncate font-semibold">{currentBranch}</span>
-            {aheadCount > 0 && <span className="text-editor-text">↑{aheadCount}</span>}
-            <button
-              type="button"
-              onClick={refreshGitStatus}
-              disabled={isLoadingGit}
-              className="flex h-[22px] w-[22px] items-center justify-center hover:bg-editor-hover disabled:opacity-60"
-              title="Refresh"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${isLoadingGit ? 'animate-spin' : ''}`} />
-            </button>
-            <button
-              type="button"
-              className="flex h-[22px] w-[22px] items-center justify-center hover:bg-editor-hover"
-              title="More Actions"
-            >
-              <MoreHorizontal className="h-3.5 w-3.5" />
-            </button>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
-            <div className="flex h-[36px] items-center px-[11px]">
+          {/* Main Section Header */}
+          <div 
+            onClick={() => setIsChangesSectionOpen(!isChangesSectionOpen)}
+            className="flex h-[28px] shrink-0 items-center justify-between border-b border-editor-border px-3 text-[11px] font-bold text-editor-text uppercase tracking-wider hover:bg-editor-hover cursor-pointer select-none"
+          >
+            <div className="flex items-center gap-1">
+              {isChangesSectionOpen ? <ChevronDown className="h-3.5 w-3.5 text-editor-textDark" /> : <ChevronRight className="h-3.5 w-3.5 text-editor-textDark" />}
+              <span>Changes</span>
+            </div>
+            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
-                onClick={handleCommit}
-                disabled={isCommitting || !commitMessage.trim()}
-                className="flex h-[26px] min-w-0 flex-1 items-center justify-center gap-1 rounded-[2px] bg-editor-active px-2 text-[13px] text-white hover:bg-editor-hover disabled:cursor-default disabled:bg-editor-active disabled:text-editor-textDark"
+                onClick={refreshGitStatus}
+                disabled={isLoadingGit}
+                className="p-1 hover:bg-editor-active text-editor-textDark hover:text-white rounded transition-colors"
+                title="Actualizar estado de Git"
               >
-                {isCommitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                <span className="truncate">Commit</span>
+                <RefreshCw className={`h-3 w-3 ${isLoadingGit ? 'animate-spin' : ''}`} />
+              </button>
+              <button
+                type="button"
+                className="p-1 hover:bg-editor-active text-editor-textDark hover:text-white rounded transition-colors"
+                title="Más acciones"
+              >
+                <MoreHorizontal className="h-3 w-3" />
               </button>
             </div>
-
-            {isInputOpen && (
-              <form onSubmit={handleCommit} className="px-[11px] pb-2">
-                <div className="flex rounded-[2px] border border-editor-border bg-editor-bg focus-within:border-editor-accent">
-                  <textarea
-                    value={commitMessage}
-                    onChange={(event) => setCommitMessage(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-                        handleCommit(event);
-                      }
-                    }}
-                    placeholder={`Message (${currentBranch})`}
-                    rows={3}
-                    className="min-h-[62px] flex-1 resize-none bg-transparent px-[7px] py-[5px] text-[13px] leading-[18px] text-editor-text outline-none placeholder:text-editor-textDark"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleGenerateCommitMessage}
-                    disabled={isGeneratingCommit}
-                    className="mt-1 h-[22px] w-[22px] shrink-0 text-editor-text hover:bg-editor-hover disabled:opacity-60"
-                    title="Generate Commit Message"
-                  >
-                    {isGeneratingCommit ? <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mx-auto h-3.5 w-3.5" />}
-                  </button>
-                </div>
-
-                {aheadCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={handlePush}
-                    disabled={isPushing}
-                    className="mt-2 flex h-[26px] w-full items-center justify-center gap-1 rounded-[2px] bg-editor-active text-[13px] text-white hover:bg-editor-hover disabled:bg-editor-active disabled:text-editor-textDark"
-                  >
-                    {isPushing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUp className="h-3.5 w-3.5" />}
-                    Sync Changes ({aheadCount})
-                  </button>
-                )}
-
-                {commitFeedback && (
-                  <div className={`mt-2 border px-2 py-1 text-[12px] ${commitFeedback.startsWith('Error') ? 'border-red-500/40 bg-red-950/30 text-red-400' : 'border-emerald-500/40 bg-emerald-950/30 text-emerald-400'}`}>
-                    {commitFeedback}
-                  </div>
-                )}
-              </form>
-            )}
-
-            {!workspacePath ? (
-              <div className="flex h-40 flex-col items-center justify-center text-center text-[12px] text-editor-textDark">
-                <GitBranch className="mb-2 h-7 w-7" />
-                <span>No source control providers registered.</span>
-              </div>
-            ) : allResourceCount === 0 ? (
-              <div className="px-[22px] py-5 text-[13px] leading-5 text-editor-textDark">
-                There are no pending changes.
-              </div>
-            ) : (
-              <>
-                {resources.staged.length > 0 && renderGroup('Staged Changes', resources.staged.length, isStagedOpen, setIsStagedOpen, resources.staged, 'unstage')}
-                {renderGroup('Changes', resources.changes.length, isChangesOpen, setIsChangesOpen, resources.changes, 'stage')}
-              </>
-            )}
           </div>
+
+          {/* Repositories list */}
+          {isChangesSectionOpen && (
+            <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar p-2 flex flex-col gap-3">
+              {repositories.map((repo) => {
+                const isOpen = openRepos[repo.path] !== false;
+                const repoMessage = commitMessages[repo.path] || '';
+                const isRootRepo = repo.isRoot;
+
+                return (
+                  <div key={repo.path} className="flex flex-col gap-1.5">
+                    {/* Repository Header Bar (VS Code Style) */}
+                    <div 
+                      onClick={() => setOpenRepos(prev => ({ ...prev, [repo.path]: !isOpen }))}
+                      className="flex h-[24px] items-center justify-between px-1 hover:bg-editor-hover rounded-[3px] cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-editor-textDark shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-editor-textDark shrink-0" />}
+                        <Layers className="h-3.5 w-3.5 text-sky-400 shrink-0" />
+                        <span className="font-semibold text-[12px] text-editor-text truncate">{repo.name}</span>
+                        <div className="flex items-center gap-1 text-[11px] text-editor-textDark ml-1">
+                          <GitBranch className="h-3 w-3 text-[#e2c08d] shrink-0" />
+                          <span className="font-mono text-[11px]">{currentBranch}</span>
+                        </div>
+                      </div>
+
+                      {/* Repo action icons toolbar (VS Code Style) */}
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => refreshGitStatus()}
+                          className="p-1 hover:bg-editor-active text-editor-textDark hover:text-white rounded"
+                          title="Actualizar"
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleCommit(repo.path, e)}
+                          disabled={!repoMessage.trim()}
+                          className="p-1 hover:bg-editor-active text-editor-textDark hover:text-white rounded disabled:opacity-40"
+                          title="Commit"
+                        >
+                          <Check className="h-3 w-3 text-emerald-400" />
+                        </button>
+                        <button
+                          type="button"
+                          className="p-1 hover:bg-editor-active text-editor-textDark hover:text-white rounded"
+                          title="Crear rama"
+                        >
+                          <GitFork className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handlePush(repo.path)}
+                          disabled={isPushing}
+                          className="p-1 hover:bg-editor-active text-editor-textDark hover:text-white rounded flex items-center gap-0.5"
+                          title={aheadCount > 0 ? `Sincronizar (${aheadCount} pendientes)` : "Sincronizar cambios"}
+                        >
+                          <ArrowUp className="h-3 w-3 text-sky-400" />
+                          {aheadCount > 0 && <span className="text-[9.5px] font-mono text-sky-300">{aheadCount}</span>}
+                        </button>
+                        <button
+                          type="button"
+                          className="p-1 hover:bg-editor-active text-editor-textDark hover:text-white rounded"
+                          title="Más acciones"
+                        >
+                          <MoreHorizontal className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Commit Box & Split Button */}
+                    {isOpen && (
+                      <div className="flex flex-col gap-1.5 pl-2">
+                        {/* Textarea */}
+                        <div className="flex rounded-[3px] border border-editor-border bg-editor-bg focus-within:border-editor-accent transition-all p-1">
+                          <textarea
+                            value={repoMessage}
+                            onChange={(e) => setCommitMessages(prev => ({ ...prev, [repo.path]: e.target.value }))}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                                handleCommit(repo.path, e);
+                              }
+                            }}
+                            placeholder={`Message (Ctrl+Enter to commit on "${currentBranch}")...`}
+                            rows={2}
+                            className="min-h-[42px] flex-1 resize-none bg-transparent px-1.5 py-0.5 text-[12px] leading-relaxed text-editor-text outline-none placeholder:text-editor-textDark font-sans"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleGenerateCommitMessage(repo.path)}
+                            disabled={isGeneratingCommit}
+                            className="h-6 w-6 self-end text-editor-textDark hover:text-editor-accent hover:bg-editor-hover rounded flex items-center justify-center disabled:opacity-60 transition-colors"
+                            title="Generar mensaje con IA (✨)"
+                          >
+                            {isGeneratingCommit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                          </button>
+                        </div>
+
+                        {/* Split Commit Button (VS Code Style) */}
+                        <div className="flex items-center rounded-[3px] overflow-hidden border border-[#007acc]/60 bg-[#007acc] text-white">
+                          <button
+                            type="button"
+                            onClick={(e) => handleCommit(repo.path, e)}
+                            disabled={isCommitting || !repoMessage.trim()}
+                            className="flex h-[24px] min-w-0 flex-1 items-center justify-center gap-1.5 px-3 text-[12px] font-medium hover:bg-[#0098ff] transition-colors disabled:cursor-default disabled:bg-editor-active disabled:text-editor-textDark"
+                          >
+                            {isCommitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                            <span>Commit</span>
+                          </button>
+                          <div className="w-[1px] h-full bg-white/20" />
+                          <button
+                            type="button"
+                            onClick={() => handlePush(repo.path)}
+                            disabled={isPushing}
+                            className="h-[24px] px-2 hover:bg-[#0098ff] transition-colors flex items-center justify-center disabled:opacity-50"
+                            title="Commit & Sync"
+                          >
+                            <ChevronDown className="h-3 w-3" />
+                          </button>
+                        </div>
+
+                        {/* List of changed files under root repo */}
+                        {isRootRepo && allResourceCount > 0 && (
+                          <div className="flex flex-col gap-0.5 mt-1">
+                            {resources.staged.map((item) => renderResource(item, 'unstage'))}
+                            {resources.changes.map((item) => renderResource(item, 'stage'))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {commitFeedback && (
+                <div className={`mt-1 border rounded-[4px] px-2 py-1 text-[11px] ${commitFeedback.startsWith('Error') ? 'border-red-500/40 bg-red-950/30 text-red-400' : 'border-emerald-500/40 bg-emerald-950/30 text-emerald-400'}`}>
+                  {commitFeedback}
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
+        {/* Section divider */}
         <div
           onMouseDown={handleResizeGraphMouseDown}
-          className="h-[5px] shrink-0 cursor-row-resize border-y border-editor-border bg-editor-sidebar hover:bg-editor-hover"
-          title="Resize Source Control Graph"
-        />
+          className="flex h-[5px] cursor-row-resize items-center justify-center bg-editor-sidebar hover:bg-editor-accent/20 transition-colors"
+          title="Arrastrar para ajustar altura"
+        >
+          <div className="h-[1px] w-8 bg-editor-border" />
+        </div>
 
-        <section className="flex min-h-[96px] flex-1 flex-col overflow-hidden">
-          <div className="spigot-scm-group-row shrink-0 border-b border-editor-border">
-            <span className="min-w-0 flex-1 truncate font-semibold">Source Control Graph</span>
-            <div className="ml-2 flex items-center gap-1 text-editor-text">
-              <button
-                type="button"
-                className="flex h-[20px] items-center gap-1 px-1 hover:bg-editor-hover"
-                title="Auto"
-              >
-                <GitBranch className="h-3.5 w-3.5" />
-                <span className="text-[12px] normal-case">Auto</span>
+        {/* VS Code Native Git Graph Section */}
+        <section className="flex min-h-[110px] flex-1 flex-col overflow-hidden bg-editor-sidebar border-t border-editor-border">
+          {/* Graph Header Bar (VS Code Style) */}
+          <div 
+            onClick={() => setIsGraphOpen(!isGraphOpen)}
+            className="flex h-[28px] shrink-0 items-center justify-between border-b border-editor-border px-3 text-[11px] font-bold text-editor-text uppercase tracking-wider hover:bg-editor-hover cursor-pointer select-none"
+          >
+            <div className="flex items-center gap-1.5 min-w-0">
+              {isGraphOpen ? <ChevronDown className="h-3.5 w-3.5 text-editor-textDark shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-editor-textDark shrink-0" />}
+              <span className="truncate">Graph</span>
+              <div className="flex items-center gap-1 text-editor-textDark font-normal lowercase tracking-normal">
+                <Layers className="h-3 w-3 text-sky-400 shrink-0" />
+                <span className="truncate">{repositories[0]?.name || 'workspace'}</span>
+                <GitBranch className="h-3 w-3 text-[#e2c08d] shrink-0 ml-1" />
+                <span className="truncate font-mono">{currentBranch}</span>
+              </div>
+            </div>
+
+            {/* Quick Action Toolbar */}
+            <div className="flex items-center gap-1 text-editor-textDark" onClick={(e) => e.stopPropagation()}>
+              <button title="Focus HEAD" className="p-0.5 hover:text-white hover:bg-editor-active rounded">
+                <Target className="h-3 w-3" />
               </button>
-              <button
-                type="button"
-                className="flex h-[20px] w-[20px] items-center justify-center hover:bg-editor-hover"
-                title="Center Graph"
-              >
-                <CircleDot className="h-3.5 w-3.5" />
+              <button title="Pull changes" onClick={() => refreshGitStatus()} className="p-0.5 hover:text-white hover:bg-editor-active rounded">
+                <ArrowDown className="h-3 w-3" />
               </button>
-              <button
-                type="button"
-                onClick={refreshGitStatus}
-                disabled={isLoadingGit}
-                className="flex h-[20px] w-[20px] items-center justify-center hover:bg-editor-hover disabled:opacity-60"
-                title="Fetch"
-              >
-                <Download className="h-3.5 w-3.5" />
+              <button title="Push changes" onClick={() => workspacePath && handlePush(workspacePath)} className="p-0.5 hover:text-white hover:bg-editor-active rounded">
+                <ArrowUp className="h-3 w-3" />
               </button>
-              <button
-                type="button"
-                onClick={refreshGitStatus}
-                disabled={isLoadingGit}
-                className="flex h-[20px] w-[20px] items-center justify-center hover:bg-editor-hover disabled:opacity-60"
-                title="Pull"
-              >
-                <ArrowUpFromLine className="h-3.5 w-3.5 rotate-180" />
+              <button title="Refresh log" onClick={() => refreshGitStatus()} className="p-0.5 hover:text-white hover:bg-editor-active rounded">
+                <RefreshCw className="h-3 w-3" />
               </button>
-              <button
-                type="button"
-                onClick={handlePush}
-                disabled={isPushing}
-                className="flex h-[20px] w-[20px] items-center justify-center hover:bg-editor-hover disabled:opacity-60"
-                title="Push"
-              >
-                <Upload className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={refreshGitStatus}
-                disabled={isLoadingGit}
-                className="flex h-[20px] w-[20px] items-center justify-center hover:bg-editor-hover hover:text-editor-text disabled:opacity-60"
-                title="Refresh Graph"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${isLoadingGit ? 'animate-spin' : ''}`} />
-              </button>
-              <button
-                type="button"
-                className="flex h-[20px] w-[20px] items-center justify-center hover:bg-editor-hover hover:text-editor-text"
-                title="Graph Actions"
-              >
-                <MoreHorizontal className="h-3.5 w-3.5" />
+              <button title="More actions" className="p-0.5 hover:text-white hover:bg-editor-active rounded">
+                <MoreHorizontal className="h-3 w-3" />
               </button>
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar pb-2">
-            {gitLog.length === 0 ? (
-              <div className="px-[22px] py-3 text-[12px] text-editor-textDark">No commits found.</div>
-            ) : (
-              gitLog.map((commit, index) => (
-                <div key={commit.hash} className="grid h-[34px] grid-cols-[28px_1fr] items-center px-[14px] text-[12px] hover:bg-editor-hover">
-                  <div className="relative flex h-full items-center justify-center">
-                    {index < gitLog.length - 1 && <span className="absolute bottom-0 top-1/2 w-px bg-editor-textDark" />}
-                    {index > 0 && <span className="absolute bottom-1/2 top-0 w-px bg-editor-textDark" />}
-                    <span className="z-10 h-2.5 w-2.5 rounded-full border border-editor-sidebar bg-editor-accent" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="truncate text-editor-text" title={commit.message}>{commit.message}</div>
-                    <div className="truncate font-mono text-[10px] text-editor-textDark">{commit.hash}{commit.branch ? ` ? ${commit.branch}` : ''}</div>
-                  </div>
+          {/* Graph Commits List */}
+          {isGraphOpen && (
+            <div className="flex-1 overflow-y-auto overflow-x-hidden p-1 custom-scrollbar">
+              {gitLog.length === 0 ? (
+                <div className="py-4 text-center text-[11px] text-editor-textDark italic">
+                  No hay historial de commits.
                 </div>
-              ))
-            )}
-          </div>
+              ) : (
+                <div className="flex flex-col">
+                  {gitLog.map((commit, idx) => {
+                    const isHead = idx === 0;
+                    const isSelected = selectedCommitHash === commit.hash;
+                    const commitFiles = commitFilesMap[commit.hash] || [];
+
+                    return (
+                      <div key={commit.hash} className="flex flex-col">
+                        {/* Native VS Code Graph Row */}
+                        <div
+                          onClick={() => handleToggleCommitDetails(commit.hash)}
+                          className={`h-[22px] min-h-[22px] flex items-center px-1.5 rounded-[2px] cursor-pointer transition-colors group ${
+                            isSelected ? 'bg-editor-active text-white' : 'hover:bg-editor-hover text-editor-text'
+                          }`}
+                        >
+                          {/* Continuous Single Blue Line Graph Track */}
+                          <div className="relative w-4 h-full flex items-center justify-center shrink-0 mr-1.5">
+                            {/* Vertical Line */}
+                            <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[1.5px] bg-[#388bfd]/60" />
+                            
+                            {/* Commit Node */}
+                            {isHead ? (
+                              /* Double circle for HEAD */
+                              <div className="relative z-10 w-3 h-3 rounded-full border-2 border-[#388bfd] bg-editor-sidebar flex items-center justify-center shadow-[0_0_4px_rgba(56,139,253,0.5)]">
+                                <div className="w-1 h-1 rounded-full bg-[#388bfd]" />
+                              </div>
+                            ) : (
+                              /* Solid circle for older commits */
+                              <div className="relative z-10 w-2 h-2 rounded-full bg-[#388bfd] border border-editor-sidebar" />
+                            )}
+                          </div>
+
+                          {/* Commit Message */}
+                          <span className="truncate text-[12px] font-normal text-editor-text flex-1 min-w-0 pr-1">
+                            {commit.message}
+                          </span>
+
+                          {/* Branch Badge Pill & Cloud on the right (like VS Code) */}
+                          <div className="flex items-center gap-1 shrink-0 ml-1">
+                            {commit.branch && (
+                              <span className="bg-[#388bfd]/15 text-[#58a6ff] border border-[#388bfd]/30 text-[9.5px] px-1.5 py-0 rounded-full font-mono font-medium flex items-center gap-0.5">
+                                <GitBranch className="w-2.5 h-2.5" />
+                                <span>{commit.branch}</span>
+                              </span>
+                            )}
+                            {commit.tags?.map((t) => (
+                              <span
+                                key={t}
+                                className="bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[9.5px] px-1.5 py-0 rounded-full font-mono font-medium flex items-center gap-0.5"
+                              >
+                                <Tag className="w-2 h-2" />
+                                <span>{t}</span>
+                              </span>
+                            ))}
+                            {isHead && (
+                              <Cloud className="w-3 h-3 text-[#58a6ff] opacity-80" />
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Expanded Commit Details & Changed Files Drawer */}
+                        {isSelected && (
+                          <div className="ml-6 my-1 p-2 rounded-[4px] bg-editor-bg border border-editor-border flex flex-col gap-2 animate-slide-down">
+                            <div className="flex flex-col gap-0.5 border-b border-editor-border/60 pb-1.5 text-[11px]">
+                              <div className="flex items-center justify-between text-editor-textDark">
+                                <span className="text-editor-text font-medium">{commit.author || 'Autor'}</span>
+                                <span>{commit.date || 'Reciente'}</span>
+                              </div>
+                              <p className="text-editor-text text-[12px] whitespace-pre-wrap font-sans mt-0.5">
+                                {commit.message}
+                              </p>
+                              <span className="font-mono text-[9.5px] text-editor-textDark">
+                                commit {commit.hash}
+                              </span>
+                            </div>
+
+                            {/* Changed Files in Commit */}
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-[10px] font-bold text-editor-textDark uppercase tracking-wider mb-0.5">
+                                Archivos en este commit:
+                              </span>
+                              {isLoadingCommitFiles && commitFiles.length === 0 ? (
+                                <div className="flex items-center gap-1.5 py-1 text-editor-textDark text-[11px]">
+                                  <Loader2 className="w-3 h-3 animate-spin text-editor-accent" />
+                                  <span>Cargando archivos...</span>
+                                </div>
+                              ) : commitFiles.length === 0 ? (
+                                <span className="text-editor-textDark text-[10.5px] italic">
+                                  Sin cambios detallados.
+                                </span>
+                              ) : (
+                                commitFiles.map((file, fIdx) => {
+                                  const fName = file.filePath.split('/').pop() || file.filePath;
+                                  const status = getStatusLabel(file.status);
+                                  return (
+                                    <div
+                                      key={fIdx}
+                                      onClick={() => handleSelectGitFile(file.filePath)}
+                                      className="h-[22px] flex items-center justify-between px-1.5 rounded hover:bg-editor-hover cursor-pointer text-[12px]"
+                                    >
+                                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                        <FileIcon name={fName} isDirectory={false} />
+                                        <span className="truncate text-editor-text">{file.filePath}</span>
+                                      </div>
+                                      <span className={`font-mono text-[11px] font-bold ${status.className}`}>
+                                        {status.label}
+                                      </span>
+                                    </div>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </section>
       </div>
     </div>

@@ -123,12 +123,14 @@
     display: flex;
     align-items: center;
     width: 100%;
-    height: 24px;
-    padding: 0 10px 0 8px;
-    color: var(--editor-textDark);
+    height: 22px;
+    padding: 0 8px;
+    color: var(--editor-text);
     font-size: 11px;
-    line-height: 24px;
+    font-weight: 700;
+    line-height: 22px;
     text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .spigot-scm-group-row:hover {
@@ -137,16 +139,16 @@
 
   .spigot-scm-resource-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 18px;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: 4px;
     width: 100%;
-    height: 28px;
+    height: 22px;
     min-width: 0;
-    padding: 0 8px 0 22px;
+    padding: 0 6px 0 16px;
     color: var(--editor-text);
     font-size: 13px;
-    line-height: 28px;
+    line-height: 22px;
   }
 
   .spigot-scm-resource-row:hover {
@@ -161,11 +163,12 @@
     min-width: 0;
     overflow: hidden;
     text-align: left;
+    height: 22px;
   }
 
   .spigot-scm-resource-label {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     min-width: 0;
     overflow: hidden;
     white-space: nowrap;
@@ -182,21 +185,23 @@
 
   .spigot-scm-resource-name {
     flex: 0 1 auto;
+    font-size: 13px;
   }
 
   .spigot-scm-resource-description {
     flex: 1 1 auto;
-    margin-left: 4px;
+    margin-left: 6px;
     color: var(--editor-textDark);
-    font-size: 12px;
+    font-size: 11px;
   }
 
   .spigot-scm-resource-status {
-    width: 18px;
-    min-width: 18px;
+    width: 16px;
+    min-width: 16px;
     text-align: center;
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: monospace;
   }
 
   .spigot-scm-resource-action {
@@ -206,7 +211,8 @@
     justify-self: end;
     width: 18px;
     height: 18px;
-    color: var(--editor-text);
+    color: var(--editor-textDark);
+    border-radius: 3px;
   }
 
   .spigot-scm-resource-row:hover .spigot-scm-resource-action {
@@ -215,6 +221,7 @@
 
   .spigot-scm-resource-action:hover {
     background: var(--editor-hover);
+    color: var(--editor-text);
   }
 }
 

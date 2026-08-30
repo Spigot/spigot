@@ -14,6 +14,7 @@ const resetWorkspaceStore = () => {
     explorerSelectedPath: null,
     activeDiffFile: null,
     gitChangedFiles: [],
+    gitStatusMap: {},
   });
 };
 
