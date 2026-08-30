@@ -6,6 +6,10 @@
 
 **Spigot** es un editor de código premium, multiplataforma y de alto rendimiento, inspirado en VS Code. Está construido con **Electron**, **React**, y **Vite**, implementando **Screaming Architecture** para asegurar la escalabilidad y mantenibilidad del proyecto a largo plazo.
 
+<p align="center">
+  <img src="public/screenshot.png" alt="Spigot IDE Preview" width="100%" style="border-radius: 8px;">
+</p>
+
 ## ✨ Funcionalidades Principales (Features)
 
 - **Editor de Código Avanzado**: Integración profunda con **Monaco Editor**, soportando coloreado de sintaxis y autocompletado nativo impulsado por Language Server Protocol (LSP).
