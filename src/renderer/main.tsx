@@ -9,6 +9,7 @@ import ConsolePanel from './features/terminal/ConsolePanel';
 import AIPanel from './features/ai-panel/AIPanel';
 import StatusBar from './features/status-bar/StatusBar';
 import AgentModeView from './features/agent-mode/AgentModeView';
+import SettingsModal from './features/settings/SettingsModal';
 import { useWorkspaceStore } from './store/workspaceStore';
 import { useLayoutStore } from './store/layoutStore';
 import { useGlobalShortcuts } from './features/keyboard/useGlobalShortcuts';
@@ -207,6 +208,9 @@ const App: React.FC = () => {
           <StatusBar />
         </>
       )}
+
+      {/* 4. Global Settings Popup Modal (VS Code style) */}
+      <SettingsModal />
     </div>
   );
 };

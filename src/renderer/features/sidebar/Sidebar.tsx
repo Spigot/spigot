@@ -11,7 +11,7 @@ export const Sidebar: React.FC = () => {
   const { activeSidebarTab, isSidebarOpen, sidebarWidth } = useLayoutStore();
   const { 
     activeTabPath, fileBuffers, fileTree, updateFileBuffer, openFile, openTabs, setPendingSelection,
-    workspacePath, theme, setTheme
+    workspacePath
   } = useWorkspaceStore();
 
   // Search & Replace states
@@ -302,7 +302,6 @@ export const Sidebar: React.FC = () => {
           {activeSidebarTab === 'search' && 'BUSCAR'}
           {activeSidebarTab === 'source-control' && 'CONTROL DE CÓDIGO'}
           {activeSidebarTab === 'pull-request' && 'PULL REQUEST'}
-          {activeSidebarTab === 'settings' && 'CONFIGURACIÓN'}
         </span>
         {activeSidebarTab === 'explorer' && (
           <button 
@@ -587,36 +586,6 @@ export const Sidebar: React.FC = () => {
                   {pullRequestFeedback}
                 </div>
               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeSidebarTab === 'settings' && (
-        <div className="flex-1 flex flex-col p-3 gap-3">
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] text-editor-textDark font-bold uppercase">Tema de color</label>
-              <select
-                value={theme}
-                onChange={(event) => {
-                  const nextTheme = event.target.value as 'spigot-dark' | 'grayish-dark' | 'solarized-dark';
-                  setTheme(nextTheme);
-                }}
-                className="bg-editor-bg border border-editor-border text-xs px-2 py-1 rounded-none text-white outline-none"
-              >
-                <option value="spigot-dark">Spigot Dark (Por defecto)</option>
-                <option value="grayish-dark">Grisáceo</option>
-                <option value="solarized-dark">Solarized Dark</option>
-              </select>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] text-editor-textDark font-bold uppercase">Tamaño de fuente</label>
-              <input type="number" defaultValue={14} className="bg-editor-bg border border-editor-border text-xs px-2 py-1 rounded-none text-white outline-none w-20" />
-            </div>
-            <div className="flex items-center gap-2">
-              <input type="checkbox" defaultChecked className="rounded-none border-editor-border accent-editor-accent" />
-              <span className="text-xs text-editor-text">Auto-Guardado</span>
             </div>
           </div>
         </div>

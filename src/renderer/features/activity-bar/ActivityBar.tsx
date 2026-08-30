@@ -1,12 +1,13 @@
 import React from 'react';
 import { useLayoutStore, SidebarTab } from '../../store/layoutStore';
-import { Files, Search, Terminal, GitBranch, Bot, GitPullRequest } from 'lucide-react';
+import { Files, Search, Terminal, GitBranch, Bot, GitPullRequest, Settings } from 'lucide-react';
 
 export const ActivityBar: React.FC = () => {
   const { 
     activeSidebarTab, setSidebarTab, isSidebarOpen, 
     isConsoleOpen, toggleConsole,
-    isAIPanelOpen, toggleAIPanel
+    isAIPanelOpen, toggleAIPanel,
+    setSettingsModalOpen
   } = useLayoutStore();
 
   const menuItems = [
@@ -70,7 +71,14 @@ export const ActivityBar: React.FC = () => {
           <Terminal className="w-5 h-5" />
         </button>
 
-
+        {/* Manage / Settings popup trigger button (VS Code style Gear icon) */}
+        <button
+          onClick={() => setSettingsModalOpen(true)}
+          className="w-12 h-11 flex items-center justify-center transition-all-custom text-editor-textDark hover:text-editor-text group"
+          title="Configuración (Ctrl+,)"
+        >
+          <Settings className="w-5 h-5 group-hover:rotate-45 transition-transform duration-300" />
+        </button>
       </div>
     </aside>
   );

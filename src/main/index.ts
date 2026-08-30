@@ -442,6 +442,10 @@ ipcMain.on('terminal:resize', (_event, sessionId, cols, rows) => {
   terminalManager.resize(sessionId, cols, rows);
 });
 
+ipcMain.on('terminal:close', (_event, sessionId) => {
+  terminalManager.closeSession(sessionId);
+});
+
 // ==========================================
 // AI AGENT STORE AND STREAMING IPC HANDLERS
 // ==========================================

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { 
   SquarePen, Search, Blocks, Clock, Folder, MessageSquare, Settings,
   Plus, Hand, ChevronDown, Mic, ArrowUp, Monitor, GitBranch, X, Loader2, Copy, Check, Brain,
-  FilePlus, GitCommit, GitPullRequest, FolderOpen, Trash2
+  FilePlus, GitCommit, GitPullRequest, FolderOpen, Trash2, AlertCircle
 } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useAIStore } from '../../store/aiStore';
@@ -161,9 +161,9 @@ const ThoughtBlock: React.FC<{
   }
 
   const renderThoughtLine = (line: string, index: number) => {
-    const isExecuting = line.includes('🔧 Ejecutando herramienta');
-    const isCompleted = line.includes('✅ Herramienta') || line.includes('completada');
-    const isWarning = line.includes('⚠️');
+    const isExecuting = line.includes('Ejecutando herramienta');
+    const isCompleted = line.includes('Herramienta') && (line.includes('completada') || line.includes('finalizada'));
+    const isWarning = line.includes('ADVERTENCIA') || line.includes('Advertencia') || line.includes('⚠️');
 
     if (isExecuting) {
       const toolMatch = line.match(/`([^`]+)`/);
@@ -190,8 +190,8 @@ const ThoughtBlock: React.FC<{
     if (isWarning) {
       return (
         <div key={index} className="flex items-start gap-2 py-1 px-1.5 text-amber-300 text-[10.5px] font-sans">
-          <span className="shrink-0">⚠️</span>
-          <span>{line.replace('⚠️', '').trim()}</span>
+          <AlertCircle className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
+          <span>{line.replace(/^\[ADVERTENCIA\]\s*/i, '').replace('⚠️', '').trim()}</span>
         </div>
       );
     }
@@ -236,13 +236,13 @@ const ThoughtBlock: React.FC<{
 };
 
 export const AgentModeView: React.FC = () => {
-  const { workspacePath, setWorkspacePath, theme, setTheme, fileTree, explorerSelectedPath } = useWorkspaceStore();
+  const { workspacePath, setWorkspacePath, fileTree, explorerSelectedPath } = useWorkspaceStore();
   const { 
     conversations, activeConversationId, selectConversation, createConversation,
     messages, sendMessage, isGenerating, incomingStreamText, activeProvider,
     initializeStore, deleteConversation
   } = useAIStore();
-  const { isSettingsModalOpen, setSettingsModalOpen } = useLayoutStore();
+  const { setSettingsModalOpen } = useLayoutStore();
   
   const [recentProjects, setRecentProjects] = useState<string[]>([]);
   const [expandedProjects, setExpandedProjects] = useState<string[]>(workspacePath ? [workspacePath] : []);
@@ -1104,61 +1104,6 @@ export const AgentModeView: React.FC = () => {
         </div>
         <ConsolePanel />
       </div>
-
-      {/* Settings Modal */}
-      {isSettingsModalOpen && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm app-non-draggable">
-          <div className="w-[420px] rounded-xl border border-editor-border bg-editor-bg p-5 shadow-2xl flex flex-col gap-4 text-editor-text animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between pb-2 border-b border-editor-border">
-              <div className="flex items-center gap-2">
-                <Settings className="w-4 h-4 text-editor-textDark" />
-                <h2 className="font-semibold text-[14px]">Configuración de Spigot</h2>
-              </div>
-              <button 
-                onClick={() => setSettingsModalOpen(false)}
-                className="p-1 rounded hover:bg-editor-hover text-editor-textDark hover:text-editor-text transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-4 py-2">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] text-editor-textDark font-bold uppercase">Tema de color</label>
-                <select
-                  value={theme}
-                  onChange={(event) => {
-                    const nextTheme = event.target.value as 'spigot-dark' | 'grayish-dark' | 'solarized-dark';
-                    setTheme(nextTheme);
-                  }}
-                  className="bg-editor-sidebar border border-editor-border text-[13px] px-3 py-2 rounded outline-none focus:border-editor-textDark transition-colors"
-                >
-                  <option value="spigot-dark">Spigot Dark (Por defecto)</option>
-                  <option value="grayish-dark">Grisáceo</option>
-                  <option value="solarized-dark">Solarized Dark</option>
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] text-editor-textDark font-bold uppercase">Tamaño de fuente</label>
-                <input type="number" defaultValue={14} className="bg-editor-sidebar border border-editor-border text-[13px] px-3 py-2 rounded outline-none focus:border-editor-textDark transition-colors w-24" />
-              </div>
-              <div className="flex items-center gap-2 pt-1">
-                <input type="checkbox" defaultChecked className="rounded-none border-editor-border accent-editor-textDark" />
-                <span className="text-[13px]">Auto-Guardado</span>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <button 
-                onClick={() => setSettingsModalOpen(false)}
-                className="bg-editor-active hover:bg-editor-hover border border-editor-border text-editor-text px-4 py-1.5 rounded font-medium text-[13px] transition-colors"
-              >
-                Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

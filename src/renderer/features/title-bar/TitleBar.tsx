@@ -26,8 +26,9 @@ export const TitleBar: React.FC = () => {
   const {
     isConsoleOpen, toggleConsole,
     isAIPanelOpen, toggleAIPanel,
-    setSidebarTab, setSidebarOpen, setConsoleOpen,
-    isAgentModeOpen, toggleAgentMode
+    setConsoleOpen,
+    isAgentModeOpen, toggleAgentMode,
+    setSettingsModalOpen
   } = useLayoutStore();
   const { createSshSession } = useTerminalStore();
   
@@ -284,6 +285,22 @@ export const TitleBar: React.FC = () => {
                       >
                         <Save className="w-4 h-4 text-editor-textDark" />
                         <span>Guardar</span>
+                      </button>
+
+                      <div className="my-1 border-t border-editor-border" />
+
+                      <button
+                        onClick={() => {
+                          setActiveDropdown(null);
+                          setSettingsModalOpen(true);
+                        }}
+                        className="w-full text-left px-3 py-1.5 hover:bg-editor-hover hover:text-editor-accent flex items-center justify-between transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Settings className="w-4 h-4 text-editor-textDark" />
+                          <span>Configuración...</span>
+                        </div>
+                        <span className="text-editor-textDark text-[10px] font-mono">Ctrl+,</span>
                       </button>
                       
                       <div className="my-1 border-t border-editor-border" />
@@ -608,11 +625,8 @@ export const TitleBar: React.FC = () => {
             </button>
           )}
           <button 
-            onClick={() => {
-              setSidebarTab('settings');
-              setSidebarOpen(true);
-            }}
-            title="Ajustes (Toggle)"
+            onClick={() => setSettingsModalOpen(true)}
+            title="Configuración (Ctrl+,)"
             className="p-1 rounded hover:bg-white/10 hover:text-white transition-colors"
           >
             <Settings className="w-3.5 h-3.5" />

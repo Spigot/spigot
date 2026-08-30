@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type SidebarTab = 'explorer' | 'search' | 'source-control' | 'pull-request' | 'settings';
+export type SidebarTab = 'explorer' | 'search' | 'source-control' | 'pull-request';
 
 interface LayoutState {
   activeSidebarTab: SidebarTab;

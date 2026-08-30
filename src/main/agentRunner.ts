@@ -439,7 +439,7 @@ export async function runAgentLoop({
     const modelLimitMsg = provider === 'minimax'
       ? (isLargeContextModel ? 'MiniMax 150K Limit' : 'MiniMax 2K Limit')
       : 'Límite de seguridad';
-    sendChunk(`<think>\n⚠️ El contexto del proyecto fue optimizado y recortado para ajustarse al límite de tokens del proveedor (${modelLimitMsg}).\n</think>\n`);
+    sendChunk(`<think>\n[ADVERTENCIA] El contexto del proyecto fue optimizado y recortado para ajustarse al límite de tokens del proveedor (${modelLimitMsg}).\n</think>\n`);
   }
 
   while (turn < maxTurns) {
@@ -795,7 +795,7 @@ export async function runAgentLoop({
         sendChunk(`\n<think>\n`);
         
         for (const tc of toolCalls) {
-          sendChunk(`🔧 Ejecutando herramienta \`${tc.name}\` en el workspace...\n`);
+          sendChunk(`Ejecutando herramienta \`${tc.name}\` en el workspace...\n`);
           
           const resultStr = await executeTool(tc.name, tc.input, workspacePath);
           results.push({
@@ -804,7 +804,7 @@ export async function runAgentLoop({
             content: resultStr
           });
 
-          sendChunk(`✅ Herramienta \`${tc.name}\` completada.\n`);
+          sendChunk(`Herramienta \`${tc.name}\` completada.\n`);
         }
 
         sendChunk(`</think>\n`);

@@ -91,7 +91,7 @@ export const ConsolePanel: React.FC = () => {
     isConsoleOpen, isConsoleMaximized, toggleConsole, toggleConsoleMaximize,
     consoleHeight 
   } = useLayoutStore();
-  const { sessions, activeSessionId, createSession, closeSession } = useTerminalStore();
+  const { sessions, activeSessionId, createSession, closeSession, setActiveSession } = useTerminalStore();
   const { workspacePath, theme, openFile, setPendingSelection } = useWorkspaceStore();
   
   // Subscribe to LSP Diagnostics store reactively
@@ -106,22 +106,32 @@ export const ConsolePanel: React.FC = () => {
     }));
   };
 
-  const terminalRef = useRef<HTMLDivElement>(null);
+  // Each session gets its own container div — no shared ref
+  const containerRef = useRef<HTMLDivElement>(null);
   const xtermInstances = useRef<Record<string, { term: XTerm; fit: FitAddon; disposeData: () => void }>>({});
+  // Track whether user explicitly closed the last terminal (prevents auto-recreate)
+  const userClosedLast = useRef(false);
 
-  // Initialize terminal session if none exists on open
+  // Initialize terminal session if none exists on open (only on first open, not after user-close)
   useEffect(() => {
-    if (isConsoleOpen && sessions.length === 0) {
+    if (isConsoleOpen && sessions.length === 0 && !userClosedLast.current) {
       createSession(80, 24, workspacePath || '');
     }
   }, [isConsoleOpen, sessions.length, createSession, workspacePath]);
 
-  // Handle active session mount or switch
+  // Mount xterm instances into their individual container divs
   useEffect(() => {
-    if (!isConsoleOpen || !activeSessionId || !terminalRef.current) return;
+    if (!isConsoleOpen || !containerRef.current) return;
 
-    // Check if terminal instance for this activeSessionId exists
-    if (!xtermInstances.current[activeSessionId]) {
+    for (const sess of sessions) {
+      // Skip if already mounted
+      if (xtermInstances.current[sess.id]) continue;
+
+      // Find the dedicated container div for this session
+      const el = containerRef.current.querySelector(`[data-session-id="${sess.id}"]`) as HTMLDivElement | null;
+      if (!el) continue;
+
+      const sessionId = sess.id;
       const term = new XTerm({
         cursorBlink: true,
         fontSize: 13,
@@ -135,64 +145,67 @@ export const ConsolePanel: React.FC = () => {
 
       const fit = new FitAddon();
       term.loadAddon(fit);
+      term.open(el);
 
-      // Mount into the DOM container
-      term.open(terminalRef.current);
-      
-      // Delay initial fit slightly to ensure parent dimensions are computed
       setTimeout(() => {
         try {
           fit.fit();
-          (window as any).api.terminal.resize(activeSessionId, term.cols, term.rows);
+          (window as any).api.terminal.resize(sessionId, term.cols, term.rows);
         } catch (e) {}
       }, 30);
 
-      // Listen for data from the browser xterm frontend and forward to IPC
       const onDataDisposable = term.onData((data) => {
-        (window as any).api.terminal.write(activeSessionId, data);
+        (window as any).api.terminal.write(sessionId, data);
       });
 
-      // Listen for data from the node-pty backend process and write to xterm
-      const removeIncomingListener = (window as any).api.terminal.onData(activeSessionId, (data: string) => {
+      const removeIncomingListener = (window as any).api.terminal.onData(sessionId, (data: string) => {
         term.write(data);
       });
 
-      xtermInstances.current[activeSessionId] = {
+      xtermInstances.current[sessionId] = {
         term,
         fit,
         disposeData: () => {
           onDataDisposable.dispose();
           removeIncomingListener();
           term.dispose();
-        }
+        },
       };
-    } else {
-      // Re-attach existing terminal to the container if activeSessionId changed
-      const { term, fit } = xtermInstances.current[activeSessionId];
-      if (terminalRef.current && term.element && !terminalRef.current.contains(term.element)) {
-        terminalRef.current.innerHTML = '';
-        terminalRef.current.appendChild(term.element);
-        setTimeout(() => {
-          try {
-            fit.fit();
-          } catch (e) {}
-        }, 30);
-      }
     }
-  }, [isConsoleOpen, activeSessionId]);
+  }, [isConsoleOpen, sessions, theme]);
 
-  // Handle closing a terminal session
+  // Fit the active terminal when it becomes visible
+  useEffect(() => {
+    if (!activeSessionId || !xtermInstances.current[activeSessionId]) return;
+    const { term, fit } = xtermInstances.current[activeSessionId];
+    setTimeout(() => {
+      try {
+        fit.fit();
+        (window as any).api.terminal.resize(activeSessionId, term.cols, term.rows);
+      } catch (e) {}
+    }, 30);
+  }, [activeSessionId]);
+
+  // Handle closing a terminal session — kills backend PTY and disposes xterm
   const handleCloseTerminal = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    // Kill backend PTY process
+    try { (window as any).api.terminal.close(id); } catch (_) {}
+    // Dispose xterm frontend
     if (xtermInstances.current[id]) {
       xtermInstances.current[id].disposeData();
       delete xtermInstances.current[id];
+    }
+    // If this is the last session, mark user-closed so we don't auto-recreate
+    if (sessions.length <= 1) {
+      userClosedLast.current = true;
     }
     closeSession(id);
   };
 
   // Add a new terminal session
   const handleAddNewTerminal = async () => {
+    userClosedLast.current = false;
     await createSession(80, 24, workspacePath || '');
   };
 
@@ -229,7 +242,7 @@ export const ConsolePanel: React.FC = () => {
       if (t1) clearTimeout(t1);
       if (t2) clearTimeout(t2);
     };
-  }, [isConsoleMaximized, isConsoleOpen, activeSessionId, activePanelTab]);
+  }, [isConsoleMaximized, isConsoleOpen, activeSessionId, activePanelTab, sessions.length]);
 
   if (!isConsoleOpen) return null;
 
@@ -374,21 +387,77 @@ export const ConsolePanel: React.FC = () => {
       </div>
 
       {/* Body Area */}
-      <div className="flex-1 overflow-hidden bg-editor-bg relative flex flex-col p-1">
-        {/* PTY Terminal Container */}
-        <div 
-          style={{ display: activePanelTab === 'terminal' ? 'block' : 'none' }}
-          className="w-full h-full"
-        >
-          {activeSessionId ? (
-            <div ref={terminalRef} className="w-full h-full" />
-          ) : (
-            <div className="absolute inset-0 flex flex-col justify-center items-center text-center opacity-40 select-none text-editor-textDark">
-              <TermIcon className="w-8 h-8 mb-2" />
-              <p className="text-xs">No hay terminales activas</p>
+      <div className="flex-1 overflow-hidden bg-editor-bg relative flex">
+        {/* Terminal Tab Container with Viewport on Left and VS Code Instances Sidebar on Right */}
+        {activePanelTab === 'terminal' && (
+          <div className="flex-1 flex w-full h-full overflow-hidden">
+            {/* Terminal Viewport — one div per session, only active one visible */}
+            <div ref={containerRef} className="flex-1 h-full overflow-hidden p-1 relative">
+              {sessions.length === 0 ? (
+                <div className="absolute inset-0 flex flex-col justify-center items-center text-center opacity-40 select-none text-editor-textDark">
+                  <TermIcon className="w-8 h-8 mb-2" />
+                  <p className="text-xs">No hay terminales activas</p>
+                </div>
+              ) : (
+                sessions.map((sess) => (
+                  <div
+                    key={sess.id}
+                    data-session-id={sess.id}
+                    className="w-full h-full"
+                    style={{ display: sess.id === activeSessionId ? 'block' : 'none' }}
+                  />
+                ))
+              )}
             </div>
-          )}
-        </div>
+
+            {/* VS Code Terminal Instances Sidebar on the Right */}
+            {sessions.length > 0 && (
+              <div className="w-[140px] min-w-[140px] border-l border-editor-border bg-editor-sidebar flex flex-col select-none shrink-0">
+                <div className="h-[26px] border-b border-editor-border/60 px-2 flex items-center justify-between text-[10.5px] font-bold text-editor-textDark uppercase tracking-wider">
+                  <span>Terminales</span>
+                  <button
+                    onClick={handleAddNewTerminal}
+                    className="p-0.5 hover:bg-editor-hover hover:text-white rounded"
+                    title="Nueva Terminal (+)"
+                  >
+                    <Plus className="w-3 h-3" />
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-1 flex flex-col gap-0.5 custom-scrollbar">
+                  {sessions.map((sess, idx) => {
+                    const isActive = sess.id === activeSessionId;
+                    const displayName = sess.name || `Terminal ${idx + 1}`;
+                    return (
+                      <div
+                        key={sess.id}
+                        onClick={() => setActiveSession(sess.id)}
+                        className={`h-[24px] px-2 rounded-[3px] flex items-center justify-between cursor-pointer transition-colors group text-[11.5px] ${
+                          isActive
+                            ? 'bg-editor-active text-white font-medium border-l-2 border-editor-accent'
+                            : 'text-editor-textDark hover:bg-editor-hover hover:text-editor-text'
+                        }`}
+                        title={displayName}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <TermIcon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-editor-accent' : 'text-editor-textDark'}`} />
+                          <span className="truncate">{displayName}</span>
+                        </div>
+                        <button
+                          onClick={(e) => handleCloseTerminal(e, sess.id)}
+                          className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:text-red-400 text-editor-textDark transition-all"
+                          title="Cerrar sesión"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Problems View Tab Container */}
         {activePanelTab === 'problems' && (

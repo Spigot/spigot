@@ -1,7 +1,7 @@
 import React from "react";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { ArrowUp, Paperclip, Square, X, StopCircle, Mic, Globe, BrainCog, FolderCog } from "lucide-react";
+import { ArrowUp, Paperclip, Square, X, StopCircle, Mic, Globe, BrainCog, FolderCog, FileText } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useWorkspaceStore } from "../../store/workspaceStore";
 
@@ -626,7 +626,7 @@ export const PromptInputBox = React.forwardRef((props: PromptInputBoxProps, ref:
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 bg-zinc-800/80 border border-zinc-700/50 rounded-xl px-3 py-1.5 text-xs text-zinc-300 relative group pr-8 select-none">
-                    <span className="text-[14px] shrink-0">📄</span>
+                    <FileText className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
                     <div className="flex flex-col min-w-0">
                       <span className="font-semibold truncate max-w-[120px] text-zinc-200">{file.name}</span>
                       <span className="text-[9px] text-zinc-500 font-mono">{(file.size / 1024).toFixed(1)} KB</span>

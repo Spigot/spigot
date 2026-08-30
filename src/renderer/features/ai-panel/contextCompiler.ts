@@ -113,7 +113,7 @@ export async function compileContext(
   let summary = `Contexto del Agente (Seleccionado: ${selectionName})\n`;
   summary += `Archivos analizados:\n` + filesCompiled.map(f => `- ${f}`).join('\n') + '\n';
   if (limitExceeded) {
-    summary += `⚠️ ADVERTENCIA: Se superó el límite de contexto. Algunos archivos se omitieron.\n`;
+    summary += `[ADVERTENCIA]: Se superó el límite de contexto. Algunos archivos se omitieron.\n`;
   }
   summary += `=========================================\n`;
 

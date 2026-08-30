@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('terminal:create-ssh', { cols, rows, server }),
     write: (sessionId: string, data: string) => ipcRenderer.send('terminal:write', sessionId, data),
     resize: (sessionId: string, cols: number, rows: number) => ipcRenderer.send('terminal:resize', sessionId, cols, rows),
+    close: (sessionId: string) => ipcRenderer.send('terminal:close', sessionId),
     onData: (sessionId: string, callback: (data: string) => void) => {
       const subscription = (_event: any, data: string) => callback(data);
       ipcRenderer.on(`terminal:data:${sessionId}`, subscription);

@@ -551,7 +551,7 @@ export const SourceControlView: React.FC = () => {
                             onClick={() => handleGenerateCommitMessage(repo.path)}
                             disabled={isGeneratingCommit}
                             className="h-6 w-6 self-end text-editor-textDark hover:text-editor-accent hover:bg-editor-hover rounded flex items-center justify-center disabled:opacity-60 transition-colors"
-                            title="Generar mensaje con IA (✨)"
+                            title="Generar mensaje con IA"
                           >
                             {isGeneratingCommit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                           </button>

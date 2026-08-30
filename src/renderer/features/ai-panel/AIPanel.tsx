@@ -83,9 +83,9 @@ const ThoughtBlock: React.FC<{
   }
 
   const renderThoughtLine = (line: string, index: number) => {
-    const isExecuting = line.includes('🔧 Ejecutando herramienta');
-    const isCompleted = line.includes('✅ Herramienta') || line.includes('completada');
-    const isWarning = line.includes('⚠️');
+    const isExecuting = line.includes('Ejecutando herramienta');
+    const isCompleted = line.includes('Herramienta') && (line.includes('completada') || line.includes('finalizada'));
+    const isWarning = line.includes('ADVERTENCIA') || line.includes('Advertencia') || line.includes('⚠️');
 
     if (isExecuting) {
       const toolMatch = line.match(/`([^`]+)`/);
@@ -112,8 +112,8 @@ const ThoughtBlock: React.FC<{
     if (isWarning) {
       return (
         <div key={index} className="flex items-start gap-2 py-1 px-1.5 text-amber-300 text-[11px] font-sans">
-          <span className="shrink-0">⚠️</span>
-          <span>{line.replace('⚠️', '').trim()}</span>
+          <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+          <span>{line.replace(/^\[ADVERTENCIA\]\s*/i, '').replace('⚠️', '').trim()}</span>
         </div>
       );
     }

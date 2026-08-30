@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { useLayoutStore } from '../../store/layoutStore';
 
 const isEditableTarget = (target: EventTarget | null) => {
   if (!(target instanceof HTMLElement)) return false;
@@ -21,6 +22,12 @@ export const useGlobalShortcuts = () => {
 
       const key = event.key.toLowerCase();
       const workspace = useWorkspaceStore.getState();
+
+      if (key === ',') {
+        event.preventDefault();
+        useLayoutStore.getState().setSettingsModalOpen(true);
+        return;
+      }
 
       if (key === 's') {
         event.preventDefault();

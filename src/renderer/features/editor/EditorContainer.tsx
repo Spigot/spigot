@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import MonacoEditor, { DiffEditor, loader } from '@monaco-editor/react';
 import logoSpigotUrl from '../../assets/logoSpigot.png';
-import { RotateCw, Home, ExternalLink } from 'lucide-react';
+import { RotateCw, Home, ExternalLink, Globe } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import {
   changeLspDocument,
@@ -157,7 +157,7 @@ const BrowserTab: React.FC<{ url: string }> = ({ url }) => {
         {/* URL Input Form */}
         <form onSubmit={handleNavigate} className="flex-1 max-w-2xl flex items-center">
           <div className="flex-1 flex items-center bg-zinc-950 border border-zinc-800 focus-within:border-editor-accent rounded-lg px-3 py-1 text-xs text-zinc-300">
-            <span className="text-zinc-600 mr-1.5 shrink-0 select-none">🌐</span>
+            <Globe className="w-3.5 h-3.5 text-zinc-500 mr-1.5 shrink-0 select-none" />
             <input
               type="text"
               value={inputUrl}

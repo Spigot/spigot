@@ -1,6 +1,6 @@
 import React from 'react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
-import { X } from 'lucide-react';
+import { X, Globe } from 'lucide-react';
 
 export const EditorTabs: React.FC = () => {
   const { openTabs, activeTabPath, setActiveTab, closeFile, dirtyFiles, activeDiffFile } = useWorkspaceStore();
@@ -28,7 +28,7 @@ export const EditorTabs: React.FC = () => {
           >
             {/* File Icon or Diff indicator > or browser globe */}
             {isBrowser ? (
-              <span className="text-[11px] shrink-0 mr-0.5 select-none">🌐</span>
+              <Globe className="w-3.5 h-3.5 shrink-0 mr-0.5 text-zinc-400 select-none" />
             ) : (
               <span className={`font-bold text-[12px] shrink-0 select-none mr-0.5 transition-colors ${isDiffActive ? 'text-amber-500 font-extrabold' : isActive ? 'text-sky-400' : 'text-editor-textDark group-hover:text-sky-400'}`}>
                 &gt;
