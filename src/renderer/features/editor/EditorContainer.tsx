@@ -426,34 +426,31 @@ export const EditorContainer: React.FC = () => {
   if (!activeTabPath) {
     return (
       <div className="flex-1 flex flex-col justify-center items-center bg-editor-bg select-none h-full border-r border-editor-border p-6">
-        <div className="max-w-[400px] w-full flex flex-col items-center text-center">
-          <img src={logoSpigotUrl} alt="Spigot Logo" width="56" height="56" className="w-14 h-14 mb-5 select-none pointer-events-none object-contain opacity-95" />
+        <div className="max-w-[420px] w-full flex flex-col items-center text-center">
+          <img 
+            src={logoSpigotUrl} 
+            alt="Spigot Logo" 
+            className="w-48 h-48 mb-8 select-none pointer-events-none object-contain drop-shadow-[0_15px_35px_rgba(0,0,0,0.65)]" 
+          />
 
-          <h1 className="text-lg font-bold text-white mb-2 tracking-wide uppercase">Spigot Editor</h1>
-          <p className="text-[12px] text-editor-textDark mb-6 leading-relaxed">
-            A lightweight modular code editor built with Screaming Architecture on Electron + React.
-          </p>
-
-          <div className="w-full flex flex-col gap-2.5 bg-zinc-950/45 p-4 rounded-xl border border-editor-border shadow-2xl shadow-black/20">
-            <h2 className="text-[10px] text-editor-textDark uppercase font-bold text-left tracking-wider">Quick Commands</h2>
-
-            <div className="flex justify-between items-center text-xs border-b border-zinc-800/50 pb-2">
-              <span className="text-editor-text font-medium">Open Folder</span>
-              <kbd className="px-2 py-0.5 bg-zinc-900 text-editor-textDark rounded-md border border-zinc-800 text-[10px] font-mono shadow-sm">
+          <div className="w-full flex flex-col gap-3.5 max-w-[320px]">
+            <div className="flex justify-between items-center text-[12.5px]">
+              <span className="text-editor-text font-medium">Abrir Carpeta</span>
+              <kbd className="px-2.5 py-1 bg-editor-sidebar text-editor-text rounded border border-editor-border text-[11px] font-mono shadow-sm">
                 Ctrl + O
               </kbd>
             </div>
 
-            <div className="flex justify-between items-center text-xs border-b border-zinc-800/50 pb-2">
-              <span className="text-editor-text font-medium">New File</span>
-              <kbd className="px-2 py-0.5 bg-zinc-900 text-editor-textDark rounded-md border border-zinc-800 text-[10px] font-mono shadow-sm">
+            <div className="flex justify-between items-center text-[12.5px]">
+              <span className="text-editor-text font-medium">Nuevo Archivo</span>
+              <kbd className="px-2.5 py-1 bg-editor-sidebar text-editor-text rounded border border-editor-border text-[11px] font-mono shadow-sm">
                 Ctrl + N
               </kbd>
             </div>
 
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-editor-text font-medium">Save Changes</span>
-              <kbd className="px-2 py-0.5 bg-zinc-900 text-editor-textDark rounded-md border border-zinc-800 text-[10px] font-mono shadow-sm">
+            <div className="flex justify-between items-center text-[12.5px]">
+              <span className="text-editor-text font-medium">Guardar Cambios</span>
+              <kbd className="px-2.5 py-1 bg-editor-sidebar text-editor-text rounded border border-editor-border text-[11px] font-mono shadow-sm">
                 Ctrl + S
               </kbd>
             </div>

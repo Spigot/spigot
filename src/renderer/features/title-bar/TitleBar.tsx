@@ -585,7 +585,7 @@ export const TitleBar: React.FC = () => {
         <div className="flex items-center border-r border-editor-border pr-1 mr-1 text-[#858585]">
           <button
             onClick={toggleAgentMode}
-            title="Spy Agent"
+            title="Agent Mode"
             className={`p-1 rounded flex items-center justify-center hover:bg-white/10 hover:text-white transition-colors mr-0.5 ${
               isAgentModeOpen ? 'text-white bg-white/15' : ''
             }`}

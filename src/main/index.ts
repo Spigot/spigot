@@ -1,7 +1,7 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { join, relative } from 'path';
-import { promises as fsPromises, watch, FSWatcher } from 'fs';
+import { promises as fsPromises, watch, FSWatcher, existsSync } from 'fs';
 import { exec, execFile } from 'child_process';
 import { SshSessionConfig, terminalManager } from './terminal';
 import { lspManager } from './lspManager';
@@ -11,6 +11,11 @@ import { SpigotChatsEngineAdapter } from './engine/SpigotChatsEngineAdapter';
 import { EngineSessionService } from './engine/EngineSessionService';
 import { mapEngineEventToIpc } from './engine/types';
 
+// Set App User Model ID for Windows Taskbar icon grouping and display
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.gentleman.spigot');
+}
+
 let mainWindow: BrowserWindow | null = null;
 const workspaceWatchers = new Map<number, FSWatcher>();
 
@@ -18,10 +23,29 @@ const workspaceWatchers = new Map<number, FSWatcher>();
 // the unsupported Autofill protocol and print noisy console errors.
 app.commandLine.appendSwitch('disable-features', 'AutofillServerCommunication,AutofillShowTypePredictions');
 
-function getWindowIconPath() {
-  return app.isPackaged
-    ? join(__dirname, '../../dist/logoSpigot.ico')
-    : join(__dirname, '../../logoSpigot.ico');
+function getWindowIcon() {
+  const iconCandidates = [
+    join(app.getAppPath(), 'logoSpigot.ico'),
+    join(app.getAppPath(), 'public/logoSpigot.ico'),
+    join(app.getAppPath(), 'public/logoSpigot.png'),
+    join(app.getAppPath(), 'dist/logoSpigot.ico'),
+    join(__dirname, '../../logoSpigot.ico'),
+    join(__dirname, '../../public/logoSpigot.ico'),
+    join(__dirname, '../../public/logoSpigot.png'),
+    join(__dirname, '../renderer/assets/logoSpigot.png'),
+    join(process.cwd(), 'logoSpigot.ico'),
+    join(process.cwd(), 'public/logoSpigot.ico'),
+  ];
+
+  for (const iconPath of iconCandidates) {
+    if (existsSync(iconPath)) {
+      const img = nativeImage.createFromPath(iconPath);
+      if (!img.isEmpty()) {
+        return img;
+      }
+    }
+  }
+  return undefined;
 }
 
 
@@ -73,6 +97,8 @@ function startUpdateService() {
 
 
 function createWindow() {
+  const windowIcon = getWindowIcon();
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 720,
@@ -81,13 +107,17 @@ function createWindow() {
     show: false, // Start hidden to prevent raw white flashes
     frame: false, // Frameless window for premium custom title bar
     titleBarStyle: 'hidden',
-    icon: getWindowIconPath(),
+    icon: windowIcon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+
+  if (windowIcon) {
+    mainWindow.setIcon(windowIcon);
+  }
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
@@ -603,24 +633,28 @@ ipcMain.handle('store:set-chat-history', async (_event, chatHistory: any[], work
 
 // 2. Fetch Models Dynamically from Provider endpoints
 ipcMain.handle('ai:fetch-models', async (_event, provider: string, apiKey: string) => {
+  if (!apiKey || !apiKey.trim()) {
+    return [];
+  }
+
   try {
     if (provider === 'openai') {
       const res = await fetch('https://api.openai.com/v1/models', {
         headers: { 'Authorization': `Bearer ${apiKey}` }
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) return [];
       const json = await res.json() as any;
       return json.data.map((m: any) => m.id).filter((id: string) => id.includes('gpt') || id.includes('o1') || id.includes('o3'));
     } else if (provider === 'deepseek') {
       const res = await fetch('https://api.deepseek.com/models', {
         headers: { 'Authorization': `Bearer ${apiKey}` }
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) return [];
       const json = await res.json() as any;
       return json.data.map((m: any) => m.id);
     } else if (provider === 'gemini') {
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) return [];
       const json = await res.json() as any;
       return json.models
         .map((m: any) => m.name.replace('models/', ''))
@@ -633,27 +667,26 @@ ipcMain.handle('ai:fetch-models', async (_event, provider: string, apiKey: strin
           'X-Title': 'Spigot'
         }
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) return [];
       const json = await res.json() as any;
       return json.data.map((m: any) => m.id);
     } else if (provider === 'kimi') {
       const res = await fetch('https://api.moonshot.cn/v1/models', {
         headers: { 'Authorization': `Bearer ${apiKey}` }
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) return [];
       const json = await res.json() as any;
       return json.data.map((m: any) => m.id);
     } else if (provider === 'minimax') {
       const res = await fetch('https://api.minimax.io/v1/models', {
         headers: { 'Authorization': `Bearer ${apiKey}` }
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) return [];
       const json = await res.json() as any;
       return json.data.map((m: any) => m.id);
     }
     return [];
-  } catch (err) {
-    console.error(`Error querying dynamic models for ${provider}:`, err);
+  } catch (_err) {
     return [];
   }
 });
@@ -735,6 +768,8 @@ const runGit = (workspacePath: string, args: string[]) =>
   });
 
 ipcMain.handle('git:status', async (_event, workspacePath: string) => {
+  if (!workspacePath) return [];
+
   try {
     const { stdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
       exec('git status --porcelain --ignored=matching', { cwd: workspacePath }, (err, stdout, stderr) => {
@@ -753,8 +788,12 @@ ipcMain.handle('git:status', async (_event, workspacePath: string) => {
       const filePath = rawPath.replace(/\/$/, '');
       return { status, filePath };
     });
-  } catch (err) {
-    console.error('Error running git status:', err);
+  } catch (err: any) {
+    // Gracefully ignore expected error when a workspace is not a Git repository
+    if (err?.code === 128 || err?.message?.includes('not a git repository')) {
+      return [];
+    }
+    console.warn('Git status not available for workspace:', err?.message || err);
     return [];
   }
 });
