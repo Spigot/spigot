@@ -188,7 +188,7 @@ export const TitleBar: React.FC = () => {
   };
 
   return (
-    <header className="h-[30px] min-h-[30px] bg-editor-titleBar flex items-center justify-between border-b border-editor-border select-none app-draggable z-50 px-2 font-sans">
+    <header className="h-[30px] min-h-[30px] bg-editor-titleBar flex items-center justify-between select-none app-draggable z-50 px-2 font-sans">
       {/* Left: Brand Icon, navigation and menus */}
       <div className="flex items-center gap-1.5 h-full app-non-draggable">
         {/* Brand Icon */}

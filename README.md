@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/logoSpigot.png" width="140" alt="Spigot Logo">
+  <img src="public/logoSpigot.png" width="300" alt="Spigot Logo">
 </p>
 
 <h1 align="center">Spigot</h1>

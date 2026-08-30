@@ -137,7 +137,7 @@ const App: React.FC = () => {
   }, [refreshWorkspace, workspacePath]);
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-editor-bg">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-editor-titleBar">
       {/* 1. Custom Frameless Title Bar */}
       <TitleBar />
 
@@ -146,61 +146,61 @@ const App: React.FC = () => {
         <AgentModeView />
       ) : (
         <>
-          {/* Main Workspace Layout with subtle card separation and rounded corners */}
-          <div className="flex-1 flex overflow-hidden w-full relative p-1.5 bg-editor-bg items-stretch">
-            {/* Vertical Left Activity Bar (Files, Search, etc.) */}
+          {/* Main Workspace Layout with seamless ActivityBar and modular rounded panels */}
+          <div className="flex-1 flex overflow-hidden w-full relative bg-editor-titleBar items-stretch">
+            {/* Vertical Left Activity Bar (Files, Search, etc.) integrated with TitleBar */}
             <ActivityBar />
 
-            {/* Gap between ActivityBar and Sidebar */}
-            <div className="w-1.5 shrink-0" />
-
-            {/* Dynamic Left Sidebar panel (Filetree, Search, etc.) */}
-            {isSidebarOpen && (
-              <>
-                <Sidebar />
-                <VerticalSash
-                  onResize={(delta) => {
-                    const current = useLayoutStore.getState().sidebarWidth;
-                    setSidebarWidth(Math.max(160, Math.min(600, current + delta)));
-                  }}
-                />
-              </>
-            )}
-
-            {/* Center/Right Main Editor and Console Panel */}
-            <main className="flex-1 flex flex-col overflow-hidden relative min-h-0 rounded-[8px] border border-editor-border bg-editor-bg shadow-sm">
-              {/* Editor Header tabs & Buffer View container */}
-              <div className="flex-1 flex flex-col overflow-hidden min-h-0 relative">
-                <EditorTabs />
-                <EditorContainer />
-              </div>
-
-              {/* Horizontal Sash between Editor and Console */}
-              {isConsoleOpen && !isConsoleMaximized && (
-                <HorizontalSash
-                  onResize={(delta) => {
-                    const current = useLayoutStore.getState().consoleHeight;
-                    setConsoleHeight(Math.max(100, Math.min(600, current - delta)));
-                  }}
-                />
+            {/* Inner Workspace Container with padding and sash dividers for the modular cards */}
+            <div className="flex-1 flex overflow-hidden relative p-1.5 gap-0 items-stretch bg-editor-titleBar">
+              {/* Dynamic Left Sidebar panel (Filetree, Search, etc.) */}
+              {isSidebarOpen && (
+                <>
+                  <Sidebar />
+                  <VerticalSash
+                    onResize={(delta) => {
+                      const current = useLayoutStore.getState().sidebarWidth;
+                      setSidebarWidth(Math.max(160, Math.min(600, current + delta)));
+                    }}
+                  />
+                </>
               )}
 
-              {/* Integrated terminal console drawer panel */}
-              <ConsolePanel />
-            </main>
+              {/* Center/Right Main Editor and Console Panel */}
+              <main className="flex-1 flex flex-col overflow-hidden relative min-h-0 rounded-[8px] border border-editor-border bg-editor-bg shadow-sm">
+                {/* Editor Header tabs & Buffer View container */}
+                <div className="flex-1 flex flex-col overflow-hidden min-h-0 relative">
+                  <EditorTabs />
+                  <EditorContainer />
+                </div>
 
-            {/* Rightmost AI Agent Panel (with dynamic resizer) */}
-            {isAIPanelOpen && (
-              <>
-                <VerticalSash
-                  onResize={(delta) => {
-                    const current = useLayoutStore.getState().aiPanelWidth;
-                    setAIPanelWidth(Math.max(260, Math.min(700, current - delta)));
-                  }}
-                />
-                <AIPanel />
-              </>
-            )}
+                {/* Horizontal Sash between Editor and Console */}
+                {isConsoleOpen && !isConsoleMaximized && (
+                  <HorizontalSash
+                    onResize={(delta) => {
+                      const current = useLayoutStore.getState().consoleHeight;
+                      setConsoleHeight(Math.max(100, Math.min(600, current - delta)));
+                    }}
+                  />
+                )}
+
+                {/* Integrated terminal console drawer panel */}
+                <ConsolePanel />
+              </main>
+
+              {/* Rightmost AI Agent Panel (with dynamic resizer) */}
+              {isAIPanelOpen && (
+                <>
+                  <VerticalSash
+                    onResize={(delta) => {
+                      const current = useLayoutStore.getState().aiPanelWidth;
+                      setAIPanelWidth(Math.max(260, Math.min(700, current - delta)));
+                    }}
+                  />
+                  <AIPanel />
+                </>
+              )}
+            </div>
           </div>
 
           {/* 3. Bottom Status Bar */}
