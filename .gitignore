@@ -7,6 +7,7 @@ dist-electron/
 release/
 out/
 build/
+vscode
 
 # TypeScript Cache
 *.tsbuildinfo
