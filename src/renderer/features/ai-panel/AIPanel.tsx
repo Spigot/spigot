@@ -485,7 +485,7 @@ export const AIPanel: React.FC = () => {
   return (
     <div 
       style={{ width: `${aiPanelWidth}px` }}
-      className="h-full bg-editor-sidebar border border-editor-border rounded-[8px] flex flex-col relative select-none shrink-0 font-sans shadow-sm overflow-hidden"
+      className="h-full bg-editor-sidebar border border-editor-border rounded-[6px] flex flex-col relative select-none shrink-0 font-sans shadow-sm overflow-hidden"
     >
       {/* Top bar header (VS Code Style) */}
       <div className="h-[35px] min-h-[35px] bg-editor-sidebar border-b border-editor-border flex items-center justify-between px-3 select-none app-non-draggable">

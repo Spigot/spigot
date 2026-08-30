@@ -41,13 +41,13 @@ const VerticalSash: React.FC<{
   return (
     <div
       onMouseDown={handleMouseDown}
-      className="w-2 h-full cursor-ew-resize flex items-center justify-center select-none group shrink-0 transition-colors z-30"
+      className="w-[4px] h-full cursor-ew-resize flex items-center justify-center select-none group shrink-0 transition-colors z-30"
       title="Arrastrar para redimensionar"
     >
-      <div className="flex flex-col gap-[2px] items-center justify-center opacity-40 group-hover:opacity-100 transition-opacity">
-        <span className="w-[1.5px] h-[1.5px] rounded-full bg-[#e2c08d]" />
-        <span className="w-[1.5px] h-[1.5px] rounded-full bg-[#e2c08d]" />
-        <span className="w-[1.5px] h-[1.5px] rounded-full bg-[#e2c08d]" />
+      <div className="flex flex-col gap-[2px] items-center justify-center opacity-85 group-hover:opacity-100 transition-opacity">
+        <span className="w-[1.8px] h-[1.8px] rounded-full bg-[#e2c08d] shadow-[0_0_2px_rgba(226,192,141,0.6)]" />
+        <span className="w-[1.8px] h-[1.8px] rounded-full bg-[#e2c08d] shadow-[0_0_2px_rgba(226,192,141,0.6)]" />
+        <span className="w-[1.8px] h-[1.8px] rounded-full bg-[#e2c08d] shadow-[0_0_2px_rgba(226,192,141,0.6)]" />
       </div>
     </div>
   );
@@ -80,13 +80,13 @@ const HorizontalSash: React.FC<{
   return (
     <div
       onMouseDown={handleMouseDown}
-      className="h-2 w-full cursor-ns-resize flex items-center justify-center select-none group shrink-0 transition-colors z-30"
+      className="h-[4px] w-full cursor-ns-resize flex items-center justify-center select-none group shrink-0 transition-colors z-30"
       title="Arrastrar para redimensionar"
     >
-      <div className="flex gap-[2px] items-center justify-center opacity-40 group-hover:opacity-100 transition-opacity">
-        <span className="w-[1.5px] h-[1.5px] rounded-full bg-[#e2c08d]" />
-        <span className="w-[1.5px] h-[1.5px] rounded-full bg-[#e2c08d]" />
-        <span className="w-[1.5px] h-[1.5px] rounded-full bg-[#e2c08d]" />
+      <div className="flex gap-[2px] items-center justify-center opacity-85 group-hover:opacity-100 transition-opacity">
+        <span className="w-[1.8px] h-[1.8px] rounded-full bg-[#e2c08d] shadow-[0_0_2px_rgba(226,192,141,0.6)]" />
+        <span className="w-[1.8px] h-[1.8px] rounded-full bg-[#e2c08d] shadow-[0_0_2px_rgba(226,192,141,0.6)]" />
+        <span className="w-[1.8px] h-[1.8px] rounded-full bg-[#e2c08d] shadow-[0_0_2px_rgba(226,192,141,0.6)]" />
       </div>
     </div>
   );
@@ -151,8 +151,8 @@ const App: React.FC = () => {
             {/* Vertical Left Activity Bar (Files, Search, etc.) integrated with TitleBar */}
             <ActivityBar />
 
-            {/* Inner Workspace Container with padding and sash dividers for the modular cards */}
-            <div className="flex-1 flex overflow-hidden relative p-1.5 gap-0 items-stretch bg-editor-titleBar">
+            {/* Inner Workspace Container with fine padding and sash dividers for the modular cards */}
+            <div className="flex-1 flex overflow-hidden relative p-[3px] gap-0 items-stretch bg-editor-titleBar">
               {/* Dynamic Left Sidebar panel (Filetree, Search, etc.) */}
               {isSidebarOpen && (
                 <>
@@ -166,15 +166,15 @@ const App: React.FC = () => {
                 </>
               )}
 
-              {/* Center/Right Main Editor and Console Panel */}
-              <main className="flex-1 flex flex-col overflow-hidden relative min-h-0 rounded-[8px] border border-editor-border bg-editor-bg shadow-sm">
-                {/* Editor Header tabs & Buffer View container */}
-                <div className="flex-1 flex flex-col overflow-hidden min-h-0 relative">
+              {/* Center/Right Main Editor and Console Panel separated as distinct modular cards */}
+              <div className="flex-1 flex flex-col overflow-hidden relative min-h-0 items-stretch">
+                {/* Editor Card */}
+                <div className="flex-1 flex flex-col overflow-hidden relative min-h-0 rounded-[6px] border border-editor-border bg-editor-bg shadow-sm">
                   <EditorTabs />
                   <EditorContainer />
                 </div>
 
-                {/* Horizontal Sash between Editor and Console */}
+                {/* Horizontal Sash between Editor Card and Console Card */}
                 {isConsoleOpen && !isConsoleMaximized && (
                   <HorizontalSash
                     onResize={(delta) => {
@@ -184,9 +184,9 @@ const App: React.FC = () => {
                   />
                 )}
 
-                {/* Integrated terminal console drawer panel */}
+                {/* Integrated terminal console card */}
                 <ConsolePanel />
-              </main>
+              </div>
 
               {/* Rightmost AI Agent Panel (with dynamic resizer) */}
               {isAIPanelOpen && (

@@ -7,7 +7,7 @@ import { useLayoutStore } from '../../store/layoutStore';
 import { useDiagnosticsStore } from '../../store/diagnosticsStore';
 import { 
   Trash2, Plus, Terminal as TermIcon, Minimize2, Maximize2, 
-  AlertCircle, AlertTriangle 
+  AlertCircle, AlertTriangle, X
 } from 'lucide-react';
 import 'xterm/css/xterm.css';
 
@@ -33,7 +33,7 @@ const getXtermTheme = (themeName: 'spigot-dark' | 'grayish-dark' | 'solarized-da
       return {
         background: '#002b36',
         foreground: '#eee8d5',
-        cursor: '#b58900',
+        cursor: '#268bd2',
         selectionBackground: 'rgba(255, 255, 255, 0.15)',
         black: '#073642',
         red: '#dc322f',
@@ -91,12 +91,12 @@ export const ConsolePanel: React.FC = () => {
     isConsoleOpen, isConsoleMaximized, toggleConsole, toggleConsoleMaximize,
     consoleHeight 
   } = useLayoutStore();
-  const { sessions, activeSessionId, createSession, closeSession, setActiveSession } = useTerminalStore();
+  const { sessions, activeSessionId, createSession, closeSession } = useTerminalStore();
   const { workspacePath, theme, openFile, setPendingSelection } = useWorkspaceStore();
   
   // Subscribe to LSP Diagnostics store reactively
   const fileDiagnostics = useDiagnosticsStore((state) => state.fileDiagnostics);
-  const [activePanelTab, setActivePanelTab] = useState<'problems' | 'terminal'>('problems');
+  const [activePanelTab, setActivePanelTab] = useState<'problems' | 'output' | 'debug' | 'terminal' | 'ports'>('terminal');
   const [collapsedFiles, setCollapsedFiles] = useState<Record<string, boolean>>({});
 
   const toggleFileCollapsed = (uri: string) => {
@@ -108,115 +108,95 @@ export const ConsolePanel: React.FC = () => {
 
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermInstances = useRef<Record<string, { term: XTerm; fit: FitAddon; disposeData: () => void }>>({});
-  
-  // Track terminal mount state
-  const [mountedSession, setMountedSession] = useState<string | null>(null);
 
-  // Initialize a terminal session if none exist on open
-  const prevConsoleOpen = useRef(isConsoleOpen);
-
+  // Initialize terminal session if none exists on open
   useEffect(() => {
-    if (isConsoleOpen && !prevConsoleOpen.current && sessions.length === 0) {
-      handleAddNewTerminal();
+    if (isConsoleOpen && sessions.length === 0) {
+      createSession(80, 24, workspacePath || '');
     }
-    prevConsoleOpen.current = isConsoleOpen;
-  }, [isConsoleOpen, sessions.length]);
+  }, [isConsoleOpen, sessions.length, createSession, workspacePath]);
 
-  const handleAddNewTerminal = async () => {
-    const cwd = workspacePath || '';
-    await createSession(80, 24, cwd);
-  };
-
-  const handleCloseTerminal = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    
-    const instance = xtermInstances.current[id];
-    if (instance) {
-      instance.disposeData();
-      instance.term.dispose();
-      delete xtermInstances.current[id];
-    }
-    
-    (window as any).api.terminal.write(id, '\u0003');
-    closeSession(id);
-
-    if (sessions.length === 1) {
-      toggleConsole();
-    }
-  };
-
-  // Setup XTerm.js bindings for active session (runs regardless of activePanelTab to keep terminal alive)
+  // Handle active session mount or switch
   useEffect(() => {
     if (!isConsoleOpen || !activeSessionId || !terminalRef.current) return;
 
-    if (mountedSession === activeSessionId && xtermInstances.current[activeSessionId]) {
+    // Check if terminal instance for this activeSessionId exists
+    if (!xtermInstances.current[activeSessionId]) {
+      const term = new XTerm({
+        cursorBlink: true,
+        fontSize: 13,
+        fontFamily: "Consolas, 'Courier New', monospace",
+        theme: getXtermTheme(theme),
+        allowTransparency: true,
+        convertEol: true,
+        rows: 24,
+        cols: 80,
+      });
+
+      const fit = new FitAddon();
+      term.loadAddon(fit);
+
+      // Mount into the DOM container
+      term.open(terminalRef.current);
+      
+      // Delay initial fit slightly to ensure parent dimensions are computed
       setTimeout(() => {
         try {
-          xtermInstances.current[activeSessionId].fit.fit();
+          fit.fit();
+          (window as any).api.terminal.resize(activeSessionId, term.cols, term.rows);
         } catch (e) {}
-      }, 50);
-      return;
-    }
+      }, 30);
 
-    if (terminalRef.current) {
-      terminalRef.current.innerHTML = '';
-    }
+      // Listen for data from the browser xterm frontend and forward to IPC
+      const onDataDisposable = term.onData((data) => {
+        (window as any).api.terminal.write(activeSessionId, data);
+      });
 
-    const sessionId = activeSessionId;
+      // Listen for data from the node-pty backend process and write to xterm
+      const removeIncomingListener = (window as any).api.terminal.onData(activeSessionId, (data: string) => {
+        term.write(data);
+      });
 
-    const term = new XTerm({
-      cursorBlink: true,
-      fontSize: 12,
-      fontFamily: 'Consolas, Menlo, monospace',
-      theme: getXtermTheme(theme),
-      allowProposedApi: true,
-    });
-
-    const fitAddon = new FitAddon();
-    term.loadAddon(fitAddon);
-    term.open(terminalRef.current);
-    
-    setTimeout(() => {
-      try {
-        fitAddon.fit();
-        (window as any).api.terminal.resize(sessionId, term.cols, term.rows);
-      } catch (err) {}
-    }, 100);
-
-    const disposeOnData = (window as any).api.terminal.onData(sessionId, (data: string) => {
-      term.write(data);
-    });
-
-    const termDataListener = term.onData((data) => {
-      (window as any).api.terminal.write(sessionId, data);
-    });
-
-    xtermInstances.current[sessionId] = {
-      term,
-      fit: fitAddon,
-      disposeData: () => {
-        disposeOnData();
-        termDataListener.dispose();
+      xtermInstances.current[activeSessionId] = {
+        term,
+        fit,
+        disposeData: () => {
+          onDataDisposable.dispose();
+          removeIncomingListener();
+          term.dispose();
+        }
+      };
+    } else {
+      // Re-attach existing terminal to the container if activeSessionId changed
+      const { term, fit } = xtermInstances.current[activeSessionId];
+      if (terminalRef.current && term.element && !terminalRef.current.contains(term.element)) {
+        terminalRef.current.innerHTML = '';
+        terminalRef.current.appendChild(term.element);
+        setTimeout(() => {
+          try {
+            fit.fit();
+          } catch (e) {}
+        }, 30);
       }
-    };
+    }
+  }, [isConsoleOpen, activeSessionId]);
 
-    setMountedSession(sessionId);
+  // Handle closing a terminal session
+  const handleCloseTerminal = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (xtermInstances.current[id]) {
+      xtermInstances.current[id].disposeData();
+      delete xtermInstances.current[id];
+    }
+    closeSession(id);
+  };
 
-    const handleResize = () => {
-      try {
-        fitAddon.fit();
-        (window as any).api.terminal.resize(sessionId, term.cols, term.rows);
-      } catch (err) {}
-    };
+  // Add a new terminal session
+  const handleAddNewTerminal = async () => {
+    await createSession(80, 24, workspacePath || '');
+  };
 
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-    };
-  }, [activeSessionId, isConsoleOpen, mountedSession]);
-
-  // Dynamically update terminal theme on editor theme changes
+  // Update theme dynamically in mounted xterm instance
   useEffect(() => {
     if (activeSessionId && xtermInstances.current[activeSessionId]) {
       const term = xtermInstances.current[activeSessionId].term;
@@ -235,17 +215,12 @@ export const ConsolePanel: React.FC = () => {
       const performResize = () => {
         try {
           fit.fit();
-          // Resize backend PTY process to match the newly fitted dimensions
           (window as any).api.terminal.resize(activeSessionId, term.cols, term.rows);
-          // Force xterm to completely refresh the screen contents
           term.refresh(0, term.rows - 1);
         } catch (e) {}
       };
 
-      // Perform immediately
       performResize();
-      
-      // Perform after minor timeouts to account for layout engine transitions
       t1 = setTimeout(performResize, 50);
       t2 = setTimeout(performResize, 150);
     }
@@ -267,7 +242,7 @@ export const ConsolePanel: React.FC = () => {
       if (diag.severity === 1) {
         errorsCount++;
       } else {
-        warningsCount++; // Severity 2 (Warning) or other
+        warningsCount++;
       }
     }
   }
@@ -278,7 +253,7 @@ export const ConsolePanel: React.FC = () => {
     await openFile(filePath);
     setPendingSelection({
       filePath,
-      line: line + 1, // 1-based indexing in Monaco
+      line: line + 1,
       column: character + 1,
       length: 1
     });
@@ -287,87 +262,99 @@ export const ConsolePanel: React.FC = () => {
   return (
     <div 
       style={isConsoleMaximized ? { height: '100%' } : { height: `${consoleHeight}px` }}
-      className="bg-editor-panel border-t border-editor-border rounded-b-[8px] flex flex-col z-20 relative overflow-hidden"
+      className="bg-editor-bg border border-editor-border rounded-[6px] flex flex-col z-20 relative overflow-hidden font-sans shadow-sm shrink-0"
     >
-      {/* Header menu with VS Code-style Tabs */}
-      <div className="h-8 bg-editor-sidebar border-b border-editor-border px-4 flex items-center justify-between select-none">
-        {/* Left: View Tabs (PROBLEMS / TERMINAL) */}
-        <div className="flex items-center h-full overflow-x-auto no-scrollbar py-0.5 gap-4">
-          <div className="flex items-center gap-4 h-full">
-            <button
-              onClick={() => setActivePanelTab('problems')}
-              className={`h-full flex items-center gap-1.5 px-0.5 border-b-2 text-[11px] font-medium tracking-wide transition-all-custom ${
-                activePanelTab === 'problems'
-                  ? 'text-editor-text border-editor-accent font-semibold'
-                  : 'text-editor-textDark border-transparent hover:text-editor-text'
-              }`}
-            >
-              <span>Problemas</span>
-              {totalProblemsCount > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-zinc-800 text-zinc-400 border border-zinc-700/50">
-                  {totalProblemsCount}
-                </span>
-              )}
-            </button>
+      {/* Header menu with VS Code-style Tabs (Problems, Output, Debug, Terminal, Ports) */}
+      <div className="h-[30px] min-h-[30px] bg-editor-bg border-b border-editor-border px-3 flex items-center justify-between select-none text-[12px]">
+        {/* Left: View Tabs */}
+        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+          <button
+            onClick={() => setActivePanelTab('problems')}
+            className={`px-2 py-0.5 rounded-[3px] transition-colors flex items-center gap-1.5 ${
+              activePanelTab === 'problems'
+                ? 'text-white font-medium bg-editor-hover/70'
+                : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover/40'
+            }`}
+          >
+            <span>Problems</span>
+            {totalProblemsCount > 0 && (
+              <span className="px-1.5 py-0 rounded-full text-[10px] font-bold bg-zinc-800 text-zinc-300">
+                {totalProblemsCount}
+              </span>
+            )}
+          </button>
 
-            <button
-              onClick={() => setActivePanelTab('terminal')}
-              className={`h-full flex items-center gap-1.5 px-0.5 border-b-2 text-[11px] font-medium tracking-wide transition-all-custom ${
-                activePanelTab === 'terminal'
-                  ? 'text-editor-text border-editor-accent font-semibold'
-                  : 'text-editor-textDark border-transparent hover:text-editor-text'
-              }`}
-            >
-              <span>Terminal</span>
-            </button>
-          </div>
+          <button
+            onClick={() => setActivePanelTab('output')}
+            className={`px-2 py-0.5 rounded-[3px] transition-colors ${
+              activePanelTab === 'output'
+                ? 'text-white font-medium bg-editor-hover/70'
+                : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover/40'
+            }`}
+          >
+            <span>Output</span>
+          </button>
 
-          {/* Show shell instances list only when Terminal tab is active */}
-          {activePanelTab === 'terminal' && (
-            <div className="flex items-center gap-1.5">
-              {sessions.map((sess) => {
-                const isActive = sess.id === activeSessionId;
-                return (
-                  <div
-                    key={sess.id}
-                    onClick={() => setActiveSession(sess.id)}
-                    className={`flex items-center gap-1.5 px-2 py-0.5 rounded cursor-pointer text-[10px] font-medium transition-all-custom ${
-                      isActive 
-                        ? 'bg-zinc-800 text-white font-semibold' 
-                        : 'text-editor-textDark hover:bg-zinc-800/40 hover:text-editor-text'
-                    }`}
-                  >
-                    <span>{sess.name}</span>
-                    <button
-                      onClick={(e) => handleCloseTerminal(e, sess.id)}
-                      className="p-0.5 rounded hover:bg-zinc-700 text-editor-textDark hover:text-white"
-                      title="Cerrar Terminal"
-                    >
-                      <Trash2 className="w-2.5 h-2.5" />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          <button
+            onClick={() => setActivePanelTab('debug')}
+            className={`px-2 py-0.5 rounded-[3px] transition-colors ${
+              activePanelTab === 'debug'
+                ? 'text-white font-medium bg-editor-hover/70'
+                : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover/40'
+            }`}
+          >
+            <span>Debug Console</span>
+          </button>
+
+          <button
+            onClick={() => setActivePanelTab('terminal')}
+            className={`px-2 py-0.5 rounded-[3px] transition-colors ${
+              activePanelTab === 'terminal'
+                ? 'text-white font-medium bg-editor-hover/70'
+                : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover/40'
+            }`}
+          >
+            <span>Terminal</span>
+          </button>
+
+          <button
+            onClick={() => setActivePanelTab('ports')}
+            className={`px-2 py-0.5 rounded-[3px] transition-colors ${
+              activePanelTab === 'ports'
+                ? 'text-white font-medium bg-editor-hover/70'
+                : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover/40'
+            }`}
+          >
+            <span>Ports</span>
+          </button>
         </div>
 
         {/* Right: Terminal action panel */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 text-editor-textDark">
           {activePanelTab === 'terminal' && (
             <button
               onClick={handleAddNewTerminal}
-              className="p-1 rounded hover:bg-editor-hover text-editor-textDark hover:text-white transition-all-custom"
-              title="Nueva Sesión de Terminal"
+              className="p-1 rounded hover:bg-editor-hover hover:text-white transition-colors"
+              title="Nueva Terminal (+)"
             >
               <Plus className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          {activePanelTab === 'terminal' && activeSessionId && (
+            <button
+              onClick={(e) => handleCloseTerminal(e, activeSessionId)}
+              className="p-1 rounded hover:bg-editor-hover hover:text-white transition-colors"
+              title="Cerrar Terminal"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
             </button>
           )}
           
           <button
             onClick={toggleConsoleMaximize}
-            className="p-1 rounded hover:bg-editor-hover text-editor-textDark hover:text-white transition-all-custom"
-            title={isConsoleMaximized ? "Minimizar Consola" : "Maximizar Consola"}
+            className="p-1 rounded hover:bg-editor-hover hover:text-white transition-colors"
+            title={isConsoleMaximized ? "Restaurar tamaño" : "Maximizar panel"}
           >
             {isConsoleMaximized ? (
               <Minimize2 className="w-3.5 h-3.5" />
@@ -378,17 +365,17 @@ export const ConsolePanel: React.FC = () => {
 
           <button
             onClick={toggleConsole}
-            className="p-1 rounded hover:bg-editor-hover text-editor-textDark hover:text-white transition-all-custom"
-            title="Ocultar Panel"
+            className="p-1 rounded hover:bg-editor-hover hover:text-white transition-colors"
+            title="Cerrar panel"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
       {/* Body Area */}
-      <div className="flex-1 p-2 overflow-hidden bg-editor-bg relative flex flex-col">
-        {/* PTY Terminal Container (Maintained alive in background via CSS visibility toggling) */}
+      <div className="flex-1 overflow-hidden bg-editor-bg relative flex flex-col p-1">
+        {/* PTY Terminal Container */}
         <div 
           style={{ display: activePanelTab === 'terminal' ? 'block' : 'none' }}
           className="w-full h-full"
@@ -396,8 +383,8 @@ export const ConsolePanel: React.FC = () => {
           {activeSessionId ? (
             <div ref={terminalRef} className="w-full h-full" />
           ) : (
-            <div className="absolute inset-0 flex flex-col justify-center items-center text-center opacity-40 select-none">
-              <TermIcon className="w-10 h-10 mb-2" />
+            <div className="absolute inset-0 flex flex-col justify-center items-center text-center opacity-40 select-none text-editor-textDark">
+              <TermIcon className="w-8 h-8 mb-2" />
               <p className="text-xs">No hay terminales activas</p>
             </div>
           )}
@@ -405,10 +392,10 @@ export const ConsolePanel: React.FC = () => {
 
         {/* Problems View Tab Container */}
         {activePanelTab === 'problems' && (
-          <div className="w-full h-full overflow-y-auto px-4 py-2 select-text selection:bg-zinc-850 absolute inset-0 bg-editor-bg z-10">
+          <div className="w-full h-full overflow-y-auto px-3 py-2 select-text absolute inset-0 bg-editor-bg z-10 custom-scrollbar">
             {problemsList.length === 0 ? (
               <div className="flex flex-col justify-center items-center h-full w-full select-none text-center">
-                <span className="text-zinc-500 text-xs font-normal">
+                <span className="text-editor-textDark text-xs font-normal">
                   No se han detectado problemas en el espacio de trabajo.
                 </span>
               </div>
@@ -419,79 +406,51 @@ export const ConsolePanel: React.FC = () => {
                   const isCollapsed = !!collapsedFiles[file.uri];
                   
                   return (
-                    <div key={file.uri} className="flex flex-col mb-1.5">
+                    <div key={file.uri} className="flex flex-col mb-1">
                       {/* File Header Row */}
                       <div 
                         onClick={() => {
                           toggleFileCollapsed(file.uri);
                           openFile(file.filePath);
                         }}
-                        className="flex items-center px-2 py-1 hover:bg-editor-hover/40 cursor-pointer select-none rounded group transition-colors"
+                        className="flex items-center px-2 py-1 hover:bg-editor-hover cursor-pointer select-none rounded group transition-colors"
                       >
-                        {/* Down Arrow / Chevron for file group */}
-                        <svg 
-                          className={`w-3.5 h-3.5 text-zinc-400 mr-1.5 shrink-0 transition-transform duration-100 ${
-                            isCollapsed ? '-rotate-90' : 'rotate-0'
-                          }`}
-                          fill="none" 
-                          viewBox="0 0 24 24" 
-                          stroke="currentColor"
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-                        </svg>
-
-                        {/* File Name */}
-                        <span className="font-semibold text-zinc-200 truncate">{fileName}</span>
-
-                        {/* Relative Directory Path next to it */}
+                        <span className="font-semibold text-editor-text truncate">{fileName}</span>
                         {fileDir && (
-                          <span className="text-zinc-500 text-[10px] font-normal truncate ml-1.5 font-sans">
+                          <span className="text-editor-textDark text-[10px] font-normal truncate ml-1.5 font-sans">
                             {fileDir}
                           </span>
                         )}
-
-                        {/* Total Count Badge on the right */}
-                        <span className="ml-auto text-[9px] font-bold text-zinc-400 bg-zinc-800 px-1.5 py-0.5 rounded-full shrink-0 border border-zinc-700/50">
+                        <span className="ml-auto text-[10px] text-editor-textDark font-mono">
                           {file.diagnostics.length}
                         </span>
                       </div>
 
-                      {/* Problems items of this file */}
+                      {/* File Diagnostics Items List */}
                       {!isCollapsed && (
-                        <div className="flex flex-col pl-4 mt-0.5">
-                          {file.diagnostics.map((diag, index) => {
+                        <div className="flex flex-col pl-4 border-l border-editor-border/40 ml-2 mt-0.5 gap-0.5">
+                          {file.diagnostics.map((diag: any, dIdx: number) => {
                             const isError = diag.severity === 1;
-                            
                             return (
-                              <div 
-                                key={index} 
+                              <div
+                                key={dIdx}
                                 onClick={() => handleProblemClick(file.filePath, diag.range.start.line, diag.range.start.character)}
-                                className="flex items-start gap-2 px-3 py-1 hover:bg-editor-hover/20 cursor-pointer rounded transition-colors group select-text"
+                                className="flex items-start gap-2 py-0.5 px-1 hover:bg-editor-hover cursor-pointer rounded transition-colors group"
                               >
-                                {/* Error or Warning Icon */}
                                 {isError ? (
-                                  <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
+                                  <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
                                 ) : (
-                                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
                                 )}
-
-                                {/* Message & Source */}
-                                <div className="flex-1 min-w-0 flex flex-wrap items-center gap-x-1.5">
-                                  <span className="text-zinc-300 leading-normal font-sans">
+                                <div className="flex flex-col min-w-0 flex-1">
+                                  <span className="text-editor-text text-[12px] leading-tight group-hover:text-white">
                                     {diag.message}
                                   </span>
-                                  
-                                  {diag.source && (
-                                    <span className="text-zinc-500 text-[9px] bg-zinc-800/40 px-1 rounded border border-zinc-700/20 font-sans">
-                                      {diag.source}
-                                    </span>
-                                  )}
+                                  <div className="flex items-center gap-2 text-[10px] text-editor-textDark font-mono mt-0.5">
+                                    <span>[{diag.range.start.line + 1}, {diag.range.start.character + 1}]</span>
+                                    {diag.source && <span>({diag.source})</span>}
+                                  </div>
                                 </div>
-
-                                {/* Position inside file [Lín. line, Col. col] */}
-                                <span className="text-zinc-500 text-[10px] font-mono shrink-0 ml-2 select-none">
-                                  [Lín. {diag.range.start.line + 1}, Col. {diag.range.start.character + 1}]
-                                </span>
                               </div>
                             );
                           })}
@@ -504,8 +463,30 @@ export const ConsolePanel: React.FC = () => {
             )}
           </div>
         )}
+
+        {/* Output View Container */}
+        {activePanelTab === 'output' && (
+          <div className="w-full h-full overflow-y-auto p-3 text-editor-text text-[12px] font-mono select-text bg-editor-bg">
+            <span className="text-editor-textDark">[Spigot Output Window - Listo]</span>
+          </div>
+        )}
+
+        {/* Debug Console Container */}
+        {activePanelTab === 'debug' && (
+          <div className="w-full h-full overflow-y-auto p-3 text-editor-text text-[12px] font-mono select-text bg-editor-bg">
+            <span className="text-editor-textDark">[Debug Console - No hay sesión de depuración activa]</span>
+          </div>
+        )}
+
+        {/* Ports View Container */}
+        {activePanelTab === 'ports' && (
+          <div className="w-full h-full overflow-y-auto p-3 text-editor-text text-[12px] select-text bg-editor-bg">
+            <span className="text-editor-textDark">No hay puertos reenviados actualmente.</span>
+          </div>
+        )}
       </div>
     </div>
   );
 };
+
 export default ConsolePanel;

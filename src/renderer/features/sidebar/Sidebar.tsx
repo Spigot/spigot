@@ -293,7 +293,7 @@ export const Sidebar: React.FC = () => {
   return (
     <aside 
       style={{ width: `${sidebarWidth}px` }}
-      className="bg-editor-sidebar border border-editor-border rounded-[8px] flex flex-col select-none z-30 relative animate-fade-in shadow-sm shrink-0 overflow-hidden"
+      className="bg-editor-sidebar border border-editor-border rounded-[6px] flex flex-col select-none z-30 relative animate-fade-in shadow-sm shrink-0 overflow-hidden"
     >
       {/* Sidebar Header showing current active tab title (VS Code Style) */}
       <div className="h-[35px] min-h-[35px] border-b border-editor-border flex items-center justify-between px-3 bg-editor-sidebar shrink-0 select-none">
