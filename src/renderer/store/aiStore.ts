@@ -18,6 +18,7 @@ export interface ChatConversation {
 
 export interface ProviderState {
   key: string;
+  authType?: 'api' | 'oauth';
   activeModel: string;
   availableModels: string[];
 }
@@ -33,7 +34,7 @@ interface AIState {
   error: string | null;
 
   initializeStore: () => Promise<void>;
-  setApiKey: (provider: string, key: string) => Promise<void>;
+  setApiKey: (provider: string, key: string, authType?: 'api' | 'oauth') => Promise<void>;
   selectModel: (provider: string, model: string) => Promise<void>;
   setActiveProvider: (provider: string) => void;
   sendMessage: (prompt: string, contextText: string | null, image?: string | null) => Promise<void>;
@@ -90,6 +91,8 @@ export const useAIStore = create<AIState>((set, get) => ({
         for (const [provider, key] of Object.entries(keys)) {
           if (updated[provider]) {
             updated[provider].key = key as string;
+            const storedAuthType = (localStorage.getItem(`spigot_ai_authtype_${provider}`) as 'api' | 'oauth') || 'api';
+            updated[provider].authType = storedAuthType;
             if (!key) {
               updated[provider].activeModel = '';
               updated[provider].availableModels = [];
@@ -107,25 +110,27 @@ export const useAIStore = create<AIState>((set, get) => ({
         let loadedConvs: ChatConversation[] = [];
         let loadedActiveId: string | null = null;
         let loadedMessages: ChatMessage[] = [];
-
-        if (Array.isArray(chatHistory)) {
-          if (chatHistory.length > 0) {
-            const isConversationsArray = chatHistory[0] && typeof chatHistory[0] === 'object' && 'messages' in chatHistory[0];
-            if (isConversationsArray) {
-              loadedConvs = chatHistory as ChatConversation[];
-              loadedActiveId = loadedConvs[0]?.id || null;
-              loadedMessages = loadedConvs[0]?.messages || [];
-            } else {
-              const defaultConv: ChatConversation = {
-                id: 'initial-conv',
-                title: 'Conversación inicial',
-                messages: chatHistory as ChatMessage[],
-                timestamp: Date.now()
-              };
-              loadedConvs = [defaultConv];
-              loadedActiveId = defaultConv.id;
-              loadedMessages = defaultConv.messages;
-            }
+        if (chatHistory && Array.isArray(chatHistory)) {
+          if (chatHistory.length > 0 && (chatHistory[0] as any).messages) {
+            loadedConvs = chatHistory as ChatConversation[];
+            loadedActiveId = loadedConvs[0]?.id ?? null;
+            loadedMessages = loadedConvs[0]?.messages ?? [];
+          } else {
+            const legacyMessages: ChatMessage[] = (chatHistory as any[]).map((msg: any, idx: number) => ({
+              id: msg.id || `legacy-${idx}`,
+              role: (msg.role === 'assistant' ? 'assistant' : 'user') as 'assistant' | 'user',
+              content: msg.content || '',
+              timestamp: msg.timestamp || Date.now() - (chatHistory.length - idx) * 1000,
+            }));
+            const legacyConv: ChatConversation = {
+              id: 'conv-legacy',
+              title: legacyMessages[0]?.content.slice(0, 30) || 'Conversación anterior',
+              messages: legacyMessages,
+              timestamp: Date.now(),
+            };
+            loadedConvs = [legacyConv];
+            loadedActiveId = legacyConv.id;
+            loadedMessages = legacyMessages;
           }
         }
 
@@ -180,14 +185,18 @@ export const useAIStore = create<AIState>((set, get) => ({
     }
   },
 
-  setApiKey: async (provider: string, key: string) => {
+  setApiKey: async (provider: string, key: string, authType: 'api' | 'oauth' = 'api') => {
     try {
       await (window as any).api.store.setKey(provider, key);
+      try {
+        localStorage.setItem(`spigot_ai_authtype_${provider}`, authType);
+      } catch {}
       
       set((state) => {
         const updated = { ...state.providers };
         if (updated[provider]) {
           updated[provider].key = key;
+          updated[provider].authType = authType;
           if (!key) {
             updated[provider].activeModel = '';
             updated[provider].availableModels = [];

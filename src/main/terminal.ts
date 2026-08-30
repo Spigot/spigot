@@ -12,6 +12,7 @@ export interface SshSessionConfig {
 
 class TerminalManager {
   private sessions = new Map<string, pty.IPty>();
+  private outputBuffers = new Map<string, string[]>();
 
   createSession(mainWindow: BrowserWindow, cols: number, rows: number, cwd: string): string {
     // Choose shell based on OS platform
@@ -59,9 +60,16 @@ class TerminalManager {
   private registerSession(mainWindow: BrowserWindow, ptyProcess: pty.IPty): string {
     const sessionId = randomUUID();
     this.sessions.set(sessionId, ptyProcess);
+    this.outputBuffers.set(sessionId, []);
 
     // Forward output from node-pty to the React renderer through the safe IPC channel
     ptyProcess.onData((data) => {
+      const buf = this.outputBuffers.get(sessionId);
+      if (buf) {
+        buf.push(data);
+        if (buf.length > 500) buf.shift();
+      }
+
       if (!mainWindow.isDestroyed()) {
         mainWindow.webContents.send(`terminal:data:${sessionId}`, data);
       }
@@ -73,9 +81,14 @@ class TerminalManager {
         mainWindow.webContents.send(`terminal:close:${sessionId}`);
       }
       this.sessions.delete(sessionId);
+      this.outputBuffers.delete(sessionId);
     });
 
     return sessionId;
+  }
+
+  getHistory(sessionId: string): string[] {
+    return this.outputBuffers.get(sessionId) || [];
   }
 
   write(sessionId: string, data: string): void {

@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useLayoutStore } from '../../store/layoutStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useAIStore } from '../../store/aiStore';
 import { compileContext } from './contextCompiler';
 import { ApiKeyModal } from './ApiKeyModal';
 import { StyledSelect } from './StyledSelect';
+import { SLASH_COMMANDS, SlashCommand } from './slashCommands';
 import { 
   Sparkles, Settings, 
   ShieldAlert, Folder, FileText, 
@@ -36,33 +37,50 @@ function parseThinking(content: string): ParsedThought {
   let isThinking = false;
 
   let temp = content;
-  const startTag = '<think>';
-  const endTag = '</think>';
 
   while (temp.length > 0) {
-    const startIndex = temp.indexOf(startTag);
+    const startIndex = temp.indexOf('<think>');
+    const endIndex = temp.indexOf('</think>');
+
+    // Case 1: Orphaned </think> before any <think> (or without <think>)
+    if (endIndex !== -1 && (startIndex === -1 || endIndex < startIndex)) {
+      thought += temp.slice(0, endIndex) + '\n';
+      temp = temp.slice(endIndex + '</think>'.length);
+      continue;
+    }
+
+    // Case 2: No more <think> tags
     if (startIndex === -1) {
       response += temp;
       break;
     }
 
+    // Case 3: Text before <think> belongs to response
     response += temp.slice(0, startIndex);
-    temp = temp.slice(startIndex + startTag.length);
+    temp = temp.slice(startIndex + '<think>'.length);
 
-    const endIndex = temp.indexOf(endTag);
-    if (endIndex === -1) {
+    // Look for closing </think>
+    const nextEndIndex = temp.indexOf('</think>');
+    if (nextEndIndex === -1) {
       thought += temp;
       isThinking = true;
       break;
     }
 
-    thought += temp.slice(0, endIndex) + '\n';
-    temp = temp.slice(endIndex + endTag.length);
+    thought += temp.slice(0, nextEndIndex) + '\n';
+    temp = temp.slice(nextEndIndex + '</think>'.length);
   }
+
+  // Safety cleanup: strip any rogue <think> or </think> tags that might have leaked into response
+  const cleanedResponse = response
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<\/think>/gi, '')
+    .replace(/<think>/gi, '')
+    .trim();
 
   return {
     thought: thought.trim(),
-    response: response.trim(),
+    response: cleanedResponse,
     isThinking
   };
 }
@@ -172,8 +190,12 @@ export const AIPanel: React.FC = () => {
   } = useAIStore();
 
   const [prompt, setPrompt] = useState('');
+  const [agentModeType, setAgentModeType] = useState<'agent' | 'chat' | 'review'>('agent');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showCommands, setShowCommands] = useState(false);
+  const [commandIndex, setCommandIndex] = useState(0);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [appliedId, setAppliedId] = useState<string | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; content?: string; image?: string }>>([]);
@@ -182,6 +204,29 @@ export const AIPanel: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Flatten all workspace files for instant @ mention lookup
+  const allWorkspaceFiles = useMemo(() => {
+    const list: Array<{ name: string; path: string; relPath: string; isDir: boolean }> = [];
+    const walk = (nodes: typeof fileTree) => {
+      for (const n of nodes) {
+        const rel = workspacePath && n.path.startsWith(workspacePath)
+          ? n.path.slice(workspacePath.length).replace(/^[/\\]+/, '').replace(/\\/g, '/')
+          : n.name;
+        list.push({ name: n.name, path: n.path, relPath: rel, isDir: n.isDirectory });
+        if (n.children) walk(n.children);
+      }
+    };
+    walk(fileTree);
+    return list;
+  }, [fileTree, workspacePath]);
+
+  // Filtered files for @ mention popover
+  const filteredMentionFiles = useMemo(() => {
+    if (mentionQuery === null) return [];
+    const q = mentionQuery.toLowerCase();
+    return allWorkspaceFiles.filter((f: { name: string; path: string; relPath: string; isDir: boolean }) => !f.isDir && (f.name.toLowerCase().includes(q) || f.relPath.toLowerCase().includes(q))).slice(0, 8);
+  }, [allWorkspaceFiles, mentionQuery]);
 
   // Initialize key store on mount and reload on workspace switch
   useEffect(() => {
@@ -237,6 +282,20 @@ export const AIPanel: React.FC = () => {
 
   const contextInfo = getContextInfo();
 
+  // Insert selected @ mention
+  const insertMention = (file: { name: string; relPath: string; path: string }) => {
+    if (!textareaRef.current) return;
+    const caret = textareaRef.current.selectionStart || prompt.length;
+    const textBeforeCaret = prompt.slice(0, caret);
+    const textAfterCaret = prompt.slice(caret);
+    const newTextBefore = textBeforeCaret.replace(/@([a-zA-Z0-9_\-\.\/]*)$/, `@${file.relPath} `);
+    setPrompt(newTextBefore + textAfterCaret);
+    setMentionQuery(null);
+    setTimeout(() => {
+      textareaRef.current?.focus();
+    }, 10);
+  };
+
   // Submit Prompt
   const handleSend = async (customPrompt?: string) => {
     const textToSend = customPrompt !== undefined ? customPrompt : prompt;
@@ -245,9 +304,21 @@ export const AIPanel: React.FC = () => {
 
     setPrompt('');
     setShowCommands(false);
+    setMentionQuery(null);
 
     let finalPrompt = textToSend.trim();
     let attachedImage: string | null = null;
+
+    // Extract @ mentions
+    const mentionMatches = Array.from(finalPrompt.matchAll(/@([a-zA-Z0-9_\-\.\/]+)/g)).map(m => m[1]);
+    const mentionedPaths: string[] = [];
+    for (const m of mentionMatches) {
+      if (m === 'workspace') continue;
+      const found = allWorkspaceFiles.find((f: { name: string; path: string; relPath: string; isDir: boolean }) => f.relPath.toLowerCase() === m.toLowerCase() || f.name.toLowerCase() === m.toLowerCase());
+      if (found && !mentionedPaths.includes(found.path)) {
+        mentionedPaths.push(found.path);
+      }
+    }
 
     // Process attached files
     if (attachedFiles.length > 0) {
@@ -261,10 +332,17 @@ export const AIPanel: React.FC = () => {
       setAttachedFiles([]);
     }
 
-    // Compile active context
+    // Apply Mode behavior prefix
+    if (agentModeType === 'chat') {
+      finalPrompt = `[MODO CHAT / SOLO LECTURA: No ejecutes herramientas de modificación de archivos ni terminal. Responde de forma puramente conversacional y explicativa.]\n\n${finalPrompt}`;
+    } else if (agentModeType === 'review') {
+      finalPrompt = `[MODO REVIEW / CRÍTICA ARQUITECTÓNICA: Realiza una auditoría exhaustiva del código analizando Clean Architecture, principios SOLID, mantenibilidad, edge cases y rendimiento.]\n\n${finalPrompt}`;
+    }
+
+    // Compile active context including explicit mentions
     let contextText = null;
     try {
-      const compiled = await compileContext(workspacePath, fileTree, explorerSelectedPath);
+      const compiled = await compileContext(workspacePath, fileTree, explorerSelectedPath, mentionedPaths);
       contextText = compiled.text;
     } catch (e) {
       console.error('Failed to compile context:', e);
@@ -306,33 +384,25 @@ export const AIPanel: React.FC = () => {
     if (e.target) e.target.value = '';
   };
 
-  // Slash commands
-  const commands = [
-    { cmd: '/explain', label: 'Explicar código', desc: 'Explica el código o archivo seleccionado en detalle' },
-    { cmd: '/fix', label: 'Corregir errores', desc: 'Encuentra y soluciona errores en el contexto activo' },
-    { cmd: '/refactor', label: 'Refactorizar', desc: 'Optimiza y limpia el código siguiendo buenas prácticas' },
-    { cmd: '/git', label: 'Estado de Git', desc: 'Analiza diffs, cambios pendientes y propone commits' },
-    { cmd: '/files', label: 'Explorar proyecto', desc: 'Revisa la estructura de archivos en el workspace' },
-    { cmd: '/clear', label: 'Limpiar chat', desc: 'Vacía la conversación actual' },
-    { cmd: '/help', label: 'Ayuda', desc: 'Guía rápida de comandos y capacidades' },
-  ];
+  // Filter slash commands dynamically based on typed prefix
+  const filteredCommands = useMemo(() => {
+    if (!prompt.startsWith('/')) return SLASH_COMMANDS;
+    const search = prompt.split(/\s+/)[0].toLowerCase();
+    return SLASH_COMMANDS.filter(c => c.cmd.toLowerCase().startsWith(search));
+  }, [prompt]);
 
-  const handleCommandClick = (cmd: string) => {
+  const handleCommandClick = (slashCmd: SlashCommand) => {
     setShowCommands(false);
-    if (cmd === '/clear') {
+    if (slashCmd.cmd === '/clear') {
       clearHistory();
-    } else if (cmd === '/help') {
-      handleSend('¿Qué herramientas y comandos tengo disponibles en Spigot Copilot? Muestra una breve guía.');
-    } else if (cmd === '/explain') {
-      handleSend('Analizá detalladamente este código, explicá su arquitectura y cómo funciona paso a paso.');
-    } else if (cmd === '/fix') {
-      handleSend('Buscá posibles fallos, bugs o problemas de rendimiento en este código y mostrá cómo corregirlos.');
-    } else if (cmd === '/refactor') {
-      handleSend('Refactorizá este código para que sea más legible, limpio y mantenible, aplicando principios SOLID.');
-    } else if (cmd === '/git') {
-      handleSend('Analizá el estado actual de Git (status y diff), indícame qué archivos cambiaron y sugerime mensajes de commit apropiados.');
-    } else if (cmd === '/files') {
-      handleSend('Listá los archivos del proyecto utilizando la herramienta list_dir para ver la estructura.');
+      setPrompt('');
+    } else if (slashCmd.cmd === '/models') {
+      setIsModalOpen(true);
+      setPrompt('');
+    } else if (slashCmd.actionPrompt) {
+      const parts = prompt.trim().split(/\s+/);
+      const args = parts.length > 1 ? parts.slice(1).join(' ') : undefined;
+      handleSend(slashCmd.actionPrompt(args));
     }
   };
 
@@ -825,64 +895,159 @@ export const AIPanel: React.FC = () => {
       {/* 4. Bottom Input Area (VS Code Copilot Chat Style) */}
       <div className="p-3 border-t border-editor-border bg-editor-sidebar flex flex-col gap-2 relative">
         {/* Slash Command Popover */}
-        {showCommands && (
+        {showCommands && filteredCommands.length > 0 && (
           <div className="absolute left-3 bottom-[calc(100%+8px)] right-3 bg-editor-bg border border-editor-border rounded-[6px] shadow-2xl overflow-hidden z-50 select-none animate-slide-up">
             <div className="px-3 py-1.5 border-b border-editor-border bg-editor-sidebar flex items-center justify-between text-[11px] text-editor-textDark font-semibold">
-              <span className="uppercase tracking-wider">Comandos rápidos</span>
-              <button 
-                onClick={() => setShowCommands(false)}
-                className="hover:text-editor-text p-0.5 rounded"
-              >
-                <X className="w-3 h-3" />
-              </button>
+              <span className="uppercase tracking-wider text-editor-accent">Comandos Spigot ({filteredCommands.length})</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-editor-textDark font-normal">↑↓ Navegar • Enter Ejecutar</span>
+                <button 
+                  onClick={() => setShowCommands(false)}
+                  className="hover:text-editor-text p-0.5 rounded"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+            <div className="flex flex-col max-h-[240px] overflow-y-auto">
+              {filteredCommands.map((c, idx) => {
+                const isSelected = idx === commandIndex;
+                return (
+                  <button
+                    key={c.cmd}
+                    onClick={() => handleCommandClick(c)}
+                    className={`px-3 py-2 text-left transition-colors flex flex-col gap-0.5 border-b border-editor-border/40 last:border-0 ${
+                      isSelected ? 'bg-editor-active text-white' : 'hover:bg-editor-hover text-editor-text'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[12px] font-mono font-bold text-editor-accent">
+                          {c.cmd}
+                        </span>
+                        <span className="text-[11px] font-medium">— {c.label}</span>
+                      </div>
+                      <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-editor-sidebar border border-editor-border/60 text-editor-textDark font-sans">
+                        {c.category}
+                      </span>
+                    </div>
+                    <span className="text-[10.5px] text-editor-textDark truncate">{c.desc}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* @ Mention File Popover */}
+        {mentionQuery !== null && filteredMentionFiles.length > 0 && (
+          <div className="absolute left-3 bottom-[calc(100%+8px)] right-3 bg-editor-bg border border-editor-border rounded-[6px] shadow-2xl overflow-hidden z-50 select-none animate-slide-up">
+            <div className="px-3 py-1.5 border-b border-editor-border bg-editor-sidebar flex items-center justify-between text-[11px] text-editor-textDark font-semibold">
+              <span className="uppercase tracking-wider flex items-center gap-1.5 text-editor-accent">
+                <FileText className="w-3.5 h-3.5 text-sky-400" />
+                Mencionar archivo (@)
+              </span>
+              <span className="text-[10px] text-editor-textDark font-normal">
+                ↑↓ Navegar • Enter Seleccionar
+              </span>
             </div>
             <div className="flex flex-col max-h-[220px] overflow-y-auto">
-              {commands.map((c) => (
-                <button
-                  key={c.cmd}
-                  onClick={() => handleCommandClick(c.cmd)}
-                  className="px-3 py-2 text-left hover:bg-editor-hover transition-colors flex flex-col gap-0.5 border-b border-editor-border/40 last:border-0"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-[12px] font-mono font-bold text-editor-accent">{c.cmd}</span>
-                    <span className="text-[11px] text-editor-text font-medium">— {c.label}</span>
-                  </div>
-                  <span className="text-[10px] text-editor-textDark truncate">{c.desc}</span>
-                </button>
-              ))}
+              {filteredMentionFiles.map((file: { name: string; path: string; relPath: string; isDir: boolean }, idx: number) => {
+                const isSelected = idx === mentionIndex;
+                return (
+                  <button
+                    key={file.path}
+                    onClick={() => insertMention(file)}
+                    className={`px-3 py-1.5 text-left transition-colors flex items-center justify-between border-b border-editor-border/40 last:border-0 ${
+                      isSelected ? 'bg-editor-active text-white' : 'hover:bg-editor-hover text-editor-text'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FileText className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-editor-accent' : 'text-editor-textDark'}`} />
+                      <span className="text-[12px] font-medium truncate">{file.name}</span>
+                    </div>
+                    <span className="text-[10px] text-editor-textDark truncate max-w-[140px] font-mono">
+                      {file.relPath}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
 
         {/* Embedded Input Box */}
         <div className="bg-editor-bg border border-editor-border focus-within:border-editor-accent focus-within:ring-1 focus-within:ring-editor-accent rounded-[6px] p-2 flex flex-col gap-1.5 transition-all">
-          {/* Active Context Chips & Attached Files */}
-          <div className="flex flex-wrap items-center gap-1.5 select-none">
-            <div className="bg-editor-hover text-editor-accent border border-editor-border text-[10.5px] px-2 py-0.5 rounded-full flex items-center gap-1 font-medium" title="Contexto del workspace incluido">
-              <span>@workspace</span>
-            </div>
-
-            <div className="bg-editor-active text-editor-text border border-editor-border text-[10.5px] px-2 py-0.5 rounded-full flex items-center gap-1 font-medium truncate max-w-[160px]" title={explorerSelectedPath || workspacePath || ''}>
-              {contextInfo.isFolder ? (
-                <Folder className="w-3 h-3 text-amber-400 shrink-0" />
-              ) : (
-                <FileText className="w-3 h-3 text-sky-400 shrink-0" />
-              )}
-              <span className="truncate">{contextInfo.name}</span>
-            </div>
-
-            {attachedFiles.map((file, idx) => (
-              <div key={idx} className="bg-emerald-950/30 text-emerald-300 border border-emerald-900/40 text-[10.5px] px-2 py-0.5 rounded-full flex items-center gap-1 font-medium">
-                <Paperclip className="w-3 h-3" />
-                <span className="truncate max-w-[100px]">{file.name}</span>
-                <button
-                  onClick={() => setAttachedFiles(prev => prev.filter((_, i) => i !== idx))}
-                  className="hover:text-white"
-                >
-                  <X className="w-3 h-3" />
-                </button>
+          {/* Active Context Chips & OpenCode Mode Selector */}
+          <div className="flex flex-wrap items-center justify-between gap-1.5 select-none pb-1 border-b border-editor-border/30">
+            <div className="flex items-center gap-1 flex-wrap">
+              <div className="bg-editor-hover text-editor-accent border border-editor-border text-[10px] px-1.5 py-0.5 rounded-full flex items-center gap-1 font-medium" title="Contexto del workspace incluido">
+                <span>@workspace</span>
               </div>
-            ))}
+
+              <div className="bg-editor-active text-editor-text border border-editor-border text-[10px] px-1.5 py-0.5 rounded-full flex items-center gap-1 font-medium truncate max-w-[120px]" title={explorerSelectedPath || workspacePath || ''}>
+                {contextInfo.isFolder ? (
+                  <Folder className="w-3 h-3 text-amber-400 shrink-0" />
+                ) : (
+                  <FileText className="w-3 h-3 text-sky-400 shrink-0" />
+                )}
+                <span className="truncate">{contextInfo.name}</span>
+              </div>
+
+              {attachedFiles.map((file, idx) => (
+                <div key={idx} className="bg-emerald-950/30 text-emerald-300 border border-emerald-900/40 text-[10px] px-1.5 py-0.5 rounded-full flex items-center gap-1 font-medium">
+                  <Paperclip className="w-2.5 h-2.5" />
+                  <span className="truncate max-w-[80px]">{file.name}</span>
+                  <button
+                    onClick={() => setAttachedFiles(prev => prev.filter((_, i) => i !== idx))}
+                    className="hover:text-white"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Mode Pills: Agent | Chat | Review */}
+            <div className="flex items-center bg-editor-sidebar rounded-md border border-editor-border p-0.5 text-[10px] font-medium">
+              <button
+                type="button"
+                onClick={() => setAgentModeType('agent')}
+                className={`px-1.5 py-0.5 rounded transition-all flex items-center gap-1 ${
+                  agentModeType === 'agent'
+                    ? 'bg-sky-500/20 text-sky-300 font-bold border border-sky-500/40 shadow-xs'
+                    : 'text-editor-textDark hover:text-editor-text'
+                }`}
+                title="Modo Agente: ejecución autónoma y edición de archivos"
+              >
+                <Sparkles className="w-2.5 h-2.5" />
+                <span>Agente</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAgentModeType('chat')}
+                className={`px-1.5 py-0.5 rounded transition-all flex items-center gap-1 ${
+                  agentModeType === 'chat'
+                    ? 'bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/40 shadow-xs'
+                    : 'text-editor-textDark hover:text-editor-text'
+                }`}
+                title="Modo Chat: sólo lectura y explicaciones"
+              >
+                <span>Chat</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAgentModeType('review')}
+                className={`px-1.5 py-0.5 rounded transition-all flex items-center gap-1 ${
+                  agentModeType === 'review'
+                    ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40 shadow-xs'
+                    : 'text-editor-textDark hover:text-editor-text'
+                }`}
+                title="Modo Review: auditoría arquitectónica"
+              >
+                <span>Review</span>
+              </button>
+            </div>
           </div>
 
           {/* Text Input */}
@@ -890,18 +1055,74 @@ export const AIPanel: React.FC = () => {
             ref={textareaRef}
             value={prompt}
             onChange={(e) => {
-              setPrompt(e.target.value);
-              if (e.target.value.startsWith('/') && !showCommands) {
+              const val = e.target.value;
+              setPrompt(val);
+              if (val.startsWith('/') && !val.includes(' ') && !showCommands) {
                 setShowCommands(true);
+              } else if (!val.startsWith('/') && showCommands) {
+                setShowCommands(false);
+              }
+              const caret = e.target.selectionStart || val.length;
+              const textBefore = val.slice(0, caret);
+              const match = textBefore.match(/@([a-zA-Z0-9_\-\.\/]*)$/);
+              if (match) {
+                setMentionQuery(match[1]);
+                setMentionIndex(0);
+              } else {
+                setMentionQuery(null);
               }
             }}
             onKeyDown={(e) => {
+              if (mentionQuery !== null && filteredMentionFiles.length > 0) {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  setMentionIndex(prev => (prev + 1) % filteredMentionFiles.length);
+                  return;
+                }
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setMentionIndex(prev => (prev - 1 + filteredMentionFiles.length) % filteredMentionFiles.length);
+                  return;
+                }
+                if (e.key === 'Enter' || e.key === 'Tab') {
+                  e.preventDefault();
+                  insertMention(filteredMentionFiles[mentionIndex]);
+                  return;
+                }
+                if (e.key === 'Escape') {
+                  setMentionQuery(null);
+                  return;
+                }
+              }
+
+              if (showCommands && filteredCommands.length > 0) {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  setCommandIndex(prev => (prev + 1) % filteredCommands.length);
+                  return;
+                }
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setCommandIndex(prev => (prev - 1 + filteredCommands.length) % filteredCommands.length);
+                  return;
+                }
+                if (e.key === 'Enter' || e.key === 'Tab') {
+                  e.preventDefault();
+                  handleCommandClick(filteredCommands[commandIndex]);
+                  return;
+                }
+                if (e.key === 'Escape') {
+                  setShowCommands(false);
+                  return;
+                }
+              }
+
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 handleSend();
               }
             }}
-            placeholder="Preguntale a Spigot (@ para contexto, / para comandos)..."
+            placeholder="Preguntale a Spigot (@archivo para contexto, / para comandos)..."
             disabled={!hasActiveKey}
             rows={1}
             className="w-full bg-transparent border-0 outline-none text-[13px] text-editor-text placeholder:text-editor-textDark resize-none leading-relaxed min-h-[38px] max-h-[160px] p-0 font-sans"

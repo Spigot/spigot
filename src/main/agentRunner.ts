@@ -19,7 +19,67 @@ export interface ToolDefinition {
   };
 }
 
+const SYSTEM_PROMPT = `You are Spigot, an expert autonomous AI software engineer integrated directly into the Spigot code editor.
+You have tools to explore, search, read, surgically edit, create files, and execute terminal commands in the active workspace.
+
+Key Instructions:
+1. CODE EDITING & FILE CREATION:
+   - When asked to write, create, implement, refactor, or fix code, ALWAYS execute the changes directly using your tools.
+   - DO NOT merely state your intent or narrate what you are about to do without calling tools. Invoke the appropriate tool ('write_file' or 'edit_file') IMMEDIATELY in the same turn to perform the action.
+   - Use 'write_file' to create new files or write complete scripts.
+   - Use 'edit_file' for surgical modifications: provide the exact 'oldString' and 'newString'.
+   - Use 'read_file', 'grep_search', or 'glob_search' first if you need to inspect existing code before editing.
+   - Once a file is created or modified with 'write_file' or 'edit_file', your task is COMPLETE. DO NOT call the same write tool again for the same file.
+2. VERIFICATION & EXECUTION:
+   - You can use 'run_command' to run tests, typechecks, linters, or build scripts to verify your changes.
+3. CONCISENESS & COMPLETION:
+   - Keep responses direct and concise. After executing your tools, provide a brief summary of what was accomplished and finish.`;
+
 const TOOLS: ToolDefinition[] = [
+  {
+    name: 'edit_file',
+    description: 'Surgically edits a file by replacing an exact snippet of code (oldString) with new code (newString). Always inspect or read the file first with read_file to ensure oldString matches accurately.',
+    parameters: {
+      type: 'object',
+      properties: {
+        filePath: {
+          type: 'string',
+          description: 'Absolute or relative path to the file to edit in the workspace.'
+        },
+        oldString: {
+          type: 'string',
+          description: 'The exact snippet of code in the file to be replaced.'
+        },
+        newString: {
+          type: 'string',
+          description: 'The new code to replace oldString with.'
+        },
+        replaceAll: {
+          type: 'boolean',
+          description: 'If true, replaces all occurrences of oldString in the file. Defaults to false.'
+        }
+      },
+      required: ['filePath', 'oldString', 'newString']
+    }
+  },
+  {
+    name: 'glob_search',
+    description: 'Finds files in the workspace matching a glob pattern (e.g. "**/*.tsx", "src/components/*.ts"). Excludes node_modules, .git, and dist folders.',
+    parameters: {
+      type: 'object',
+      properties: {
+        pattern: {
+          type: 'string',
+          description: 'Glob pattern to search for (e.g. "**/*.ts", "*.json", "src/**").'
+        },
+        dirPath: {
+          type: 'string',
+          description: 'Optional directory path to search within. Defaults to workspace root.'
+        }
+      },
+      required: ['pattern']
+    }
+  },
   {
     name: 'list_dir',
     description: 'Lists all files and directories in a given folder of the workspace. Useful for discovering project structure.',
@@ -164,10 +224,115 @@ function getGeminiTools() {
 }
 
 // ==========================================
-// 3. Tool Implementations (Backend Node Exec)
+// 3. String & File Edit Helpers
 // ==========================================
 
-async function executeTool(
+export function normalizeQuotes(str: string): string {
+  return str
+    .replaceAll('‘', "'")
+    .replaceAll('’', "'")
+    .replaceAll('“', '"')
+    .replaceAll('”', '"');
+}
+
+export function findAndReplaceContent(
+  fileContent: string,
+  oldString: string,
+  newString: string,
+  replaceAll: boolean = false
+): { updatedContent: string; count: number } {
+  if (!oldString) {
+    throw new Error('El parámetro oldString no puede estar vacío.');
+  }
+
+  // 1. Direct exact match
+  if (fileContent.includes(oldString)) {
+    if (replaceAll) {
+      const parts = fileContent.split(oldString);
+      return { updatedContent: parts.join(newString), count: parts.length - 1 };
+    }
+    const idx = fileContent.indexOf(oldString);
+    return {
+      updatedContent: fileContent.substring(0, idx) + newString + fileContent.substring(idx + oldString.length),
+      count: 1
+    };
+  }
+
+  // 2. Line-ending normalization (CRLF <-> LF)
+  const normalizedFile = fileContent.replaceAll('\r\n', '\n');
+  const normalizedOld = oldString.replaceAll('\r\n', '\n');
+  const normalizedNew = newString.replaceAll('\r\n', '\n');
+
+  if (normalizedFile.includes(normalizedOld)) {
+    let replaced: string;
+    let count: number;
+    if (replaceAll) {
+      const parts = normalizedFile.split(normalizedOld);
+      replaced = parts.join(normalizedNew);
+      count = parts.length - 1;
+    } else {
+      const idx = normalizedFile.indexOf(normalizedOld);
+      replaced = normalizedFile.substring(0, idx) + normalizedNew + normalizedFile.substring(idx + normalizedOld.length);
+      count = 1;
+    }
+    const finalContent = fileContent.includes('\r\n') ? replaced.replaceAll('\n', '\r\n') : replaced;
+    return { updatedContent: finalContent, count };
+  }
+
+  // 3. Quote-tolerant normalization
+  const quotesFile = normalizeQuotes(normalizedFile);
+  const quotesOld = normalizeQuotes(normalizedOld);
+  if (quotesFile.includes(quotesOld)) {
+    const idx = quotesFile.indexOf(quotesOld);
+    const count = replaceAll ? quotesFile.split(quotesOld).length - 1 : 1;
+    const matchedSegment = normalizedFile.substring(idx, idx + quotesOld.length);
+    const replaced = replaceAll
+      ? normalizedFile.split(matchedSegment).join(normalizedNew)
+      : normalizedFile.substring(0, idx) + normalizedNew + normalizedFile.substring(idx + matchedSegment.length);
+    const finalContent = fileContent.includes('\r\n') ? replaced.replaceAll('\n', '\r\n') : replaced;
+    return { updatedContent: finalContent, count };
+  }
+
+  // 4. Line-by-line whitespace-tolerant matching (stripping trailing whitespace per line)
+  const fileLines = normalizedFile.split('\n');
+  const oldLines = normalizedOld.split('\n').map(l => l.trimEnd());
+
+  if (oldLines.length > 0) {
+    let matchIndex = -1;
+    for (let i = 0; i <= fileLines.length - oldLines.length; i++) {
+      let matches = true;
+      for (let j = 0; j < oldLines.length; j++) {
+        if (fileLines[i + j].trimEnd() !== oldLines[j]) {
+          matches = false;
+          break;
+        }
+      }
+      if (matches) {
+        matchIndex = i;
+        break;
+      }
+    }
+
+    if (matchIndex !== -1) {
+      const beforeLines = fileLines.slice(0, matchIndex);
+      const afterLines = fileLines.slice(matchIndex + oldLines.length);
+      const newLines = normalizedNew.split('\n');
+      const combined = [...beforeLines, ...newLines, ...afterLines].join('\n');
+      const finalContent = fileContent.includes('\r\n') ? combined.replaceAll('\n', '\r\n') : combined;
+      return { updatedContent: finalContent, count: 1 };
+    }
+  }
+
+  throw new Error(
+    `No se encontró el bloque 'oldString' en el archivo. Asegurate de usar 'read_file' para copiar el fragmento exacto antes de editar.`
+  );
+}
+
+// ==========================================
+// 4. Tool Implementations (Backend Node Exec)
+// ==========================================
+
+export async function executeTool(
   name: string,
   args: any,
   workspacePath: string
@@ -180,6 +345,60 @@ async function executeTool(
 
   try {
     switch (name) {
+      case 'edit_file': {
+        const file = resolvePath(args.filePath);
+        const content = await fs.readFile(file, 'utf-8');
+        const { updatedContent, count } = findAndReplaceContent(
+          content,
+          args.oldString,
+          args.newString,
+          Boolean(args.replaceAll)
+        );
+        await fs.writeFile(file, updatedContent, 'utf-8');
+        return `Edición exitosa en ${path.relative(workspacePath, file) || file} (${count} reemplazo(s) aplicado(s)).`;
+      }
+
+      case 'glob_search': {
+        const searchDir = resolvePath(args.dirPath || '.');
+        const pattern = args.pattern || '*';
+        const results: string[] = [];
+
+        const globToRegex = (glob: string) => {
+          const escaped = glob
+            .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+            .replace(/\*\*/g, '§GLOBSTAR§')
+            .replace(/\*/g, '[^/\\\\]*')
+            .replace(/§GLOBSTAR§/g, '.*');
+          return new RegExp(`^${escaped}$`, 'i');
+        };
+
+        const regex = globToRegex(pattern.includes('/') || pattern.includes('\\') ? pattern : `**/${pattern}`);
+
+        async function walk(dir: string) {
+          if (results.length >= 100) return;
+          const list = await fs.readdir(dir, { withFileTypes: true });
+          for (const entry of list) {
+            if (results.length >= 100) return;
+            if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'dist' || entry.name === '.atl' || entry.name === 'release') {
+              continue;
+            }
+            const fullPath = path.resolve(dir, entry.name);
+            const relPath = path.relative(workspacePath, fullPath).replace(/\\/g, '/');
+
+            if (entry.isDirectory()) {
+              await walk(fullPath);
+            } else if (entry.isFile()) {
+              if (regex.test(relPath) || regex.test(entry.name)) {
+                results.push(relPath);
+              }
+            }
+          }
+        }
+
+        await walk(searchDir);
+        return JSON.stringify({ success: true, count: results.length, files: results }, null, 2);
+      }
+
       case 'list_dir': {
         const dir = resolvePath(args.dirPath || '.');
         const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -404,7 +623,8 @@ export async function runAgentLoop({
   signal
 }: AgentRunOptions): Promise<boolean> {
   let turn = 0;
-  const maxTurns = 8;
+  const maxTurns = 25;
+  const executedWriteSignatures = new Set<string>();
 
   // Standardize historical conversation messages for tool execution context
   const rawHistory = (history || []).map((msg: any) => {
@@ -489,7 +709,9 @@ export async function runAgentLoop({
           headers['X-Title'] = 'Spigot';
         }
 
-        const openaiMessages: any[] = [];
+        const openaiMessages: any[] = [
+          { role: 'system', content: SYSTEM_PROMPT }
+        ];
         for (const m of formattedMessages) {
           if (m.tool_results) {
             for (const r of m.tool_results) {
@@ -534,6 +756,7 @@ export async function runAgentLoop({
         headers['anthropic-version'] = '2023-06-01';
         body = {
           model,
+          system: SYSTEM_PROMPT,
           messages: formattedMessages.map(m => {
             if (m.tool_results) {
               return {
@@ -601,6 +824,9 @@ export async function runAgentLoop({
         });
 
         body = {
+          systemInstruction: {
+            parts: [{ text: SYSTEM_PROMPT }]
+          },
           contents,
           tools: geminiTools
         };
@@ -612,17 +838,20 @@ export async function runAgentLoop({
         headers['Authorization'] = `Bearer ${apiKey}`;
         body = {
           model,
-          messages: formattedMessages.map(m => {
-            if (m.role === 'tool') return m;
-            if (m.tool_calls) {
-              return {
-                role: 'assistant',
-                content: m.content || null,
-                tool_calls: m.tool_calls
-              };
-            }
-            return { role: m.role, content: m.content };
-          }),
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            ...formattedMessages.map(m => {
+              if (m.role === 'tool') return m;
+              if (m.tool_calls) {
+                return {
+                  role: 'assistant',
+                  content: m.content || null,
+                  tool_calls: m.tool_calls
+                };
+              }
+              return { role: m.role, content: m.content };
+            })
+          ],
           tools: openAITools,
           tool_choice: 'auto',
           stream: true
@@ -652,6 +881,7 @@ export async function runAgentLoop({
       let textContent = '';
       let toolCalls: any[] = [];
       let currentToolCall: any = null;
+      let inReasoningBlock = false;
 
       // Temporary variables for Anthropic/OpenAI parser
 
@@ -729,12 +959,33 @@ export async function runAgentLoop({
                 const choice = parsed.choices?.[0];
                 const delta = choice?.delta;
                 
+                const reasoning = delta?.reasoning_content || delta?.reasoning;
+                if (reasoning) {
+                  if (!inReasoningBlock) {
+                    textContent += '<think>\n';
+                    sendChunk('<think>\n');
+                    inReasoningBlock = true;
+                  }
+                  textContent += reasoning;
+                  sendChunk(reasoning);
+                }
+
                 if (delta?.content) {
+                  if (inReasoningBlock) {
+                    textContent += '\n</think>\n';
+                    sendChunk('\n</think>\n');
+                    inReasoningBlock = false;
+                  }
                   textContent += delta.content;
                   sendChunk(delta.content);
                 }
 
                 if (delta?.tool_calls) {
+                  if (inReasoningBlock) {
+                    textContent += '\n</think>\n';
+                    sendChunk('\n</think>\n');
+                    inReasoningBlock = false;
+                  }
                   for (const tc of delta.tool_calls) {
                     if (tc.id) {
                       if (currentToolCall) {
@@ -757,6 +1008,13 @@ export async function runAgentLoop({
             }
           }
         }
+      }
+
+      // Close reasoning block if still open
+      if (inReasoningBlock) {
+        textContent += '\n</think>\n';
+        sendChunk('\n</think>\n');
+        inReasoningBlock = false;
       }
 
       // Close the last tool call if OpenAI compatible
@@ -787,7 +1045,7 @@ export async function runAgentLoop({
 
       // ==========================================
       // 5. Tool Execution & Feed Back Loop
-// ==========================================
+      // ==========================================
       if (toolCalls.length > 0) {
         const results: any[] = [];
         
@@ -795,9 +1053,25 @@ export async function runAgentLoop({
         sendChunk(`\n<think>\n`);
         
         for (const tc of toolCalls) {
+          if (signal.aborted) {
+            sendEnd(true);
+            return false;
+          }
+
+          const sig = `${tc.name}:${JSON.stringify(tc.input)}`;
+          if ((tc.name === 'write_file' || tc.name === 'edit_file') && executedWriteSignatures.has(sig)) {
+            sendChunk(`[Finalizado] La herramienta \`${tc.name}\` ya creó y aplicó los cambios correctamente en el archivo.\n</think>\n\nOperación completada exitosamente. El archivo ha sido creado en tu espacio de trabajo.`);
+            sendEnd();
+            return true;
+          }
+
           sendChunk(`Ejecutando herramienta \`${tc.name}\` en el workspace...\n`);
           
           const resultStr = await executeTool(tc.name, tc.input, workspacePath);
+          if (tc.name === 'write_file' || tc.name === 'edit_file') {
+            executedWriteSignatures.add(sig);
+          }
+
           results.push({
             tool_use_id: tc.id,
             name: tc.name,
@@ -809,10 +1083,15 @@ export async function runAgentLoop({
 
         sendChunk(`</think>\n`);
 
+        if (signal.aborted) {
+          sendEnd(true);
+          return false;
+        }
+
         // Append the tool results
         messages.push({
           role: 'user', // In OpenAI, this is a separate 'tool' role, but we unify it
-          content: 'Resultados de las herramientas ejecutadas.',
+          content: 'Resultados de las herramientas ejecutadas. Por favor, presenta tu confirmación final al usuario.',
           tool_results: results
         });
 

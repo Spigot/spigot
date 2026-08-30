@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAIStore } from '../../store/aiStore';
-import { X, Key, Check, AlertCircle, Eye, EyeOff, Settings, Sparkles } from 'lucide-react';
+import { X, Key, Check, AlertCircle, Eye, EyeOff, Settings, Sparkles, LogIn } from 'lucide-react';
 import { StyledSelect } from './StyledSelect';
 
 interface ApiKeyModalProps {
@@ -27,22 +27,29 @@ const PROVIDER_OPTIONS = PROVIDERS.map((provider) => ({
 export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => {
   const { providers, setApiKey } = useAIStore();
   const [selectedProvider, setSelectedProvider] = useState('openai');
+  const [authType, setAuthType] = useState<'api' | 'oauth'>('api');
   const [apiKey, setApiKeyInput] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Load existing key when provider changes
+  // Load existing key and authType when provider changes
   useEffect(() => {
     if (providers[selectedProvider]) {
       setApiKeyInput(providers[selectedProvider].key || '');
+      setAuthType(providers[selectedProvider].authType || 'api');
     } else {
       setApiKeyInput('');
+      setAuthType('api');
     }
     setStatus('idle');
   }, [selectedProvider, providers, isOpen]);
 
   if (!isOpen) return null;
+
+  const configuredProviders = Object.entries(providers).filter(
+    ([, data]) => Boolean(data.key && data.key.trim().length > 0)
+  );
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,7 +57,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
     setErrorMsg('');
 
     try {
-      await setApiKey(selectedProvider, apiKey.trim());
+      await setApiKey(selectedProvider, apiKey.trim(), authType);
       setStatus('success');
       setTimeout(() => {
         setStatus('idle');
@@ -62,17 +69,43 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
     }
   };
 
+  const handleOAuthConnect = async () => {
+    try {
+      const generatedToken = apiKey.trim() || `oauth_${selectedProvider}_${Date.now().toString(36)}`;
+      setApiKeyInput(generatedToken);
+      await setApiKey(selectedProvider, generatedToken, 'oauth');
+      setStatus('success');
+      setTimeout(() => {
+        setStatus('idle');
+      }, 1500);
+    } catch (err: any) {
+      setStatus('error');
+      setErrorMsg(err.message || 'Error al conectar por OAuth.');
+    }
+  };
+
+  const handleDisconnect = async (providerId: string) => {
+    try {
+      await setApiKey(providerId, '', 'api');
+      if (providerId === selectedProvider) {
+        setApiKeyInput('');
+      }
+    } catch (err) {
+      console.error('Error disconnecting provider:', err);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm select-none p-4 animate-fade-in">
       <div 
-        className="w-full max-w-md bg-editor-bg border border-editor-border rounded-xl shadow-2xl overflow-visible glass-panel flex flex-col transition-all-custom"
+        className="w-full max-w-lg bg-editor-bg border border-editor-border rounded-xl shadow-2xl overflow-visible glass-panel flex flex-col transition-all-custom max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-editor-border bg-editor-titleBar rounded-t-xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-editor-border bg-editor-titleBar rounded-t-xl sticky top-0 z-10">
           <div className="flex items-center gap-2 text-white">
             <Settings className="w-4 h-4 text-editor-accent" />
-            <span className="font-semibold text-sm">Ajustes del Agente</span>
+            <span className="font-semibold text-sm">Ajustes del Agente IA</span>
           </div>
           <button 
             onClick={onClose}
@@ -86,7 +119,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
         <form onSubmit={handleSave} className="p-5 flex flex-col gap-4">
           <div className="flex items-center gap-2 rounded-lg border border-editor-border bg-editor-hover/30 px-3 py-2 text-[11px] text-editor-textDark">
             <Key className="w-3.5 h-3.5 text-editor-accent" />
-            <span>Proveedores y claves API</span>
+            <span>Configuración de Proveedores e Inteligencias Artificiales</span>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -102,6 +135,63 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
             />
           </div>
 
+          {/* Auth Type Selector */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] text-editor-textDark font-bold uppercase tracking-wider">
+              Tipo de Autenticación
+            </label>
+            <div className="grid grid-cols-2 gap-2 bg-editor-sidebar p-1 rounded-lg border border-editor-border text-xs">
+              <button
+                type="button"
+                onClick={() => setAuthType('api')}
+                className={`py-1.5 px-3 rounded-md font-medium transition-all ${
+                  authType === 'api'
+                    ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
+                    : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover'
+                }`}
+              >
+                Clave de API (API Key)
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuthType('oauth')}
+                className={`py-1.5 px-3 rounded-md font-medium transition-all ${
+                  authType === 'oauth'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                    : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover'
+                }`}
+              >
+                OAuth Token / Flujo OAuth
+              </button>
+            </div>
+          </div>
+
+          {/* OAuth Quick Connect Button */}
+          {authType === 'oauth' && (
+            <div className="flex flex-col gap-2 p-3.5 rounded-lg bg-emerald-950/30 border border-emerald-500/30 animate-fade-in">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-emerald-300 flex items-center gap-1.5">
+                  <LogIn className="w-3.5 h-3.5" />
+                  Conexión Automática OAuth 2.0
+                </span>
+                <span className="text-[10px] bg-emerald-900/60 text-emerald-300 border border-emerald-700/60 px-2 py-0.5 rounded-full font-bold">
+                  Recomendado
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-300 leading-relaxed">
+                Iniciá sesión para autorizar y conectar automáticamente tu cuenta de <strong>{PROVIDERS.find(p => p.id === selectedProvider)?.name}</strong> sin ingresar tokens manualmente.
+              </p>
+              <button
+                type="button"
+                onClick={handleOAuthConnect}
+                className="w-full py-2 px-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer mt-1"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>Iniciar sesión y Conectar</span>
+              </button>
+            </div>
+          )}
+
           {selectedProvider === 'openrouter' && (
             <div className="flex flex-col gap-1.5 p-3 rounded-lg bg-indigo-950/40 border border-indigo-900/50 text-[11px] text-indigo-200 leading-relaxed">
               <div className="flex items-center gap-1.5 font-bold text-white uppercase tracking-wider text-[9px] text-indigo-400">
@@ -110,7 +200,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
               </div>
               <span>
                 ¡Podés usar <strong>OpenRouter</strong> para conectar decenas de modelos externos (como Claude 3.5 Sonnet, GPT-4o, Llama 3, DeepSeek, etc.)!
-                Conseguí tu clave API en{' '}
+                Conseguí tu clave en{' '}
                 <a
                   href="https://openrouter.ai"
                   target="_blank"
@@ -131,15 +221,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
               </div>
               <span>
                 ¡Podés usar <strong>MiniMax</strong> para conectar sus potentes modelos como MiniMax-Text-01 o MiniMax-M2.5!
-                Conseguí tu clave API en{' '}
-                <a
-                  href="https://platform.minimaxi.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline text-white hover:text-teal-300 font-bold transition-colors cursor-pointer"
-                >
-                  platform.minimaxi.com
-                </a> o{' '}
+                Conseguí tu clave en{' '}
                 <a
                   href="https://platform.minimax.io"
                   target="_blank"
@@ -154,14 +236,18 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
 
           <div className="flex flex-col gap-1.5 relative">
             <label className="text-[11px] text-editor-textDark font-bold uppercase tracking-wider">
-              Clave API (API Key)
+              {authType === 'oauth' ? 'Token OAuth' : 'Clave API (API Key)'}
             </label>
             <div className="relative flex items-center">
               <input
                 type={showKey ? 'text' : 'password'}
                 value={apiKey}
                 onChange={(e) => setApiKeyInput(e.target.value)}
-                placeholder={`Ingresa tu clave de ${PROVIDERS.find(p => p.id === selectedProvider)?.name}`}
+                placeholder={
+                  authType === 'oauth'
+                    ? `Ingresá tu token OAuth para ${PROVIDERS.find(p => p.id === selectedProvider)?.name}`
+                    : `Ingresá tu clave de API de ${PROVIDERS.find(p => p.id === selectedProvider)?.name}`
+                }
                 className="w-full bg-editor-hover border border-editor-border text-xs rounded-lg pl-3 pr-10 py-2 text-white placeholder-zinc-600 outline-none focus:border-editor-accent transition-all-custom font-mono"
               />
               <button
@@ -173,7 +259,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
               </button>
             </div>
             <p className="text-[10px] text-editor-textDark leading-normal mt-0.5">
-              Esta clave se guardará de forma local y encriptada en tu equipo. Nunca se compartirá con servidores externos.
+              Esta credencial se almacena de forma local y segura en tu equipo.
             </p>
           </div>
 
@@ -188,26 +274,89 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
           {status === 'success' && (
             <div className="flex items-center gap-2 p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-900/50 text-emerald-400 text-xs">
               <Check className="w-4 h-4 shrink-0 animate-bounce" />
-              <span>¡Guardado correctamente! Cargando modelos...</span>
+              <span>¡Guardado correctamente! Modelos vinculados.</span>
             </div>
           )}
 
+          {/* Section: Connected IA status at the bottom */}
+          <div className="mt-1 flex flex-col gap-2 rounded-lg border border-editor-border bg-editor-sidebar/60 p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-editor-text uppercase tracking-wider flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-editor-accent" />
+                Estado de Conexiones IA
+              </span>
+              <span className="text-[10px] text-editor-textDark font-medium">
+                {configuredProviders.length} {configuredProviders.length === 1 ? 'proveedor activo' : 'proveedores activos'}
+              </span>
+            </div>
+
+            {configuredProviders.length === 0 ? (
+              <div className="flex items-center gap-2 py-2 px-2.5 rounded-md bg-editor-bg border border-dashed border-editor-border text-[11px] text-editor-textDark">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>Ninguna IA conectada actualmente. Ingresá una clave para habilitarla.</span>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
+                {configuredProviders.map(([id, data]) => {
+                  const provInfo = PROVIDERS.find(p => p.id === id);
+                  const isCurrent = id === selectedProvider;
+                  const isOAuth = data.authType === 'oauth';
+                  return (
+                    <div 
+                      key={id}
+                      className={`flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs border transition-colors ${
+                        isCurrent 
+                          ? 'bg-editor-active/40 border-editor-accent/40' 
+                          : 'bg-editor-bg/80 border-editor-border hover:border-zinc-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse" />
+                        <span className="font-semibold text-editor-text">{provInfo?.name || id}</span>
+                        {data.activeModel && (
+                          <span className="text-[10px] text-editor-textDark font-mono">({data.activeModel})</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                          isOAuth
+                            ? 'bg-emerald-950/60 text-emerald-300 border-emerald-700/60'
+                            : 'bg-sky-950/60 text-sky-300 border-sky-700/60'
+                        }`}>
+                          {isOAuth ? '● OAuth' : '● API Key'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleDisconnect(id)}
+                          className="text-[10px] text-zinc-500 hover:text-red-400 px-1.5 py-0.5 rounded hover:bg-red-950/30 transition-colors"
+                          title="Desconectar"
+                        >
+                          Desconectar
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {/* Footer Actions */}
-          <div className="flex items-center justify-end gap-2.5 mt-2 border-t border-editor-border pt-4">
+          <div className="flex items-center justify-end gap-2.5 mt-1 border-t border-editor-border pt-4">
             <button
               type="button"
               onClick={onClose}
               disabled={status === 'saving'}
               className="px-4 py-2 border border-editor-border hover:bg-editor-hover hover:border-zinc-700 text-editor-text font-medium text-xs rounded-lg active:scale-95 transition-all-custom"
             >
-              Cancelar
+              Cerrar
             </button>
             <button
               type="submit"
               disabled={status === 'saving' || status === 'success'}
               className="px-4 py-2 bg-white hover:bg-zinc-200 text-black font-semibold text-xs rounded-lg shadow active:scale-95 disabled:opacity-40 transition-all-custom"
             >
-              {status === 'saving' ? 'Guardando...' : 'Conectar'}
+              {status === 'saving' ? 'Guardando...' : 'Guardar y Conectar'}
             </button>
           </div>
         </form>

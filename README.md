@@ -5,7 +5,15 @@
 <h1 align="center">Spigot</h1>
 
 <p align="center">
-  <strong>Editor de código premium, modular y multiplataforma inspirado en VS Code con soporte nativo de IA y Screaming Architecture.</strong>
+  <strong>Editor de código premium, modular y de alto rendimiento con agentes autónomos de IA, terminal integrada y arquitectura hexagonal.</strong>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/TypeScript-5.x-blue.svg" alt="TypeScript">
+  <img src="https://img.shields.io/badge/React-18-61DAFB.svg" alt="React 18">
+  <img src="https://img.shields.io/badge/Electron-28-47848F.svg" alt="Electron">
+  <img src="https://img.shields.io/badge/Monaco_Editor-0.45-green.svg" alt="Monaco Editor">
+  <img src="https://img.shields.io/badge/TailwindCSS-3.x-38B2AC.svg" alt="Tailwind CSS">
 </p>
 
 <br>
@@ -14,86 +22,115 @@
   <img src="public/screenshot.png" alt="Spigot IDE Preview" width="100%">
 </p>
 
-## ✨ Funcionalidades Principales (Features)
+---
 
-- **Editor de Código Avanzado**: Integración profunda con **Monaco Editor**, soportando coloreado de sintaxis y autocompletado nativo impulsado por Language Server Protocol (LSP).
-- **Asistente de IA Integrado (Panel AI)**: Chatea con el código. Soporte nativo para múltiples proveedores de IA (OpenAI, Anthropic, Gemini, DeepSeek, OpenRouter, Kimi, MiniMax, Qwen). Incluye streaming de respuestas en tiempo real y capacidad para inyectar el contexto de los archivos en uso.
-- **Terminal Integrada**: Terminal totalmente funcional impulsada por `xterm.js` y `node-pty`, que te permite ejecutar comandos del sistema directamente desde el editor sin cambiar de ventana.
-- **Gestión de Git**: Control de versiones nativo. Puedes ver el estado de los archivos (Status), comparar cambios (Diff), hacer Commits, revisar el Historial (Log), y hacer Push directamente desde el editor.
-- **Conexiones SSH**: Gestor de conexiones VPS integrado en la barra de herramientas para acceder rápidamente a tus servidores remotos.
-- **Interfaz "Frameless" y UI Premium**: Diseño de ventana moderno con barra de título personalizada, construido con Tailwind CSS y Framer Motion para animaciones fluidas.
-- **Gestión de Espacios de Trabajo (Workspaces)**: Soporte completo de exploración de archivos, visor de árbol de directorios con iconos y lectura/escritura veloz mediante IPC puro con Node.js.
-- **Gestor de Atajos Globales (Shortcuts)**: Sistema de atajos de teclado manejable y configurable para maximizar tu productividad.
+## ⚡ Resumen Rápido (Overview)
 
-## 🚀 Próximas Funcionalidades (Coming Soon)
+**Spigot** es un entorno de desarrollo integrado (IDE) de escritorio diseñado para maximizar la velocidad y productividad del desarrollador. Combina la flexibilidad de **Monaco Editor** con una **suite de agentes autónomos de Inteligencia Artificial** capaces de inspeccionar, editar quirúrgicamente y ejecutar código directamente dentro de tu espacio de trabajo.
 
-- **Gestión de Plugins y Extensiones**: Un sistema dinámico para instalar utilidades desarrolladas por la comunidad.
-- **Depurador Integrado (Debugger)**: Herramienta visual para colocar puntos de ruptura (breakpoints), inspeccionar variables y seguir el hilo de ejecución paso a paso.
-- **Multiplexor de Terminales**: Posibilidad de dividir la consola en múltiples paneles, pestañas y layouts personalizados, al estilo Zellij o Tmux.
-- **Colaboración en Tiempo Real**: Función estilo *Live Share* para poder editar el mismo archivo simultáneamente con compañeros de equipo.
-- **Temas Dinámicos Pro**: Selector avanzado de temas y personalización completa de fuentes y colores (UI y sintaxis del editor).
+---
 
-## 💻 Instalación y Uso
+## ✨ Características Principales (Key Features)
 
-### Pre-requisitos
+### 🤖 1. Modo Agente Autónomo y Copilot de IA
+- **Edición Quirúrgica de Código**: Capacidad del agente para explorar el workspace (`glob_search`, `grep_search`, `read_file`), crear archivos completos (`write_file`) y aplicar parches precisos (`edit_file`).
+- **Razonamiento en Tiempo Real**: Visualización plegable de bloques `<think>` y trazabilidad paso a paso de las herramientas ejecutadas.
+- **Cancelación Inmediata (Stop / Abort)**: Detención instantánea del bucle del agente y salvaguardas anti-loop para evitar repeticiones innecesarias de herramientas.
+- **Soporte Multimodelo y Proveedores**:
+  - **OpenAI** (GPT-4o, o1, o3-mini)
+  - **Anthropic** (Claude 3.5 Sonnet, Claude 3.7 Sonnet)
+  - **Google Gemini** (Gemini 2.5 Pro / Flash)
+  - **DeepSeek** (DeepSeek V3, DeepSeek R1)
+  - **MiniMax** (MiniMax Text-01, M2.5, M2.7)
+  - **Qwen**, **Kimi** y **OpenRouter** (decenas de modelos externos).
+- **Autenticación Dual**: Conexión mediante **API Key** o flujo de inicio de sesión directo con **OAuth 2.0**.
+
+### 💻 2. Terminal Integrada de Alto Rendimiento
+- **Motor PTY Real**: Basado en `node-pty` y `xterm.js` con soporte para **PowerShell** en Windows, **Bash** en macOS/Linux y **SSH** para servidores remotos.
+- **Portapapeles Completo**: Soporte nativo para `Ctrl+C` (copiar selección), `Ctrl+V` (pegar) y **Clic Derecho** interactivo.
+- **Botón `▶ Ejecutar` Directo**: Ejecución en un clic de scripts (`.py`, `.js`, `.ts`, `.sh`, `.ps1`) directamente dentro de la consola interna de Spigot sin abrir ventanas emergentes del sistema operativo.
+- **Ajuste Inteligente (ResizeObserver)**: Buffer de salida desde el milisegundo 0 y redimensión adaptativa instantánea.
+
+### 📝 3. Editor Monaco y Lenguajes
+- **LSP Integrado**: Servidores de lenguaje con autocompletado inteligente, validación de sintaxis y diagnósticos de errores en tiempo real en el panel *Problems*.
+- **Pestañas y Navegador Web**: Sistema de pestañas modular con indicador de cambios (*dirty files*) y soporte para navegación web interna (`browser://`).
+- **Visor de Diferencias (Diff Editor)**: Comparación visual lado a lado con Monaco DiffEditor para cambios en Git y revisiones del agente.
+
+### 🌿 4. Control de Versiones (Git)
+- Panel de control de versiones con visualización de estado (M, U, D), Staging / Unstaging, historial de commits (`git log`) y creación asistida de Pull Requests.en 
+
+---
+
+## 🚀 Inicio Rápido (Quick Start)
+
+### Requisitos Previos
 - **Node.js**: `v22.14.0` o superior.
-- **Gestor de paquetes**: El proyecto utiliza `pnpm` (a través de Corepack).
-
-### Iniciar en Modo Desarrollo
-
-1. Clona el repositorio:
-   ```bash
-   git clone https://github.com/Spigot/spigot.git
-   cd spigot
-   ```
-
-2. Habilita Corepack y descarga las dependencias:
-   ```bash
-   corepack enable
-   pnpm install --frozen-lockfile
-   ```
-
-3. Inicia la aplicación en modo desarrollo (se levantará Vite + Electron):
-   ```bash
-   pnpm run dev
-   ```
-
-### Construir para Producción (Build)
-
-Para compilar y empaquetar la aplicación para tu sistema operativo actual:
+- **pnpm**: Gestor de paquetes recomendado (habilitado vía Corepack).
 
 ```bash
+# 1. Clonar el repositorio
+git clone https://github.com/Spigot/spigot.git
+cd spigot
+
+# 2. Habilitar corepack e instalar dependencias
+corepack enable
+pnpm installquier
+
+# 3. Iniciar la aplicación en modo desarrollo
+pnpm run dev
+```
+
+### Compilar para Producción (Build)
+
+```bash
+# Genera los ejecutables e instaladores en la carpeta /release
 pnpm run build
 ```
 
-Esto generará el instalador final y los ejecutables dentro de la carpeta `release/`.
+---
 
-## 🛡️ Seguridad y Confianza
+## ⌨️ Atajos de Teclado Globales (Shortcuts)
 
-La seguridad es un pilar fundamental en Spigot:
-
-- **Política de Seguridad**: Consulta nuestro [SECURITY.md](SECURITY.md) para saber cómo reportar vulnerabilidades.
-- **Cadena de Suministro**: Aplicamos controles estrictos para el consumo de dependencias y procesos de build. Detalles en [docs/supply-chain-security.md](docs/supply-chain-security.md).
-- **Aislamiento**: Implementamos `contextIsolation` y deshabilitamos `nodeIntegration` en el renderizado de Electron para proteger tu sistema.
-
-## 🛠️ Tecnologías y Stack
-
-- **Framework de Escritorio:** [Electron](https://www.electronjs.org/)
-- **Frontend:** [React 18](https://react.dev/), [Vite](https://vitejs.dev/)
-- **Editor Base:** [Monaco Editor](https://microsoft.github.io/monaco-editor/)
-- **Terminal:** [xterm.js](https://xtermjs.org/) & [node-pty](https://github.com/microsoft/node-pty)
-- **Estilos:** [Tailwind CSS](https://tailwindcss.com/)
-- **Estado Global:** [Zustand](https://github.com/pmndrs/zustand)
-- **Lenguaje:** TypeScript
+| Atajo | Acción |
+|---|---|
+| `Ctrl + +` / `Ctrl + =` | Acercar interfaz (Zoom In) |
+| `Ctrl + -` | Alejar interfaz (Zoom Out) |
+| `Ctrl + 0` | Restablecer tamaño predeterminado (Zoom Reset) |
+| `Ctrl + \`` / `Ctrl + J` | Conmutar Consola / Terminal integrada |
+| `Ctrl + B` | Conmutar Barra Lateral (Sidebar) |
+| `Ctrl + S` | Guardar archivo actual |
 
 ---
 
-## 💖 Agradecimientos / Acknowledgements
+## 🛠️ Stack Tecnológico
 
-Este proyecto utiliza como base el trabajo y las herramientas creadas por [Gentleman-Programming](https://github.com/Gentleman-Programming/), a quien agradecemos enormemente su gran aporte al ecosistema de desarrollo y sus herramientas especializadas para agentes de IA:
-- **Engram**: Su solución para la gestión persistente de memoria y contexto en agentes de IA.
-- **Gentle AI**: Su ecosistema diseñado para facilitar el desarrollo de flujos y agentes inteligentes.
+| Capa | Tecnología |
+|---|---|
+| **Plataforma de Escritorio** | [Electron](https://www.electronjs.org/) |
+| **Frontend & UI** | [React 18](https://react.dev/), [Vite](https://vitejs.dev/), [Tailwind CSS](https://tailwindcss.com/) |
+| **Editor de Código** | [Monaco Editor](https://microsoft.github.io/monaco-editor/) + LSP Bridge |
+| **Terminal PTY** | [xterm.js](https://xtermjs.org/) & [node-pty](https://github.com/microsoft/node-pty) |
+| **Gestión de Estado** | [Zustand](https://github.com/pmndrs/zustand) |
+| **Tipado y Calidad** | TypeScript & Vitest |
 
 ---
 
-*Spigot está pensado para brindar una experiencia de programación sin fricciones, rápida y fuertemente apoyada por inteligencia artificial.*
+## 🛡️ Seguridad y Aislamiento
+
+- **IPC Seguro y Context Isolation**: Renderizado completamente aislado de Node.js mediante `preload/index.ts` y `contextBridge`.
+- **Almacenamiento Local de Credenciales**: Las claves de API y tokens OAuth se guardan localmente en el almacenamiento seguro de tu máquina.
+- **Cadena de Suministro**: Verificación de dependencias con bloqueo estricto (`--frozen-lockfile`) y políticas descritas en [SECURITY.md](SECURITY.md).
+
+---
+
+## 💖 Agradecimientos (Acknowledgements)
+
+Este proyecto se apoya en el trabajo y las herramientas creadas por **[Gentleman-Programming](https://github.com/Gentleman-Programming/)**, agradeciendo su gran aporte al ecosistema de desarrollo y herramientas para agentes de IA:
+- **Engram**: Gestión persistente de memoria y contexto para agentes.
+- **Gentle AI**: Ecosistema para orquestación de agentes inteligentes y flujos de revisión.
+
+---
+
+<p align="center">
+  <sub>Construido con pasión para una experiencia de programación veloz, autónoma e intuitiva.</sub>
+</p>

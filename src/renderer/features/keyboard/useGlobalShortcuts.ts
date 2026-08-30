@@ -35,6 +35,32 @@ export const useGlobalShortcuts = () => {
         return;
       }
 
+      // Zoom In (handles +, =, NumpadAdd, and Shift variants)
+      if (
+        key === '+' || 
+        key === '=' || 
+        event.code === 'NumpadAdd' || 
+        event.code === 'Equal'
+      ) {
+        event.preventDefault();
+        (window as any).api?.app?.zoomIn?.();
+        return;
+      }
+
+      // Zoom Out (handles -, NumpadSubtract, Minus)
+      if (key === '-' || event.code === 'NumpadSubtract' || event.code === 'Minus') {
+        event.preventDefault();
+        (window as any).api?.app?.zoomOut?.();
+        return;
+      }
+
+      // Zoom Reset (handles 0, Numpad0, Digit0)
+      if (key === '0' || event.code === 'Numpad0' || event.code === 'Digit0') {
+        event.preventDefault();
+        (window as any).api?.app?.zoomReset?.();
+        return;
+      }
+
       if (isEditableTarget(event.target)) return;
 
       if (key === 'o') {

@@ -41,7 +41,6 @@ export const ActivityBar: React.FC = () => {
             </button>
           );
         })}
-
       </div>
 
       {/* Bottom Option Triggers */}
@@ -84,4 +83,3 @@ export const ActivityBar: React.FC = () => {
   );
 };
 export default ActivityBar;
-

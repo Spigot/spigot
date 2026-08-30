@@ -109,27 +109,91 @@ export const ConsolePanel: React.FC = () => {
   // Each session gets its own container div — no shared ref
   const containerRef = useRef<HTMLDivElement>(null);
   const xtermInstances = useRef<Record<string, { term: XTerm; fit: FitAddon; disposeData: () => void }>>({});
-  // Track whether user explicitly closed the last terminal (prevents auto-recreate)
-  const userClosedLast = useRef(false);
 
-  // Initialize terminal session if none exists on open (only on first open, not after user-close)
+  // Ensure activeSessionId is always valid when sessions exist
   useEffect(() => {
-    if (isConsoleOpen && sessions.length === 0 && !userClosedLast.current) {
-      createSession(80, 24, workspacePath || '');
+    if (sessions.length > 0 && (!activeSessionId || !sessions.some(s => s.id === activeSessionId))) {
+      setActiveSession(sessions[sessions.length - 1].id);
     }
-  }, [isConsoleOpen, sessions.length, createSession, workspacePath]);
+  }, [sessions, activeSessionId, setActiveSession]);
+
+  // Ensure terminal session exists and active instance fits/focuses whenever console opens or tab changes
+  useEffect(() => {
+    if (isConsoleOpen && activePanelTab === 'terminal') {
+      if (sessions.length === 0) {
+        createSession(80, 24, workspacePath || '');
+      }
+    }
+  }, [isConsoleOpen, activePanelTab, sessions.length, createSession, workspacePath]);
+
+  // Dynamic resize and fit on any layout change
+  useEffect(() => {
+    if (!isConsoleOpen || activePanelTab !== 'terminal') return;
+
+    const performFit = () => {
+      if (activeSessionId && xtermInstances.current[activeSessionId]) {
+        try {
+          const { term, fit } = xtermInstances.current[activeSessionId];
+          fit.fit();
+          (window as any).api?.terminal?.resize?.(activeSessionId, term.cols, term.rows);
+          term.refresh(0, term.rows - 1);
+          term.focus();
+        } catch (_) {}
+      }
+    };
+
+    const t1 = setTimeout(performFit, 30);
+    const t2 = setTimeout(performFit, 120);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [isConsoleOpen, isConsoleMaximized, consoleHeight, activeSessionId, activePanelTab, sessions.length]);
+
+  // Dynamic ResizeObserver to auto-fit whenever the container div has actual pixel dimensions
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
+          if (activeSessionId && xtermInstances.current[activeSessionId]) {
+            try {
+              const { term, fit } = xtermInstances.current[activeSessionId];
+              fit.fit();
+              (window as any).api?.terminal?.resize?.(activeSessionId, term.cols, term.rows);
+              term.refresh(0, term.rows - 1);
+            } catch (_) {}
+          }
+        }
+      }
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [activeSessionId]);
 
   // Mount xterm instances into their individual container divs
   useEffect(() => {
-    if (!isConsoleOpen || !containerRef.current) return;
+    if (!containerRef.current) return;
 
     for (const sess of sessions) {
-      // Skip if already mounted
-      if (xtermInstances.current[sess.id]) continue;
-
-      // Find the dedicated container div for this session
       const el = containerRef.current.querySelector(`[data-session-id="${sess.id}"]`) as HTMLDivElement | null;
       if (!el) continue;
+
+      // Skip if already mounted and still in DOM; if detached, re-attach
+      if (xtermInstances.current[sess.id]) {
+        const inst = xtermInstances.current[sess.id];
+        if (inst.term.element && !el.contains(inst.term.element)) {
+          el.innerHTML = '';
+          inst.term.open(el);
+          setTimeout(() => {
+            try {
+              inst.fit.fit();
+              inst.term.refresh(0, inst.term.rows - 1);
+            } catch (_) {}
+          }, 30);
+        }
+        continue;
+      }
 
       const sessionId = sess.id;
       const term = new XTerm({
@@ -147,12 +211,76 @@ export const ConsolePanel: React.FC = () => {
       term.loadAddon(fit);
       term.open(el);
 
+      // Replay any buffered output from spawn
+      (window as any).api?.terminal?.getHistory?.(sessionId).then((history: string[]) => {
+        if (history && history.length > 0) {
+          for (const chunk of history) {
+            term.write(chunk);
+          }
+        } else {
+          setTimeout(() => {
+            try {
+              (window as any).api?.terminal?.write?.(sessionId, '\r');
+            } catch (_) {}
+          }, 150);
+        }
+      }).catch(() => {});
+
       setTimeout(() => {
         try {
           fit.fit();
-          (window as any).api.terminal.resize(sessionId, term.cols, term.rows);
+          (window as any).api?.terminal?.resize?.(sessionId, term.cols, term.rows);
+          term.refresh(0, term.rows - 1);
         } catch (e) {}
-      }, 30);
+      }, 50);
+
+      // Enable copy with Ctrl+C/Ctrl+Shift+C and paste with Ctrl+V/Ctrl+Shift+V
+      term.attachCustomKeyEventHandler((e) => {
+        if (e.type === 'keydown') {
+          // Copy: Ctrl+C (when selection exists) or Ctrl+Shift+C
+          if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
+            if (e.shiftKey || term.hasSelection()) {
+              const selection = term.getSelection();
+              if (selection) {
+                navigator.clipboard.writeText(selection);
+                return false;
+              }
+            }
+          }
+
+          // Paste: Ctrl+V or Ctrl+Shift+V
+          if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) {
+            navigator.clipboard.readText().then((text) => {
+              if (text) {
+                (window as any).api.terminal.write(sessionId, text);
+              }
+            }).catch(() => {});
+            return false;
+          }
+        }
+        return true;
+      });
+
+      // Right-click support: copy if text selected, paste if no selection (VS Code / Windows Terminal style)
+      const handleContextMenu = async (e: MouseEvent) => {
+        e.preventDefault();
+        if (term.hasSelection()) {
+          const selection = term.getSelection();
+          if (selection) {
+            await navigator.clipboard.writeText(selection);
+            term.clearSelection();
+          }
+        } else {
+          try {
+            const text = await navigator.clipboard.readText();
+            if (text) {
+              (window as any).api.terminal.write(sessionId, text);
+            }
+          } catch (err) {}
+        }
+      };
+
+      el.addEventListener('contextmenu', handleContextMenu);
 
       const onDataDisposable = term.onData((data) => {
         (window as any).api.terminal.write(sessionId, data);
@@ -162,17 +290,33 @@ export const ConsolePanel: React.FC = () => {
         term.write(data);
       });
 
+      const removeCloseListener = (window as any).api.terminal.onClose?.(sessionId, () => {
+        if (xtermInstances.current[sessionId]) {
+          xtermInstances.current[sessionId].disposeData();
+          delete xtermInstances.current[sessionId];
+        }
+        closeSession(sessionId);
+        const remaining = useTerminalStore.getState().sessions;
+        if (remaining.length <= 1) {
+          if (useLayoutStore.getState().isConsoleOpen) {
+            useLayoutStore.getState().toggleConsole();
+          }
+        }
+      });
+
       xtermInstances.current[sessionId] = {
         term,
         fit,
         disposeData: () => {
+          el.removeEventListener('contextmenu', handleContextMenu);
           onDataDisposable.dispose();
           removeIncomingListener();
+          removeCloseListener?.();
           term.dispose();
         },
       };
     }
-  }, [isConsoleOpen, sessions, theme]);
+  }, [sessions, theme]);
 
   // Fit the active terminal when it becomes visible
   useEffect(() => {
@@ -196,16 +340,17 @@ export const ConsolePanel: React.FC = () => {
       xtermInstances.current[id].disposeData();
       delete xtermInstances.current[id];
     }
-    // If this is the last session, mark user-closed so we don't auto-recreate
+    // If this is the last session, close the panel automatically
     if (sessions.length <= 1) {
-      userClosedLast.current = true;
+      if (isConsoleOpen) {
+        toggleConsole();
+      }
     }
     closeSession(id);
   };
 
   // Add a new terminal session
   const handleAddNewTerminal = async () => {
-    userClosedLast.current = false;
     await createSession(80, 24, workspacePath || '');
   };
 
@@ -274,7 +419,10 @@ export const ConsolePanel: React.FC = () => {
 
   return (
     <div 
-      style={isConsoleMaximized ? { height: '100%' } : { height: `${consoleHeight}px` }}
+      style={{
+        display: isConsoleOpen ? 'flex' : 'none',
+        height: isConsoleMaximized ? '100%' : `${consoleHeight}px`
+      }}
       className="bg-editor-bg border border-editor-border rounded-[6px] flex flex-col z-20 relative overflow-hidden font-sans shadow-sm shrink-0"
     >
       {/* Header menu with VS Code-style Tabs (Problems, Output, Debug, Terminal, Ports) */}
@@ -403,8 +551,11 @@ export const ConsolePanel: React.FC = () => {
                   <div
                     key={sess.id}
                     data-session-id={sess.id}
-                    className="w-full h-full"
-                    style={{ display: sess.id === activeSessionId ? 'block' : 'none' }}
+                    className={`w-full h-full ${
+                      sess.id === activeSessionId
+                        ? 'relative block'
+                        : 'absolute inset-0 invisible pointer-events-none'
+                    }`}
                   />
                 ))
               )}
@@ -431,7 +582,19 @@ export const ConsolePanel: React.FC = () => {
                     return (
                       <div
                         key={sess.id}
-                        onClick={() => setActiveSession(sess.id)}
+                        onClick={() => {
+                          setActiveSession(sess.id);
+                          setTimeout(() => {
+                            try {
+                              const inst = xtermInstances.current[sess.id];
+                              if (inst) {
+                                inst.fit.fit();
+                                inst.term.refresh(0, inst.term.rows - 1);
+                                inst.term.focus();
+                              }
+                            } catch (_) {}
+                          }, 20);
+                        }}
                         className={`h-[24px] px-2 rounded-[3px] flex items-center justify-between cursor-pointer transition-colors group text-[11.5px] ${
                           isActive
                             ? 'bg-editor-active text-white font-medium border-l-2 border-editor-accent'

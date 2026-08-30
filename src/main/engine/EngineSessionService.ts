@@ -154,9 +154,11 @@ export class EngineSessionService {
       return;
     }
 
-    this.activeTurn.abortController.abort();
-    this.activeTurn.closed = true;
-    this.adapter.abortTurn(this.activeTurn.turnId);
+    const turn = this.activeTurn;
+    turn.abortController.abort();
+    this.adapter.abortTurn(turn.turnId);
+    turn.emit({ type: 'end', turnId: turn.turnId, aborted: true });
+    turn.closed = true;
     this.activeTurn = null;
   }
 

@@ -34,36 +34,51 @@ interface CompileResult {
 export async function compileContext(
   workspacePath: string | null,
   fileTree: FileNode[],
-  selectedPath: string | null
+  selectedPath: string | null,
+  mentionedPaths: string[] = []
 ): Promise<CompileResult> {
   let pathsToRead: string[] = [];
   let selectionName = 'Raíz del proyecto';
 
+  // 1. First add explicitly mentioned files (@filename) with top priority
+  if (mentionedPaths && mentionedPaths.length > 0) {
+    for (const mPath of mentionedPaths) {
+      if (!pathsToRead.includes(mPath)) {
+        pathsToRead.push(mPath);
+      }
+    }
+  }
+
+  // 2. Add selected path / active tree node
   if (selectedPath && workspacePath) {
     const node = findNodeByPath(fileTree, selectedPath);
     if (node) {
       selectionName = node.name;
       if (node.isDirectory) {
-        pathsToRead = collectFiles(node);
+        for (const f of collectFiles(node)) {
+          if (!pathsToRead.includes(f)) pathsToRead.push(f);
+        }
       } else {
-        pathsToRead = [node.path];
+        if (!pathsToRead.includes(node.path)) pathsToRead.push(node.path);
       }
     } else {
-      // Backup: if selected path is root workspace path
-      pathsToRead = fileTree.flatMap(collectFiles);
+      for (const f of fileTree.flatMap(collectFiles)) {
+        if (!pathsToRead.includes(f)) pathsToRead.push(f);
+      }
     }
   } else if (workspacePath) {
-    pathsToRead = fileTree.flatMap(collectFiles);
+    for (const f of fileTree.flatMap(collectFiles)) {
+      if (!pathsToRead.includes(f)) pathsToRead.push(f);
+    }
   }
 
-  // Always look for PROJECT.md at the root
+  // Always look for PROJECT.md or README.md at the root
   let projectMdPath: string | null = null;
-  const projectMdNode = fileTree.find(n => n.name.toLowerCase() === 'project.md');
+  const projectMdNode = fileTree.find(n => n.name.toLowerCase() === 'project.md' || n.name.toLowerCase() === 'readme.md');
   if (projectMdNode && !projectMdNode.isDirectory) {
     projectMdPath = projectMdNode.path;
   }
 
-  // Ensure PROJECT.md is included, avoiding duplicate addition
   if (projectMdPath && !pathsToRead.includes(projectMdPath)) {
     pathsToRead.push(projectMdPath);
   }
@@ -73,7 +88,7 @@ export async function compileContext(
   let limitExceeded = false;
   let totalBytes = 0;
   const MAX_FILES = 25;
-  const MAX_BYTES = 500 * 1024; // 500KB limit to avoid memory or API bloat
+  const MAX_BYTES = 500 * 1024; // 500KB limit
 
   for (const fPath of pathsToRead) {
     if (filesCompiled.length >= MAX_FILES || totalBytes >= MAX_BYTES) {

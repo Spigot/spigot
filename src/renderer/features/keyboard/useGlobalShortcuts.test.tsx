@@ -69,4 +69,34 @@ describe('useGlobalShortcuts', () => {
 
     expect(mockCreateItem).not.toHaveBeenCalled();
   });
+
+  it('triggers zoomIn on Ctrl++', () => {
+    const zoomIn = vi.fn();
+    (window as any).api = { app: { zoomIn } };
+
+    render(<ShortcutHarness />);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '+', ctrlKey: true }));
+
+    expect(zoomIn).toHaveBeenCalledOnce();
+  });
+
+  it('triggers zoomOut on Ctrl+-', () => {
+    const zoomOut = vi.fn();
+    (window as any).api = { app: { zoomOut } };
+
+    render(<ShortcutHarness />);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '-', ctrlKey: true }));
+
+    expect(zoomOut).toHaveBeenCalledOnce();
+  });
+
+  it('triggers zoomReset on Ctrl+0', () => {
+    const zoomReset = vi.fn();
+    (window as any).api = { app: { zoomReset } };
+
+    render(<ShortcutHarness />);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '0', ctrlKey: true }));
+
+    expect(zoomReset).toHaveBeenCalledOnce();
+  });
 });

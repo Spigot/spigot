@@ -23,33 +23,50 @@ function parseThinking(content: string): ParsedThought {
   let isThinking = false;
 
   let temp = content;
-  const startTag = '<think>';
-  const endTag = '</think>';
 
   while (temp.length > 0) {
-    const startIndex = temp.indexOf(startTag);
+    const startIndex = temp.indexOf('<think>');
+    const endIndex = temp.indexOf('</think>');
+
+    // Case 1: Orphaned </think> before any <think> (or without <think>)
+    if (endIndex !== -1 && (startIndex === -1 || endIndex < startIndex)) {
+      thought += temp.slice(0, endIndex) + '\n';
+      temp = temp.slice(endIndex + '</think>'.length);
+      continue;
+    }
+
+    // Case 2: No more <think> tags
     if (startIndex === -1) {
       response += temp;
       break;
     }
 
+    // Case 3: Text before <think> belongs to response
     response += temp.slice(0, startIndex);
-    temp = temp.slice(startIndex + startTag.length);
+    temp = temp.slice(startIndex + '<think>'.length);
 
-    const endIndex = temp.indexOf(endTag);
-    if (endIndex === -1) {
+    // Look for closing </think>
+    const nextEndIndex = temp.indexOf('</think>');
+    if (nextEndIndex === -1) {
       thought += temp;
       isThinking = true;
       break;
     }
 
-    thought += temp.slice(0, endIndex) + '\n';
-    temp = temp.slice(endIndex + endTag.length);
+    thought += temp.slice(0, nextEndIndex) + '\n';
+    temp = temp.slice(nextEndIndex + '</think>'.length);
   }
+
+  // Safety cleanup: strip any rogue <think> or </think> tags that might have leaked into response
+  const cleanedResponse = response
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<\/think>/gi, '')
+    .replace(/<think>/gi, '')
+    .trim();
 
   return {
     thought: thought.trim(),
-    response: response.trim(),
+    response: cleanedResponse,
     isThinking
   };
 }
@@ -356,10 +373,26 @@ export const AgentModeView: React.FC = () => {
     const textToSend = prompt;
     setPrompt('');
 
-    // Compile active context
+    // Extract @ file mentions
+    const mentionMatches = Array.from(textToSend.matchAll(/@([a-zA-Z0-9_\-\.\/]+)/g)).map(m => m[1]);
+    const mentionedPaths: string[] = [];
+    const walk = (nodes: typeof fileTree) => {
+      for (const n of nodes) {
+        const rel = workspacePath && n.path.startsWith(workspacePath)
+          ? n.path.slice(workspacePath.length).replace(/^[/\\]+/, '').replace(/\\/g, '/')
+          : n.name;
+        if (!n.isDirectory && mentionMatches.some(m => m.toLowerCase() === rel.toLowerCase() || m.toLowerCase() === n.name.toLowerCase())) {
+          if (!mentionedPaths.includes(n.path)) mentionedPaths.push(n.path);
+        }
+        if (n.children) walk(n.children);
+      }
+    };
+    walk(fileTree);
+
+    // Compile active context with mentioned paths prioritized
     let contextText = null;
     try {
-      const compiled = await compileContext(workspacePath, fileTree, explorerSelectedPath);
+      const compiled = await compileContext(workspacePath, fileTree, explorerSelectedPath, mentionedPaths);
       contextText = compiled.text;
     } catch (e) {
       console.error('Failed to compile context:', e);

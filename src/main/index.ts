@@ -476,6 +476,10 @@ ipcMain.on('terminal:close', (_event, sessionId) => {
   terminalManager.closeSession(sessionId);
 });
 
+ipcMain.handle('terminal:get-history', async (_event, sessionId) => {
+  return terminalManager.getHistory(sessionId);
+});
+
 // ==========================================
 // AI AGENT STORE AND STREAMING IPC HANDLERS
 // ==========================================

@@ -63,11 +63,12 @@ contextBridge.exposeInMainWorld('api', {
       return () => {
         ipcRenderer.removeListener(`terminal:close:${sessionId}`, subscription);
       };
-    }
+    },
+    getHistory: (sessionId: string) => ipcRenderer.invoke('terminal:get-history', sessionId)
   },
   store: {
     getKeys: () => ipcRenderer.invoke('store:get-keys'),
-    setKey: (provider: string, key: string) => ipcRenderer.invoke('store:set-key', provider, key),
+    setKey: (provider: string, key: string, authType?: 'api' | 'oauth') => ipcRenderer.invoke('store:set-key', provider, key, authType),
     getSelectedModels: () => ipcRenderer.invoke('store:get-selected-models'),
     setSelectedModel: (provider: string, model: string) => ipcRenderer.invoke('store:set-selected-model', provider, model),
     getLastWorkspace: () => ipcRenderer.invoke('store:get-last-workspace'),
@@ -127,4 +128,3 @@ contextBridge.exposeInMainWorld('api', {
     },
   }
 });
-

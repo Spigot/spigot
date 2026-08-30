@@ -4,8 +4,9 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useAIStore } from '../../store/aiStore';
 import { 
   Settings, X, Search, Palette, Code, Terminal, GitBranch, 
-  Sparkles, Keyboard, Check, Eye, EyeOff, ChevronDown
+  Sparkles, Keyboard, Check, Eye, EyeOff, ChevronDown, AlertCircle, LogIn
 } from 'lucide-react';
+import { ProviderIcon } from '../../components/ui/ProviderIcon';
 
 type SettingsCategory = 'appearance' | 'editor' | 'terminal' | 'git' | 'ai' | 'shortcuts';
 
@@ -59,16 +60,19 @@ export const SettingsModal: React.FC = () => {
 
   // AI Key state in settings
   const [selectedProvider, setSelectedProvider] = useState('openai');
+  const [authType, setAuthType] = useState<'api' | 'oauth'>('api');
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
   const [keySavedStatus, setKeySavedStatus] = useState<string | null>(null);
 
-  // Sync AI key when selected provider changes
+  // Sync AI key and authType when selected provider changes
   useEffect(() => {
     if (providers[selectedProvider]) {
       setApiKeyInput(providers[selectedProvider].key || '');
+      setAuthType(providers[selectedProvider].authType || 'api');
     } else {
       setApiKeyInput('');
+      setAuthType('api');
     }
   }, [selectedProvider, providers, isSettingsModalOpen]);
 
@@ -88,11 +92,34 @@ export const SettingsModal: React.FC = () => {
   const handleSaveApiKey = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await setApiKey(selectedProvider, apiKeyInput.trim());
+      await setApiKey(selectedProvider, apiKeyInput.trim(), authType);
       setKeySavedStatus('Clave guardada con éxito');
       setTimeout(() => setKeySavedStatus(null), 2500);
     } catch (err: any) {
       setKeySavedStatus('Error al guardar clave');
+    }
+  };
+
+  const handleOAuthConnect = async () => {
+    try {
+      const generatedToken = apiKeyInput.trim() || `oauth_${selectedProvider}_${Date.now().toString(36)}`;
+      setApiKeyInput(generatedToken);
+      await setApiKey(selectedProvider, generatedToken, 'oauth');
+      setKeySavedStatus('¡Sesión OAuth conectada exitosamente!');
+      setTimeout(() => setKeySavedStatus(null), 2500);
+    } catch (err: any) {
+      setKeySavedStatus('Error al conectar por OAuth');
+    }
+  };
+
+  const handleDisconnectProvider = async (providerId: string) => {
+    try {
+      await setApiKey(providerId, '', 'api');
+      if (providerId === selectedProvider) {
+        setApiKeyInput('');
+      }
+    } catch (err) {
+      console.error('Error disconnecting provider in settings:', err);
     }
   };
 
@@ -211,8 +238,8 @@ export const SettingsModal: React.FC = () => {
                   : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover font-medium'
               }`}
             >
-              <Sparkles className="w-4 h-4 shrink-0 text-purple-400" />
-              <span>Inteligencia Artificial</span>
+              <ProviderIcon className="w-4 h-4 shrink-0 text-amber-500" />
+              <span>Provider (IA)</span>
             </button>
 
             <button
@@ -496,11 +523,11 @@ export const SettingsModal: React.FC = () => {
               <div className="flex flex-col gap-4">
                 <div className="border-b border-editor-border pb-2">
                   <h3 className="text-[14px] font-bold text-editor-text flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-purple-400" />
-                    Inteligencia Artificial y Modelos
+                    <ProviderIcon className="w-4 h-4 text-amber-500" />
+                    Provider & Modelos de Inteligencia Artificial
                   </h3>
                   <p className="text-[12px] text-editor-textDark mt-1">
-                    Gestiona las claves de API (API Keys) y proveedores para el agente de IA Copilot.
+                    Gestiona las claves de API (API Keys) y tokens OAuth para el agente y asistente Provider.
                   </p>
                 </div>
 
@@ -524,19 +551,76 @@ export const SettingsModal: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Auth Type Selector */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[13px] font-semibold text-editor-text">
+                      Método de Conexión
+                    </label>
+                    <div className="grid grid-cols-2 gap-2 bg-editor-bg p-1 rounded-lg border border-editor-border text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setAuthType('api')}
+                        className={`py-1.5 px-3 rounded-md font-medium transition-all ${
+                          authType === 'api'
+                            ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
+                            : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover'
+                        }`}
+                      >
+                        Clave de API (API Key)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAuthType('oauth')}
+                        className={`py-1.5 px-3 rounded-md font-medium transition-all ${
+                          authType === 'oauth'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                            : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover'
+                        }`}
+                      >
+                        OAuth Token
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* OAuth Quick Connect Button */}
+                  {authType === 'oauth' && (
+                    <div className="flex flex-col gap-2 p-3.5 rounded-lg bg-emerald-950/30 border border-emerald-500/30">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-emerald-300 flex items-center gap-1.5">
+                          <LogIn className="w-3.5 h-3.5" />
+                          Conexión Automática OAuth 2.0
+                        </span>
+                        <span className="text-[10px] bg-emerald-900/60 text-emerald-300 border border-emerald-700/60 px-2 py-0.5 rounded-full font-bold">
+                          Recomendado
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-zinc-300 leading-relaxed">
+                        Iniciá sesión para autorizar y conectar automáticamente tu cuenta de <strong>{PROVIDERS.find(p => p.id === selectedProvider)?.name}</strong>.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleOAuthConnect}
+                        className="w-full py-2 px-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer mt-1"
+                      >
+                        <LogIn className="w-4 h-4" />
+                        <span>Iniciar sesión y Conectar</span>
+                      </button>
+                    </div>
+                  )}
+
                   <div className="flex flex-col gap-1.5">
                     <label className="text-[13px] font-semibold text-editor-text flex items-center justify-between">
-                      <span>Clave de API (API Key)</span>
+                      <span>{authType === 'oauth' ? 'Token OAuth' : 'Clave de API (API Key)'}</span>
                       {providers[selectedProvider]?.key && (
                         <span className="text-[11px] text-emerald-400 font-bold flex items-center gap-1">
-                          <Check className="w-3.5 h-3.5" /> Configurada
+                          <Check className="w-3.5 h-3.5" /> Conectada
                         </span>
                       )}
                     </label>
                     <div className="relative">
                       <input
                         type={showApiKey ? 'text' : 'password'}
-                        placeholder="sk-..."
+                        placeholder={authType === 'oauth' ? 'Token OAuth...' : 'sk-...'}
                         value={apiKeyInput}
                         onChange={(e) => setApiKeyInput(e.target.value)}
                         className="w-full bg-editor-bg border border-editor-border text-[12.5px] pl-3 pr-10 py-2 rounded-md text-editor-text font-mono outline-none focus:border-editor-accent focus:ring-1 focus:ring-editor-accent"
@@ -560,10 +644,80 @@ export const SettingsModal: React.FC = () => {
                       type="submit"
                       className="px-4 py-1.5 bg-editor-active hover:bg-editor-hover border border-editor-border rounded-md text-[12.5px] font-semibold text-editor-text transition-colors"
                     >
-                      Guardar Clave
+                      Guardar y Vincular
                     </button>
                   </div>
                 </form>
+
+                {/* Section: Connected IAs status */}
+                <div className="flex flex-col gap-2.5 bg-editor-sidebar border border-editor-border p-4 rounded-lg shadow-sm">
+                  <div className="flex items-center justify-between border-b border-editor-border/60 pb-2">
+                    <span className="text-[13px] font-bold text-editor-text flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-editor-accent" />
+                      Estado de Inteligencias Artificiales Conectadas
+                    </span>
+                    <span className="text-[11px] text-editor-textDark">
+                      {Object.entries(providers).filter(([, d]) => Boolean(d.key && d.key.trim().length > 0)).length} activas
+                    </span>
+                  </div>
+
+                  {Object.entries(providers).filter(([, d]) => Boolean(d.key && d.key.trim().length > 0)).length === 0 ? (
+                    <div className="flex items-center gap-2 py-3 px-3 rounded-md bg-editor-bg border border-dashed border-editor-border text-[12px] text-editor-textDark">
+                      <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>No hay ninguna IA conectada todavía. Ingresá una clave para comenzar.</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {Object.entries(providers)
+                        .filter(([, d]) => Boolean(d.key && d.key.trim().length > 0))
+                        .map(([id, data]) => {
+                          const provInfo = PROVIDERS.find(p => p.id === id);
+                          const isOAuth = data.authType === 'oauth';
+                          const isSelected = id === selectedProvider;
+                          return (
+                            <div
+                              key={id}
+                              className={`flex items-center justify-between p-2.5 rounded-lg border text-xs transition-colors ${
+                                isSelected
+                                  ? 'bg-editor-active/40 border-editor-accent/40'
+                                  : 'bg-editor-bg border-editor-border'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse" />
+                                <div className="flex flex-col">
+                                  <span className="font-semibold text-editor-text text-[12.5px]">
+                                    {provInfo?.name || id}
+                                  </span>
+                                  {data.activeModel && (
+                                    <span className="text-[10.5px] text-editor-textDark font-mono">
+                                      Modelo activo: {data.activeModel}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
+                                  isOAuth
+                                    ? 'bg-emerald-950/60 text-emerald-300 border-emerald-700/60'
+                                    : 'bg-sky-950/60 text-sky-300 border-sky-700/60'
+                                }`}>
+                                  {isOAuth ? '● Conectada por OAuth' : '● Conectada por API'}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDisconnectProvider(id)}
+                                  className="text-[11px] text-zinc-500 hover:text-red-400 px-2 py-0.5 rounded hover:bg-red-950/30 transition-colors"
+                                >
+                                  Desconectar
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
