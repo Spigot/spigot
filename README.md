@@ -1,13 +1,17 @@
 <p align="center">
-  <img src="public/logoSpigot.png" width="128" height="128" alt="Spigot Logo">
+  <img src="public/logoSpigot.png" width="140" alt="Spigot Logo">
 </p>
 
-# Spigot
-
-**Spigot** es un editor de código premium, multiplataforma y de alto rendimiento, inspirado en VS Code. Está construido con **Electron**, **React**, y **Vite**, implementando **Screaming Architecture** para asegurar la escalabilidad y mantenibilidad del proyecto a largo plazo.
+<h1 align="center">Spigot</h1>
 
 <p align="center">
-  <img src="public/screenshot.png" alt="Spigot IDE Preview" width="100%" style="border-radius: 8px;">
+  <strong>Editor de código premium, modular y multiplataforma inspirado en VS Code con soporte nativo de IA y Screaming Architecture.</strong>
+</p>
+
+<br>
+
+<p align="center">
+  <img src="public/screenshot.png" alt="Spigot IDE Preview" width="100%">
 </p>
 
 ## ✨ Funcionalidades Principales (Features)
