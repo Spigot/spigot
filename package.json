@@ -1,6 +1,6 @@
 {
   "name": "spigot",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Premium multi-platform code editor inspired by VS Code using screaming architecture.",
   "repository": {
     "type": "git",
@@ -80,7 +80,10 @@
     "files": [
       "dist-electron",
       "dist",
-      "package.json"
+      "package.json",
+      "logoSpigot.ico",
+      "public/logoSpigot.ico",
+      "public/logoSpigot.png"
     ],
     "win": {
       "icon": "logoSpigot.ico",
@@ -92,8 +95,12 @@
     "nsis": {
       "installerIcon": "logoSpigot.ico",
       "uninstallerIcon": "logoSpigot.ico",
+      "installerHeaderIcon": "logoSpigot.ico",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Spigot",
       "artifactName": "Spigot-Install.${ext}"
     },
     "mac": {
