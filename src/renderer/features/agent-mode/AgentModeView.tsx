@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { 
   SquarePen, Search, Blocks, Clock, Folder, MessageSquare, Settings,
   Plus, Hand, ChevronDown, Mic, ArrowUp, Monitor, GitBranch, X, Loader2, Copy, Check, Brain,
-  FilePlus, GitCommit, GitPullRequest, FolderOpen, Trash2, AlertCircle
+  FilePlus, GitCommit, GitPullRequest, FolderOpen, Trash2, AlertCircle, Square
 } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useAIStore } from '../../store/aiStore';
@@ -197,7 +197,7 @@ export const AgentModeView: React.FC = () => {
   const { 
     conversations, activeConversationId, selectConversation, createConversation,
     messages, sendMessage, isGenerating, incomingStreamText, activeProvider,
-    initializeStore, deleteConversation
+    initializeStore, deleteConversation, abortChat
   } = useAIStore();
   const { setSettingsModalOpen } = useLayoutStore();
   
@@ -737,16 +737,17 @@ export const AgentModeView: React.FC = () => {
                           <Mic className="w-4 h-4" />
                         </button>
                         <button 
-                          onClick={handleSend}
-                          disabled={isGenerating || !prompt.trim()}
+                          onClick={isGenerating ? () => abortChat() : handleSend}
+                          disabled={!isGenerating && !prompt.trim()}
                           className={`p-1 rounded-full transition-colors ${
-                            isGenerating || !prompt.trim() 
+                            !isGenerating && !prompt.trim() 
                               ? 'bg-white/5 text-editor-textDark cursor-not-allowed' 
                               : 'bg-white/20 text-editor-text hover:bg-white/30'
                           }`}
+                          title={isGenerating ? 'Detener generación' : 'Enviar mensaje'}
                         >
                           {isGenerating ? (
-                            <Loader2 className="w-5 h-5 p-0.5 animate-spin" />
+                            <Square className="w-4 h-4 m-0.5 fill-current text-editor-text" />
                           ) : (
                             <ArrowUp className="w-5 h-5 p-0.5" />
                           )}
@@ -905,16 +906,17 @@ export const AgentModeView: React.FC = () => {
                           <Mic className="w-4 h-4" />
                         </button>
                         <button 
-                          onClick={handleSend}
-                          disabled={isGenerating || !prompt.trim()}
+                          onClick={isGenerating ? () => abortChat() : handleSend}
+                          disabled={!isGenerating && !prompt.trim()}
                           className={`p-1 rounded-full transition-colors ${
-                            isGenerating || !prompt.trim() 
+                            !isGenerating && !prompt.trim() 
                               ? 'bg-white/5 text-editor-textDark cursor-not-allowed' 
                               : 'bg-white/20 text-editor-text hover:bg-white/30'
                           }`}
+                          title={isGenerating ? 'Detener generación' : 'Enviar mensaje'}
                         >
                           {isGenerating ? (
-                            <Loader2 className="w-5 h-5 p-0.5 animate-spin" />
+                            <Square className="w-4 h-4 m-0.5 fill-current text-editor-text" />
                           ) : (
                             <ArrowUp className="w-5 h-5 p-0.5" />
                           )}

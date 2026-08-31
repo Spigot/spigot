@@ -81,21 +81,30 @@ contextBridge.exposeInMainWorld('api', {
   },
   ai: {
     fetchModels: (provider: string, apiKey: string) => ipcRenderer.invoke('ai:fetch-models', provider, apiKey),
-    streamChat: (args: { provider: string; model: string; apiKey: string; prompt: string; contextText: string | null; history: any[]; image?: string | null }) => 
-      ipcRenderer.invoke('ai:stream-chat', args),
-    abortChat: () => ipcRenderer.send('ai:abort-chat'),
-    onChunk: (callback: (chunk: string) => void) => {
-      const listener = (_event: any, chunk: string) => callback(chunk);
+    streamChat: (args: { 
+      conversationId?: string;
+      turnId?: string;
+      provider: string; 
+      model: string; 
+      apiKey: string; 
+      prompt: string; 
+      contextText: string | null; 
+      history: any[]; 
+      image?: string | null 
+    }) => ipcRenderer.invoke('ai:stream-chat', args),
+    abortChat: (args?: { conversationId?: string; turnId?: string }) => ipcRenderer.send('ai:abort-chat', args),
+    onChunk: (callback: (payload: { conversationId: string; turnId: string; chunk: string } | string) => void) => {
+      const listener = (_event: any, payload: any) => callback(payload);
       ipcRenderer.on('ai:stream-chunk', listener);
       return () => ipcRenderer.removeListener('ai:stream-chunk', listener);
     },
-    onEnd: (callback: (aborted?: boolean) => void) => {
-      const listener = (_event: any, aborted?: boolean) => callback(aborted);
+    onEnd: (callback: (payload: { conversationId: string; turnId: string; aborted?: boolean } | boolean) => void) => {
+      const listener = (_event: any, payload: any) => callback(payload);
       ipcRenderer.on('ai:stream-end', listener);
       return () => ipcRenderer.removeListener('ai:stream-end', listener);
     },
-    onError: (callback: (err: string) => void) => {
-      const listener = (_event: any, err: string) => callback(err);
+    onError: (callback: (payload: { conversationId: string; turnId: string; error: string } | string) => void) => {
+      const listener = (_event: any, payload: any) => callback(payload);
       ipcRenderer.on('ai:stream-error', listener);
       return () => ipcRenderer.removeListener('ai:stream-error', listener);
     }

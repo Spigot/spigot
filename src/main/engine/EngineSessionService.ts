@@ -8,6 +8,7 @@ import { EngineHistoryStore } from './historyStore';
 
 export type EngineSessionInput = {
   sessionId: string;
+  turnId?: string;
   mode: 'chat' | 'agent';
   provider: string;
   model: string;
@@ -23,6 +24,7 @@ export type LegacyRunner = (opts: AgentRunOptions) => Promise<boolean>;
 
 type ActiveTurn = {
   turnId: string;
+  sessionId: string;
   abortController: AbortController;
   permissionBroker: PermissionBroker;
   emit: EngineEventListener;
@@ -30,7 +32,7 @@ type ActiveTurn = {
 };
 
 export class EngineSessionService {
-  private activeTurn: ActiveTurn | null = null;
+  private readonly activeTurns = new Map<string, ActiveTurn>();
   private readonly historyStore: EngineHistoryStore;
 
   constructor(
@@ -48,14 +50,16 @@ export class EngineSessionService {
     input: EngineSessionInput,
     onEvent: EngineEventListener,
   ): Promise<boolean> {
-    if (this.activeTurn) {
-      this.activeTurn.closed = true;
-      this.activeTurn.abortController.abort();
-      this.adapter.abortTurn(this.activeTurn.turnId);
+    const existing = this.activeTurns.get(input.sessionId);
+    if (existing) {
+      existing.closed = true;
+      existing.abortController.abort();
+      this.adapter.abortTurn(existing.turnId);
+      this.activeTurns.delete(input.sessionId);
     }
 
     const abortController = new AbortController();
-    const turnId = randomUUID();
+    const turnId = input.turnId || randomUUID();
     const permissionBroker = new PermissionBroker();
     const assistantMessages: unknown[] = [];
     const fileHistory: Array<{ path: string; action: 'snapshot' | 'restore' }> = [];
@@ -63,14 +67,14 @@ export class EngineSessionService {
     const effectiveHistory = input.history.length > 0 ? input.history : persistedHistory.messages;
 
     const emit = (event: EngineEvent) => {
-      const active = this.activeTurn;
+      const active = this.activeTurns.get(input.sessionId);
       if (!active || active.closed || active.turnId !== turnId || event.turnId !== turnId) {
         return;
       }
 
       if (event.type === 'end' || event.type === 'error') {
         active.closed = true;
-        this.activeTurn = null;
+        this.activeTurns.delete(input.sessionId);
       }
 
       if (event.type === 'content') {
@@ -84,7 +88,15 @@ export class EngineSessionService {
       onEvent(event);
     };
 
-    this.activeTurn = { turnId, abortController, permissionBroker, emit, closed: false };
+    const activeTurn: ActiveTurn = {
+      turnId,
+      sessionId: input.sessionId,
+      abortController,
+      permissionBroker,
+      emit,
+      closed: false,
+    };
+    this.activeTurns.set(input.sessionId, activeTurn);
 
     if (!this.options.enabled && this.options.legacyRunner) {
       const success = await this.runLegacy(
@@ -107,7 +119,7 @@ export class EngineSessionService {
       signal: abortController.signal,
       fileHistory: persistedHistory.fileHistory,
       requestToolPermission: async ({ tool, input: permissionInput }) => {
-        const active = this.activeTurn;
+        const active = this.activeTurns.get(input.sessionId);
         if (!active || active.turnId !== turnId) {
           return null;
         }
@@ -143,31 +155,60 @@ export class EngineSessionService {
       messages: [...effectiveHistory, ...assistantMessages],
       fileHistory: [...persistedHistory.fileHistory, ...fileHistory],
     });
-    if (this.activeTurn?.turnId === turnId) {
-      this.activeTurn = null;
+    if (this.activeTurns.get(input.sessionId)?.turnId === turnId) {
+      this.activeTurns.delete(input.sessionId);
     }
     return success;
   }
 
-  abortActiveTurn(): void {
-    if (!this.activeTurn) {
+  abortActiveTurn(sessionId?: string, turnId?: string): void {
+    if (sessionId) {
+      const turn = this.activeTurns.get(sessionId);
+      if (turn) {
+        turn.abortController.abort();
+        this.adapter.abortTurn(turn.turnId);
+        turn.emit({ type: 'end', turnId: turn.turnId, aborted: true });
+        turn.closed = true;
+        this.activeTurns.delete(sessionId);
+      }
       return;
     }
 
-    const turn = this.activeTurn;
-    turn.abortController.abort();
-    this.adapter.abortTurn(turn.turnId);
-    turn.emit({ type: 'end', turnId: turn.turnId, aborted: true });
-    turn.closed = true;
-    this.activeTurn = null;
-  }
-
-  resolvePermissionRequest(requestId: string, decision: PermissionDecision): boolean {
-    if (!this.activeTurn) {
-      return false;
+    if (turnId) {
+      for (const [sId, turn] of this.activeTurns.entries()) {
+        if (turn.turnId === turnId) {
+          turn.abortController.abort();
+          this.adapter.abortTurn(turn.turnId);
+          turn.emit({ type: 'end', turnId: turn.turnId, aborted: true });
+          turn.closed = true;
+          this.activeTurns.delete(sId);
+          return;
+        }
+      }
+      return;
     }
 
-    return this.activeTurn.permissionBroker.resolvePermission({ requestId, decision });
+    // If no target specified, abort all active turns
+    for (const turn of this.activeTurns.values()) {
+      turn.abortController.abort();
+      this.adapter.abortTurn(turn.turnId);
+      turn.emit({ type: 'end', turnId: turn.turnId, aborted: true });
+      turn.closed = true;
+    }
+    this.activeTurns.clear();
+  }
+
+  resolvePermissionRequest(requestId: string, decision: PermissionDecision, sessionId?: string): boolean {
+    if (sessionId) {
+      const turn = this.activeTurns.get(sessionId);
+      return turn ? turn.permissionBroker.resolvePermission({ requestId, decision }) : false;
+    }
+    for (const turn of this.activeTurns.values()) {
+      if (turn.permissionBroker.resolvePermission({ requestId, decision })) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private async runLegacy(

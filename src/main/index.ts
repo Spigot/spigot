@@ -702,23 +702,35 @@ const engineSessionService = new EngineSessionService(new SpigotChatsEngineAdapt
   legacyRunner: runAgentLoop,
 });
 
-ipcMain.on('ai:abort-chat', () => {
+ipcMain.on('ai:abort-chat', (_event, args?: { conversationId?: string; turnId?: string }) => {
   if (activeAbortController) {
     activeAbortController.abort();
     activeAbortController = null;
   }
 
-  engineSessionService.abortActiveTurn();
+  engineSessionService.abortActiveTurn(args?.conversationId, args?.turnId);
 });
 
 ipcMain.handle('ai:stream-chat', async (
   _event, 
-  { provider, model, apiKey, prompt, contextText, history, image }
+  { conversationId, turnId, provider, model, apiKey, prompt, contextText, history, image }: {
+    conversationId?: string;
+    turnId?: string;
+    provider: string;
+    model: string;
+    apiKey: string;
+    prompt: string;
+    contextText?: string | null;
+    history: any[];
+    image?: string | null;
+  }
 ): Promise<boolean> => {
   if (activeAbortController) {
     activeAbortController.abort();
   }
   activeAbortController = new AbortController();
+
+  const activeConvId = conversationId || 'default';
 
   try {
     const storeData = await readStore();
@@ -726,7 +738,8 @@ ipcMain.handle('ai:stream-chat', async (
 
     const success = await engineSessionService.startTurn(
       {
-        sessionId: 'default',
+        sessionId: activeConvId,
+        turnId,
         mode: 'chat',
         provider,
         model,
@@ -740,7 +753,13 @@ ipcMain.handle('ai:stream-chat', async (
       event => {
         const mapped = mapEngineEventToIpc(event);
         if (mapped.channel) {
-          mainWindow?.webContents.send(mapped.channel, mapped.payload);
+          mainWindow?.webContents.send(mapped.channel, {
+            conversationId: activeConvId,
+            turnId: event.turnId,
+            ...(mapped.channel === 'ai:stream-chunk' ? { chunk: mapped.payload } : {}),
+            ...(mapped.channel === 'ai:stream-error' ? { error: mapped.payload } : {}),
+            ...(mapped.channel === 'ai:stream-end' ? { aborted: mapped.payload } : {}),
+          });
         }
 
         if (event.type === 'end' || event.type === 'error') {
@@ -752,10 +771,18 @@ ipcMain.handle('ai:stream-chat', async (
     return success;
   } catch (err: any) {
     if (err.name === 'AbortError') {
-      mainWindow?.webContents.send('ai:stream-end', true);
+      mainWindow?.webContents.send('ai:stream-end', {
+        conversationId: activeConvId,
+        turnId,
+        aborted: true,
+      });
     } else {
       console.error('Error during AI agent execution:', err);
-      mainWindow?.webContents.send('ai:stream-error', err.message || 'Error desconocido.');
+      mainWindow?.webContents.send('ai:stream-error', {
+        conversationId: activeConvId,
+        turnId,
+        error: err.message || 'Error desconocido.',
+      });
     }
     activeAbortController = null;
     return false;

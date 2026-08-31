@@ -126,7 +126,7 @@ export const AIPanel: React.FC = () => {
   const { 
     messages, providers, activeProvider, isGenerating, incomingStreamText, error,
     conversations, activeConversationId,
-    initializeStore, setActiveProvider, selectModel, sendMessage, clearHistory,
+    initializeStore, setActiveProvider, selectModel, sendMessage, clearHistory, abortChat,
     createConversation, selectConversation, deleteConversation
   } = useAIStore();
 
@@ -317,7 +317,7 @@ export const AIPanel: React.FC = () => {
 
   const handleStop = () => {
     try {
-      (window as any).api?.ai?.abortChat?.();
+      abortChat();
     } catch (err) {
       console.error('Failed to abort chat:', err);
     }
