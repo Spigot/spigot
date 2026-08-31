@@ -189,19 +189,42 @@ const TOOLS: ToolDefinition[] = [
 ];
 
 // ==========================================
-// 2. Mappers to API-specific formats
+// 2. Mappers to API-specific formats & Mode Capabilities
 // ==========================================
 
-function getAnthropicTools() {
-  return TOOLS.map(t => ({
+const READ_ONLY_TOOLS = new Set([
+  'read_file',
+  'list_dir',
+  'glob_search',
+  'grep_search',
+  'git_status',
+  'git_diff'
+]);
+
+export function getToolsForMode(mode: 'chat' | 'agent' | 'review' = 'agent'): ToolDefinition[] {
+  if (mode === 'chat') {
+    return [];
+  }
+  if (mode === 'review') {
+    return TOOLS.filter(t => READ_ONLY_TOOLS.has(t.name));
+  }
+  return TOOLS;
+}
+
+function getAnthropicTools(mode?: 'chat' | 'agent' | 'review') {
+  const tools = getToolsForMode(mode);
+  if (tools.length === 0) return undefined;
+  return tools.map(t => ({
     name: t.name,
     description: t.description,
     input_schema: t.parameters
   }));
 }
 
-function getOpenAITools() {
-  return TOOLS.map(t => ({
+function getOpenAITools(mode?: 'chat' | 'agent' | 'review') {
+  const tools = getToolsForMode(mode);
+  if (tools.length === 0) return undefined;
+  return tools.map(t => ({
     type: 'function',
     function: {
       name: t.name,
@@ -211,10 +234,12 @@ function getOpenAITools() {
   }));
 }
 
-function getGeminiTools() {
+function getGeminiTools(mode?: 'chat' | 'agent' | 'review') {
+  const tools = getToolsForMode(mode);
+  if (tools.length === 0) return undefined;
   return [
     {
-      functionDeclarations: TOOLS.map(t => ({
+      functionDeclarations: tools.map(t => ({
         name: t.name,
         description: t.description,
         parameters: t.parameters
@@ -332,18 +357,44 @@ export function findAndReplaceContent(
 // 4. Tool Implementations (Backend Node Exec)
 // ==========================================
 
+export function assertPathContained(targetPath: string, workspacePath: string): string {
+  if (!workspacePath) {
+    throw new Error('No se ha configurado un directorio de workspace válido para la ejecución de herramientas.');
+  }
+
+  const normalizedWorkspace = path.resolve(workspacePath);
+  const rawTarget = targetPath || '.';
+  const resolvedTarget = path.isAbsolute(rawTarget)
+    ? path.resolve(rawTarget)
+    : path.resolve(normalizedWorkspace, rawTarget);
+
+  const rel = path.relative(normalizedWorkspace, resolvedTarget);
+  const isContained = !rel.startsWith('..') && !path.isAbsolute(rel);
+
+  if (!isContained) {
+    throw new Error(`Acceso denegado por seguridad: La ruta "${targetPath}" está fuera del workspace permitido ("${workspacePath}").`);
+  }
+
+  return resolvedTarget;
+}
+
 export async function executeTool(
   name: string,
   args: any,
-  workspacePath: string
+  workspacePath: string,
+  mode: 'chat' | 'agent' | 'review' = 'agent'
 ): Promise<string> {
-  const resolvePath = (p: string) => {
-    if (!p) return workspacePath;
-    if (path.isAbsolute(p)) return p;
-    return path.resolve(workspacePath, p);
-  };
-
   try {
+    if (mode === 'chat') {
+      throw new Error(`Acceso denegado: El modo Chat / Solo lectura no permite la ejecución de herramientas (intento de ejecutar "${name}").`);
+    }
+
+    if (mode === 'review' && !READ_ONLY_TOOLS.has(name)) {
+      throw new Error(`Acceso denegado: El modo Review solo permite herramientas de lectura y análisis (intento de ejecutar "${name}").`);
+    }
+
+    const resolvePath = (p: string) => assertPathContained(p, workspacePath);
+
     switch (name) {
       case 'edit_file': {
         const file = resolvePath(args.filePath);
@@ -448,7 +499,11 @@ export async function executeTool(
       }
 
       case 'git_diff': {
-        const cmd = args.filePath ? `git diff "${args.filePath}"` : 'git diff';
+        let cmd = 'git diff';
+        if (args.filePath) {
+          const diffFile = resolvePath(args.filePath);
+          cmd = `git diff "${path.relative(workspacePath, diffFile)}"`;
+        }
         const { stdout, stderr } = await execAsync(cmd, { cwd: workspacePath });
         return stdout || stderr || 'No hay diferencias actuales.';
       }
@@ -594,6 +649,7 @@ function pruneContextAndHistory(
 // ==========================================
 
 export type AgentRunOptions = {
+  mode?: 'chat' | 'agent' | 'review';
   provider: string;
   model: string;
   apiKey: string;
@@ -609,6 +665,7 @@ export type AgentRunOptions = {
 };
 
 export async function runAgentLoop({
+  mode = 'agent',
   provider,
   model,
   apiKey,
@@ -676,9 +733,10 @@ export async function runAgentLoop({
       let body: any = {};
 
       // Prepare Tool Schemas for API call
-      const anthropicTools = getAnthropicTools();
-      const openAITools = getOpenAITools();
-      const geminiTools = getGeminiTools();
+      const effectiveMode = mode || 'agent';
+      const anthropicTools = getAnthropicTools(effectiveMode);
+      const openAITools = getOpenAITools(effectiveMode);
+      const geminiTools = getGeminiTools(effectiveMode);
 
       // Format messages based on API requirements
       let formattedMessages = messages.map(m => {
@@ -746,8 +804,7 @@ export async function runAgentLoop({
         body = {
           model,
           messages: openaiMessages,
-          tools: openAITools,
-          tool_choice: 'auto',
+          ...(openAITools && openAITools.length > 0 ? { tools: openAITools, tool_choice: 'auto' } : {}),
           stream: true
         };
       } else if (prov === 'anthropic') {
@@ -784,7 +841,7 @@ export async function runAgentLoop({
             }
             return { role: m.role, content: m.content };
           }),
-          tools: anthropicTools,
+          ...(anthropicTools && anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
           max_tokens: 4000,
           stream: true
         };
@@ -828,7 +885,7 @@ export async function runAgentLoop({
             parts: [{ text: SYSTEM_PROMPT }]
           },
           contents,
-          tools: geminiTools
+          ...(geminiTools && geminiTools.length > 0 ? { tools: geminiTools } : {})
         };
       }
 
@@ -852,8 +909,7 @@ export async function runAgentLoop({
               return { role: m.role, content: m.content };
             })
           ],
-          tools: openAITools,
-          tool_choice: 'auto',
+          ...(openAITools && openAITools.length > 0 ? { tools: openAITools, tool_choice: 'auto' } : {}),
           stream: true
         };
       }
@@ -1067,7 +1123,7 @@ export async function runAgentLoop({
 
           sendChunk(`Ejecutando herramienta \`${tc.name}\` en el workspace...\n`);
           
-          const resultStr = await executeTool(tc.name, tc.input, workspacePath);
+          const resultStr = await executeTool(tc.name, tc.input, workspacePath, effectiveMode);
           if (tc.name === 'write_file' || tc.name === 'edit_file') {
             executedWriteSignatures.add(sig);
           }

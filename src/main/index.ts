@@ -713,9 +713,10 @@ ipcMain.on('ai:abort-chat', (_event, args?: { conversationId?: string; turnId?: 
 
 ipcMain.handle('ai:stream-chat', async (
   _event, 
-  { conversationId, turnId, provider, model, apiKey, prompt, contextText, history, image }: {
+  { conversationId, turnId, mode, provider, model, apiKey, prompt, contextText, history, image }: {
     conversationId?: string;
     turnId?: string;
+    mode?: 'chat' | 'agent' | 'review';
     provider: string;
     model: string;
     apiKey: string;
@@ -731,6 +732,7 @@ ipcMain.handle('ai:stream-chat', async (
   activeAbortController = new AbortController();
 
   const activeConvId = conversationId || 'default';
+  const effectiveMode = mode || 'agent';
 
   try {
     const storeData = await readStore();
@@ -740,7 +742,7 @@ ipcMain.handle('ai:stream-chat', async (
       {
         sessionId: activeConvId,
         turnId,
-        mode: 'chat',
+        mode: effectiveMode,
         provider,
         model,
         apiKey,

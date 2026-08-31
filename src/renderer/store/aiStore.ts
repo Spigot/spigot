@@ -46,7 +46,7 @@ interface AIState {
   setApiKey: (provider: string, key: string, authType?: 'api' | 'oauth') => Promise<void>;
   selectModel: (provider: string, model: string) => Promise<void>;
   setActiveProvider: (provider: string) => void;
-  sendMessage: (prompt: string, contextText: string | null, image?: string | null) => Promise<void>;
+  sendMessage: (prompt: string, contextText: string | null, image?: string | null, mode?: 'chat' | 'agent' | 'review') => Promise<void>;
   abortChat: (conversationId?: string) => void;
   generateCommitMessage: (gitDiff: string, onChunk: (chunk: string) => void) => Promise<string>;
   clearHistory: () => void;
@@ -400,7 +400,7 @@ export const useAIStore = create<AIState>((set, get) => {
       set({ activeProvider: provider });
     },
 
-    sendMessage: async (prompt: string, contextText: string | null, image?: string | null) => {
+    sendMessage: async (prompt: string, contextText: string | null, image?: string | null, mode: 'chat' | 'agent' | 'review' = 'agent') => {
       setupAiListeners();
 
       const { activeProvider, providers, conversations, activeConversationId, activeStreams } = get();
@@ -477,6 +477,7 @@ export const useAIStore = create<AIState>((set, get) => {
         await (window as any).api.ai.streamChat({
           conversationId: targetConvId,
           turnId,
+          mode,
           provider: activeProvider,
           model: providerData.activeModel,
           apiKey: providerData.key,

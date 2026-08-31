@@ -312,7 +312,7 @@ export const AIPanel: React.FC = () => {
       console.error('Failed to compile context:', e);
     }
 
-    await sendMessage(finalPrompt, contextText, attachedImage);
+    await sendMessage(finalPrompt, contextText, attachedImage, agentModeType);
   };
 
   const handleStop = () => {

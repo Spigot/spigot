@@ -84,6 +84,7 @@ contextBridge.exposeInMainWorld('api', {
     streamChat: (args: { 
       conversationId?: string;
       turnId?: string;
+      mode?: 'chat' | 'agent' | 'review';
       provider: string; 
       model: string; 
       apiKey: string; 

@@ -1,4 +1,4 @@
-export type EngineMode = 'chat' | 'agent';
+export type EngineMode = 'chat' | 'agent' | 'review';
 
 export type EngineTurnRequest = {
   turnId: string;

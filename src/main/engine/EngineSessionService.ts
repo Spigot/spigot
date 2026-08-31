@@ -9,7 +9,7 @@ import { EngineHistoryStore } from './historyStore';
 export type EngineSessionInput = {
   sessionId: string;
   turnId?: string;
-  mode: 'chat' | 'agent';
+  mode: 'chat' | 'agent' | 'review';
   provider: string;
   model: string;
   apiKey: string;
@@ -225,6 +225,7 @@ export class EngineSessionService {
 
     try {
       const success = await runner({
+        mode: input.mode,
         provider: input.provider,
         model: input.model,
         apiKey: input.apiKey,
