@@ -306,7 +306,30 @@ export const AIPanel: React.FC = () => {
     setShowCommands(false);
     setMentionQuery(null);
 
-    let finalPrompt = textToSend.trim();
+    let rawText = textToSend.trim();
+
+    // Direct slash command execution fallback (if typed directly)
+    if (rawText.startsWith('/')) {
+      const parts = rawText.split(/\s+/);
+      const cmdKey = parts[0].toLowerCase();
+      const matchedCmd = SLASH_COMMANDS.find(c => c.cmd.toLowerCase() === cmdKey);
+      if (matchedCmd) {
+        if (matchedCmd.cmd === '/clear') {
+          clearHistory();
+          return;
+        }
+        if (matchedCmd.cmd === '/models') {
+          setIsModalOpen(true);
+          return;
+        }
+        if (matchedCmd.actionPrompt) {
+          const args = parts.length > 1 ? parts.slice(1).join(' ') : undefined;
+          rawText = matchedCmd.actionPrompt(args);
+        }
+      }
+    }
+
+    let finalPrompt = rawText;
     let attachedImage: string | null = null;
 
     // Extract @ mentions
@@ -896,42 +919,51 @@ export const AIPanel: React.FC = () => {
       <div className="p-3 border-t border-editor-border bg-editor-sidebar flex flex-col gap-2 relative">
         {/* Slash Command Popover */}
         {showCommands && filteredCommands.length > 0 && (
-          <div className="absolute left-3 bottom-[calc(100%+8px)] right-3 bg-editor-bg border border-editor-border rounded-[6px] shadow-2xl overflow-hidden z-50 select-none animate-slide-up">
-            <div className="px-3 py-1.5 border-b border-editor-border bg-editor-sidebar flex items-center justify-between text-[11px] text-editor-textDark font-semibold">
-              <span className="uppercase tracking-wider text-editor-accent">Comandos Spigot ({filteredCommands.length})</span>
+          <div className="absolute left-3 bottom-[calc(100%+8px)] right-3 bg-editor-bg border border-editor-border rounded-lg shadow-2xl overflow-hidden z-50 select-none animate-slide-up ring-1 ring-black/40">
+            <div className="px-3 py-2 border-b border-editor-border bg-editor-sidebar flex items-center justify-between text-[11px] font-semibold">
+              <span className="uppercase tracking-wider text-sky-400 font-bold flex items-center gap-1.5">
+                <Terminal className="w-3.5 h-3.5 text-sky-400" />
+                Comandos Spigot ({filteredCommands.length})
+              </span>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-editor-textDark font-normal">↑↓ Navegar • Enter Ejecutar</span>
+                <span className="text-[10.5px] text-editor-text/60 font-normal">↑↓ Navegar • Enter Ejecutar</span>
                 <button 
                   onClick={() => setShowCommands(false)}
-                  className="hover:text-editor-text p-0.5 rounded"
+                  className="text-editor-text/70 hover:text-editor-text hover:bg-editor-hover p-1 rounded transition-colors"
                 >
-                  <X className="w-3 h-3" />
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
-            <div className="flex flex-col max-h-[240px] overflow-y-auto">
+            <div className="flex flex-col max-h-[260px] overflow-y-auto">
               {filteredCommands.map((c, idx) => {
                 const isSelected = idx === commandIndex;
                 return (
                   <button
                     key={c.cmd}
                     onClick={() => handleCommandClick(c)}
-                    className={`px-3 py-2 text-left transition-colors flex flex-col gap-0.5 border-b border-editor-border/40 last:border-0 ${
-                      isSelected ? 'bg-editor-active text-white' : 'hover:bg-editor-hover text-editor-text'
+                    className={`px-3 py-2 text-left transition-colors flex flex-col gap-1 border-b border-editor-border/40 last:border-0 ${
+                      isSelected
+                        ? 'bg-editor-active text-editor-text border-l-2 border-sky-400'
+                        : 'hover:bg-editor-hover text-editor-text'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[12px] font-mono font-bold text-editor-accent">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-[12.5px] font-mono font-bold text-sky-400 dark:text-cyan-300">
                           {c.cmd}
                         </span>
-                        <span className="text-[11px] font-medium">— {c.label}</span>
+                        <span className="text-[11.5px] font-semibold text-editor-text truncate">
+                          — {c.label}
+                        </span>
                       </div>
-                      <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-editor-sidebar border border-editor-border/60 text-editor-textDark font-sans">
+                      <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-editor-hover border border-editor-border/80 text-editor-text/80 font-mono shrink-0">
                         {c.category}
                       </span>
                     </div>
-                    <span className="text-[10.5px] text-editor-textDark truncate">{c.desc}</span>
+                    <span className="text-[11px] text-editor-text/80 leading-snug line-clamp-2">
+                      {c.desc}
+                    </span>
                   </button>
                 );
               })}
@@ -941,13 +973,13 @@ export const AIPanel: React.FC = () => {
 
         {/* @ Mention File Popover */}
         {mentionQuery !== null && filteredMentionFiles.length > 0 && (
-          <div className="absolute left-3 bottom-[calc(100%+8px)] right-3 bg-editor-bg border border-editor-border rounded-[6px] shadow-2xl overflow-hidden z-50 select-none animate-slide-up">
-            <div className="px-3 py-1.5 border-b border-editor-border bg-editor-sidebar flex items-center justify-between text-[11px] text-editor-textDark font-semibold">
-              <span className="uppercase tracking-wider flex items-center gap-1.5 text-editor-accent">
+          <div className="absolute left-3 bottom-[calc(100%+8px)] right-3 bg-editor-bg border border-editor-border rounded-lg shadow-2xl overflow-hidden z-50 select-none animate-slide-up ring-1 ring-black/40">
+            <div className="px-3 py-2 border-b border-editor-border bg-editor-sidebar flex items-center justify-between text-[11px] font-semibold">
+              <span className="uppercase tracking-wider flex items-center gap-1.5 text-sky-400 font-bold">
                 <FileText className="w-3.5 h-3.5 text-sky-400" />
                 Mencionar archivo (@)
               </span>
-              <span className="text-[10px] text-editor-textDark font-normal">
+              <span className="text-[10.5px] text-editor-text/60 font-normal">
                 ↑↓ Navegar • Enter Seleccionar
               </span>
             </div>
@@ -958,15 +990,17 @@ export const AIPanel: React.FC = () => {
                   <button
                     key={file.path}
                     onClick={() => insertMention(file)}
-                    className={`px-3 py-1.5 text-left transition-colors flex items-center justify-between border-b border-editor-border/40 last:border-0 ${
-                      isSelected ? 'bg-editor-active text-white' : 'hover:bg-editor-hover text-editor-text'
+                    className={`px-3 py-2 text-left transition-colors flex items-center justify-between border-b border-editor-border/40 last:border-0 ${
+                      isSelected
+                        ? 'bg-editor-active text-editor-text border-l-2 border-sky-400'
+                        : 'hover:bg-editor-hover text-editor-text'
                     }`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <FileText className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-editor-accent' : 'text-editor-textDark'}`} />
-                      <span className="text-[12px] font-medium truncate">{file.name}</span>
+                      <FileText className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-sky-400' : 'text-editor-text/70'}`} />
+                      <span className="text-[12px] font-medium text-editor-text truncate">{file.name}</span>
                     </div>
-                    <span className="text-[10px] text-editor-textDark truncate max-w-[140px] font-mono">
+                    <span className="text-[10.5px] text-editor-text/70 truncate max-w-[160px] font-mono">
                       {file.relPath}
                     </span>
                   </button>
@@ -1149,7 +1183,7 @@ export const AIPanel: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setShowCommands(!showCommands)}
-                className="px-1.5 py-0.5 text-editor-textDark hover:text-editor-text hover:bg-editor-hover rounded text-[11px] font-mono font-bold transition-colors"
+                className="px-1.5 py-0.5 text-editor-text hover:text-editor-accent hover:bg-editor-hover rounded text-[11px] font-mono font-bold transition-colors"
                 title="Comandos rápidos (/)"
               >
                 /
