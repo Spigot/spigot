@@ -771,7 +771,7 @@ ipcMain.handle('ai:stream-chat', async (
   { conversationId, turnId, mode, provider, model, apiKey, prompt, contextText, history, image }: {
     conversationId?: string;
     turnId?: string;
-    mode?: 'chat' | 'agent' | 'review';
+    mode?: 'orchestrator' | 'build' | 'plan' | 'review';
     provider: string;
     model: string;
     apiKey: string;
@@ -787,7 +787,7 @@ ipcMain.handle('ai:stream-chat', async (
   activeAbortController = new AbortController();
 
   const activeConvId = conversationId || 'default';
-  const effectiveMode = mode || 'agent';
+  const effectiveMode = mode || 'orchestrator';
 
   try {
     const storeData = await readStore();

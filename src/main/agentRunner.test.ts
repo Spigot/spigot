@@ -60,62 +60,59 @@ describe('agentRunner - code editing tools', () => {
   });
 
   describe('Mode Capability Security & Gating', () => {
-    it('provides no tools in chat / read-only mode', () => {
-      const tools = getToolsForMode('chat');
-      expect(tools).toHaveLength(0);
+    it('provides all workspace tools in orchestrator and build modes', () => {
+      const orchestratorTools = getToolsForMode('orchestrator').map(t => t.name);
+      expect(orchestratorTools).toContain('write_file');
+      expect(orchestratorTools).toContain('edit_file');
+      expect(orchestratorTools).toContain('run_command');
+      expect(orchestratorTools).toContain('read_file');
+
+      const buildTools = getToolsForMode('build').map(t => t.name);
+      expect(buildTools).toContain('write_file');
+      expect(buildTools).toContain('edit_file');
+      expect(buildTools).toContain('run_command');
     });
 
-    it('provides only read-only analysis tools in review mode', () => {
-      const tools = getToolsForMode('review');
-      const toolNames = tools.map(t => t.name);
+    it('provides only read-only analysis tools in plan and review modes', () => {
+      const planTools = getToolsForMode('plan');
+      const planNames = planTools.map(t => t.name);
 
-      expect(toolNames).toContain('read_file');
-      expect(toolNames).toContain('list_dir');
-      expect(toolNames).toContain('glob_search');
-      expect(toolNames).toContain('grep_search');
+      expect(planNames).toContain('read_file');
+      expect(planNames).toContain('list_dir');
+      expect(planNames).toContain('glob_search');
+      expect(planNames).toContain('grep_search');
+      expect(planNames).not.toContain('write_file');
+      expect(planNames).not.toContain('edit_file');
+      expect(planNames).not.toContain('run_command');
 
-      expect(toolNames).not.toContain('write_file');
-      expect(toolNames).not.toContain('edit_file');
-      expect(toolNames).not.toContain('run_command');
+      const reviewTools = getToolsForMode('review');
+      const reviewNames = reviewTools.map(t => t.name);
+      expect(reviewNames).not.toContain('write_file');
+      expect(reviewNames).not.toContain('edit_file');
+      expect(reviewNames).not.toContain('run_command');
     });
 
-    it('provides all workspace tools in agent mode', () => {
-      const tools = getToolsForMode('agent');
-      const toolNames = tools.map(t => t.name);
-
-      expect(toolNames).toContain('write_file');
-      expect(toolNames).toContain('edit_file');
-      expect(toolNames).toContain('run_command');
-      expect(toolNames).toContain('read_file');
-    });
-
-    it('rejects tool execution in chat mode at execution boundary', async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'spigot-mode-test-'));
-
-      const result = await executeTool('read_file', { filePath: 'foo.txt' }, tempDir, 'chat');
-      expect(result).toContain('Acceso denegado');
-      expect(result).toContain('modo Chat / Solo lectura');
-
-      await fs.rm(tempDir, { recursive: true, force: true });
-    });
-
-    it('rejects mutating tools in review mode while allowing read tools', async () => {
+    it('rejects mutating tools in plan and review modes while allowing read tools', async () => {
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'spigot-mode-test-'));
       const testFile = path.join(tempDir, 'file.txt');
-      await fs.writeFile(testFile, 'hello review', 'utf-8');
+      await fs.writeFile(testFile, 'hello plan and review', 'utf-8');
 
-      // Mutating write_file rejected
-      const writeResult = await executeTool('write_file', { filePath: 'file2.txt', content: 'hack' }, tempDir, 'review');
-      expect(writeResult).toContain('Acceso denegado');
-      expect(writeResult).toContain('modo Review solo permite herramientas de lectura');
+      // Plan mode rejects write_file
+      const planWrite = await executeTool('write_file', { filePath: 'f2.txt', content: 'hack' }, tempDir, 'plan');
+      expect(planWrite).toContain('Acceso denegado');
+      expect(planWrite).toContain('modo Plan solo permite herramientas de lectura');
 
-      // Mutating edit_file rejected
-      const editResult = await executeTool('edit_file', { filePath: 'file.txt', oldString: 'hello', newString: 'bye' }, tempDir, 'review');
-      expect(editResult).toContain('Acceso denegado');
+      // Review mode rejects write_file
+      const reviewWrite = await executeTool('write_file', { filePath: 'f2.txt', content: 'hack' }, tempDir, 'review');
+      expect(reviewWrite).toContain('Acceso denegado');
+      expect(reviewWrite).toContain('modo Review solo permite herramientas de lectura');
 
-      // Read tool allowed in review mode
-      const readResult = await executeTool('read_file', { filePath: 'file.txt' }, tempDir, 'review');
-      expect(readResult).toBe('hello review');
+      // Both permit read_file
+      const planRead = await executeTool('read_file', { filePath: 'file.txt' }, tempDir, 'plan');
+      expect(planRead).toBe('hello plan and review');
+
+      const reviewRead = await executeTool('read_file', { filePath: 'file.txt' }, tempDir, 'review');
+      expect(reviewRead).toBe('hello plan and review');
 
       await fs.rm(tempDir, { recursive: true, force: true });
     });

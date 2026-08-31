@@ -86,7 +86,7 @@ describe('EngineSessionService', () => {
     const pending = service.startTurn(
       {
         sessionId: 's1',
-        mode: 'chat',
+        mode: 'plan',
         provider: 'openai',
         model: 'gpt-5',
         apiKey: 'k',
@@ -131,7 +131,7 @@ describe('EngineSessionService', () => {
     const success = await service.startTurn(
       {
         sessionId: 's1',
-        mode: 'chat',
+        mode: 'plan',
         provider: 'openai',
         model: 'gpt-5',
         apiKey: 'k',
@@ -168,7 +168,7 @@ describe('EngineSessionService', () => {
     const run = service.startTurn(
       {
         sessionId: 's1',
-        mode: 'chat',
+        mode: 'plan',
         provider: 'openai',
         model: 'gpt-5',
         apiKey: 'k',
@@ -212,7 +212,7 @@ describe('EngineSessionService', () => {
     await service.startTurn(
       {
         sessionId: 's-history',
-        mode: 'chat',
+        mode: 'plan',
         provider: 'openai',
         model: 'gpt-5',
         apiKey: 'k',
@@ -227,7 +227,7 @@ describe('EngineSessionService', () => {
     await service.startTurn(
       {
         sessionId: 's-history',
-        mode: 'chat',
+        mode: 'plan',
         provider: 'openai',
         model: 'gpt-5',
         apiKey: 'k',
@@ -254,7 +254,7 @@ describe('EngineSessionService', () => {
     await service.startTurn(
       {
         sessionId: 's-history',
-        mode: 'chat',
+        mode: 'plan',
         provider: 'openai',
         model: 'gpt-5',
         apiKey: 'k',
@@ -297,7 +297,7 @@ describe('EngineSessionService', () => {
     void service.startTurn(
       {
         sessionId: 's-replace',
-        mode: 'chat',
+        mode: 'plan',
         provider: 'openai',
         model: 'gpt-5',
         apiKey: 'k',
@@ -314,7 +314,7 @@ describe('EngineSessionService', () => {
     await service.startTurn(
       {
         sessionId: 's-replace',
-        mode: 'chat',
+        mode: 'plan',
         provider: 'openai',
         model: 'gpt-5',
         apiKey: 'k',
@@ -351,7 +351,7 @@ describe('EngineSessionService', () => {
     await service.startTurn(
       {
         sessionId: 's-cancel',
-        mode: 'chat',
+        mode: 'plan',
         provider: 'openai',
         model: 'gpt-5',
         apiKey: 'k',

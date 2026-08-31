@@ -206,6 +206,7 @@ export const AgentModeView: React.FC = () => {
   const [projectChatsCache, setProjectChatsCache] = useState<Record<string, any[]>>({});
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
+  const [agentModeType, setAgentModeType] = useState<'orchestrator' | 'build' | 'plan' | 'review'>('orchestrator');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [diffStats, setDiffStats] = useState<DiffStats>(emptyDiffStats);
   const [diffText, setDiffText] = useState('');
@@ -338,7 +339,7 @@ export const AgentModeView: React.FC = () => {
       console.error('Failed to compile context:', e);
     }
 
-    await sendMessage(textToSend.trim(), contextText);
+    await sendMessage(textToSend.trim(), contextText, null, agentModeType);
   };
 
   const handleOpenExplorer = () => {
@@ -729,6 +730,59 @@ export const AgentModeView: React.FC = () => {
                       </div>
                       
                       <div className="flex items-center gap-2">
+                        {/* Mode Selector */}
+                        <div className="flex items-center bg-black/20 rounded-md border border-editor-border/60 p-0.5 text-[11px] font-medium gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setAgentModeType('orchestrator')}
+                            className={`px-2 py-0.5 rounded transition-all flex items-center gap-1 ${
+                              agentModeType === 'orchestrator'
+                                ? 'bg-purple-500/20 text-purple-300 font-bold border border-purple-500/40'
+                                : 'text-editor-textDark hover:text-editor-text'
+                            }`}
+                            title="Modo Orchestrator (Gentle AI)"
+                          >
+                            <Brain className="w-3 h-3" />
+                            <span>Orchestrator</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAgentModeType('build')}
+                            className={`px-2 py-0.5 rounded transition-all flex items-center gap-1 ${
+                              agentModeType === 'build'
+                                ? 'bg-sky-500/20 text-sky-300 font-bold border border-sky-500/40'
+                                : 'text-editor-textDark hover:text-editor-text'
+                            }`}
+                            title="Modo Build"
+                          >
+                            <span>Build</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAgentModeType('plan')}
+                            className={`px-2 py-0.5 rounded transition-all flex items-center gap-1 ${
+                              agentModeType === 'plan'
+                                ? 'bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/40'
+                                : 'text-editor-textDark hover:text-editor-text'
+                            }`}
+                            title="Modo Plan"
+                          >
+                            <span>Plan</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAgentModeType('review')}
+                            className={`px-2 py-0.5 rounded transition-all flex items-center gap-1 ${
+                              agentModeType === 'review'
+                                ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40'
+                                : 'text-editor-textDark hover:text-editor-text'
+                            }`}
+                            title="Modo Review"
+                          >
+                            <span>Review</span>
+                          </button>
+                        </div>
+
                         <button className="flex items-center gap-1 px-2 py-1 rounded hover:bg-white/10 text-editor-textDark hover:text-editor-text text-[12px] transition-colors" title={`Proveedor activo: ${activeProvider}`}>
                           <span>{activeProvider || 'Modelo'}</span>
                           <ChevronDown className="w-3 h-3" />
@@ -898,6 +952,59 @@ export const AgentModeView: React.FC = () => {
                       </div>
                       
                       <div className="flex items-center gap-2">
+                        {/* Mode Selector */}
+                        <div className="flex items-center bg-black/20 rounded-md border border-editor-border/60 p-0.5 text-[11px] font-medium gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setAgentModeType('orchestrator')}
+                            className={`px-2 py-0.5 rounded transition-all flex items-center gap-1 ${
+                              agentModeType === 'orchestrator'
+                                ? 'bg-purple-500/20 text-purple-300 font-bold border border-purple-500/40'
+                                : 'text-editor-textDark hover:text-editor-text'
+                            }`}
+                            title="Modo Orchestrator (Gentle AI)"
+                          >
+                            <Brain className="w-3 h-3" />
+                            <span>Orchestrator</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAgentModeType('build')}
+                            className={`px-2 py-0.5 rounded transition-all flex items-center gap-1 ${
+                              agentModeType === 'build'
+                                ? 'bg-sky-500/20 text-sky-300 font-bold border border-sky-500/40'
+                                : 'text-editor-textDark hover:text-editor-text'
+                            }`}
+                            title="Modo Build"
+                          >
+                            <span>Build</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAgentModeType('plan')}
+                            className={`px-2 py-0.5 rounded transition-all flex items-center gap-1 ${
+                              agentModeType === 'plan'
+                                ? 'bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/40'
+                                : 'text-editor-textDark hover:text-editor-text'
+                            }`}
+                            title="Modo Plan"
+                          >
+                            <span>Plan</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAgentModeType('review')}
+                            className={`px-2 py-0.5 rounded transition-all flex items-center gap-1 ${
+                              agentModeType === 'review'
+                                ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40'
+                                : 'text-editor-textDark hover:text-editor-text'
+                            }`}
+                            title="Modo Review"
+                          >
+                            <span>Review</span>
+                          </button>
+                        </div>
+
                         <button className="flex items-center gap-1 px-2 py-1 rounded hover:bg-white/10 text-editor-textDark hover:text-editor-text text-[12px] transition-colors" title={`Proveedor activo: ${activeProvider}`}>
                           <span>{activeProvider || 'Modelo'}</span>
                           <ChevronDown className="w-3 h-3" />

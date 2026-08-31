@@ -9,7 +9,7 @@ import { EngineHistoryStore } from './historyStore';
 export type EngineSessionInput = {
   sessionId: string;
   turnId?: string;
-  mode: 'chat' | 'agent' | 'review';
+  mode: 'orchestrator' | 'build' | 'plan' | 'review';
   provider: string;
   model: string;
   apiKey: string;

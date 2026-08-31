@@ -19,7 +19,24 @@ export interface ToolDefinition {
   };
 }
 
-const SYSTEM_PROMPT = `You are Spigot, an expert autonomous AI software engineer integrated directly into the Spigot code editor.
+const SYSTEM_PROMPT_ORCHESTRATOR = `You are Gentle AI Orchestrator, an elite Senior Software Architect and SDD Coordinator integrated directly into the Spigot code editor.
+You coordinate complex multi-step development, architectural exploration, task decomposition, and rigorous verification.
+
+Core Directives:
+1. UNDERSTAND & EXPLORE:
+   - Begin by analyzing the codebase context, imports, and boundaries using 'glob_search', 'grep_search', 'list_dir', and 'read_file'.
+2. PLAN & ARCHITECT:
+   - Formulate clear, grounded steps before executing modifications.
+   - Decompose complex requirements into manageable units of work following Clean Architecture, SOLID, and Spec-Driven Development (SDD) principles.
+3. SURGICAL EXECUTION:
+   - Execute changes using 'edit_file' for surgical edits and 'write_file' for new components or tests.
+   - Maintain strict workspace containment and consistent code style.
+4. SELF-VERIFICATION LOOP:
+   - Always run tests and typechecks using 'run_command' (e.g. 'pnpm test', 'npm test', 'tsc --noEmit') to verify changes before concluding.
+5. CONCISE SYNTHESIS:
+   - Synthesize results clearly, outlining architectural decisions, changes made, and test verification outcomes.`;
+
+const SYSTEM_PROMPT_BUILD = `You are Spigot Builder, an expert autonomous AI software engineer integrated directly into the Spigot code editor.
 You have tools to explore, search, read, surgically edit, create files, and execute terminal commands in the active workspace.
 
 Key Instructions:
@@ -34,6 +51,22 @@ Key Instructions:
    - You can use 'run_command' to run tests, typechecks, linters, or build scripts to verify your changes.
 3. CONCISENESS & COMPLETION:
    - Keep responses direct and concise. After executing your tools, provide a brief summary of what was accomplished and finish.`;
+
+const SYSTEM_PROMPT_PLAN = `You are Spigot Architect & Planner, a dedicated planning and system design assistant integrated directly into Spigot.
+Your purpose is to formulate structured implementation plans, breakdown complex features, analyze tradeoffs, and guide architectural strategy.
+You have read-only tools to explore and read the workspace ('read_file', 'list_dir', 'glob_search', 'grep_search', 'git_status', 'git_diff') to ground your plans in the actual codebase.
+You must NOT mutate files or execute arbitrary commands in Plan mode.`;
+
+const SYSTEM_PROMPT_REVIEW = `You are Spigot Senior Reviewer, a Senior Software Architect and Code Auditor.
+Your goal is to perform critical, in-depth architectural and code reviews evaluating Clean Architecture, SOLID principles, security vulnerabilities, edge cases, and performance bottlenecks.
+You have read-only tools to inspect the workspace ('read_file', 'list_dir', 'glob_search', 'grep_search', 'git_status', 'git_diff'). You must NOT mutate files or execute arbitrary commands.`;
+
+export function getSystemPrompt(mode: 'orchestrator' | 'build' | 'plan' | 'review' = 'orchestrator'): string {
+  if (mode === 'orchestrator') return SYSTEM_PROMPT_ORCHESTRATOR;
+  if (mode === 'plan') return SYSTEM_PROMPT_PLAN;
+  if (mode === 'review') return SYSTEM_PROMPT_REVIEW;
+  return SYSTEM_PROMPT_BUILD;
+}
 
 const TOOLS: ToolDefinition[] = [
   {
@@ -201,17 +234,14 @@ const READ_ONLY_TOOLS = new Set([
   'git_diff'
 ]);
 
-export function getToolsForMode(mode: 'chat' | 'agent' | 'review' = 'agent'): ToolDefinition[] {
-  if (mode === 'chat') {
-    return [];
-  }
-  if (mode === 'review') {
+export function getToolsForMode(mode: 'orchestrator' | 'build' | 'plan' | 'review' = 'orchestrator'): ToolDefinition[] {
+  if (mode === 'plan' || mode === 'review') {
     return TOOLS.filter(t => READ_ONLY_TOOLS.has(t.name));
   }
   return TOOLS;
 }
 
-function getAnthropicTools(mode?: 'chat' | 'agent' | 'review') {
+function getAnthropicTools(mode?: 'orchestrator' | 'build' | 'plan' | 'review') {
   const tools = getToolsForMode(mode);
   if (tools.length === 0) return undefined;
   return tools.map(t => ({
@@ -221,7 +251,7 @@ function getAnthropicTools(mode?: 'chat' | 'agent' | 'review') {
   }));
 }
 
-function getOpenAITools(mode?: 'chat' | 'agent' | 'review') {
+function getOpenAITools(mode?: 'orchestrator' | 'build' | 'plan' | 'review') {
   const tools = getToolsForMode(mode);
   if (tools.length === 0) return undefined;
   return tools.map(t => ({
@@ -234,7 +264,7 @@ function getOpenAITools(mode?: 'chat' | 'agent' | 'review') {
   }));
 }
 
-function getGeminiTools(mode?: 'chat' | 'agent' | 'review') {
+function getGeminiTools(mode?: 'orchestrator' | 'build' | 'plan' | 'review') {
   const tools = getToolsForMode(mode);
   if (tools.length === 0) return undefined;
   return [
@@ -382,15 +412,12 @@ export async function executeTool(
   name: string,
   args: any,
   workspacePath: string,
-  mode: 'chat' | 'agent' | 'review' = 'agent'
+  mode: 'orchestrator' | 'build' | 'plan' | 'review' = 'orchestrator'
 ): Promise<string> {
   try {
-    if (mode === 'chat') {
-      throw new Error(`Acceso denegado: El modo Chat / Solo lectura no permite la ejecución de herramientas (intento de ejecutar "${name}").`);
-    }
-
-    if (mode === 'review' && !READ_ONLY_TOOLS.has(name)) {
-      throw new Error(`Acceso denegado: El modo Review solo permite herramientas de lectura y análisis (intento de ejecutar "${name}").`);
+    if ((mode === 'plan' || mode === 'review') && !READ_ONLY_TOOLS.has(name)) {
+      const modeLabel = mode === 'plan' ? 'Plan' : 'Review';
+      throw new Error(`Acceso denegado: El modo ${modeLabel} solo permite herramientas de lectura y análisis (intento de ejecutar "${name}").`);
     }
 
     const resolvePath = (p: string) => assertPathContained(p, workspacePath);
@@ -649,7 +676,7 @@ function pruneContextAndHistory(
 // ==========================================
 
 export type AgentRunOptions = {
-  mode?: 'chat' | 'agent' | 'review';
+  mode?: 'orchestrator' | 'build' | 'plan' | 'review';
   provider: string;
   model: string;
   apiKey: string;
@@ -665,7 +692,7 @@ export type AgentRunOptions = {
 };
 
 export async function runAgentLoop({
-  mode = 'agent',
+  mode = 'orchestrator',
   provider,
   model,
   apiKey,
@@ -732,8 +759,9 @@ export async function runAgentLoop({
       let headers: Record<string, string> = { 'Content-Type': 'application/json' };
       let body: any = {};
 
-      // Prepare Tool Schemas for API call
-      const effectiveMode = mode || 'agent';
+      // Prepare Tool Schemas and System Prompt for API call
+      const effectiveMode = mode || 'orchestrator';
+      const activeSystemPrompt = getSystemPrompt(effectiveMode);
       const anthropicTools = getAnthropicTools(effectiveMode);
       const openAITools = getOpenAITools(effectiveMode);
       const geminiTools = getGeminiTools(effectiveMode);
@@ -768,7 +796,7 @@ export async function runAgentLoop({
         }
 
         const openaiMessages: any[] = [
-          { role: 'system', content: SYSTEM_PROMPT }
+          { role: 'system', content: activeSystemPrompt }
         ];
         for (const m of formattedMessages) {
           if (m.tool_results) {
@@ -813,7 +841,7 @@ export async function runAgentLoop({
         headers['anthropic-version'] = '2023-06-01';
         body = {
           model,
-          system: SYSTEM_PROMPT,
+          system: activeSystemPrompt,
           messages: formattedMessages.map(m => {
             if (m.tool_results) {
               return {
@@ -882,7 +910,7 @@ export async function runAgentLoop({
 
         body = {
           systemInstruction: {
-            parts: [{ text: SYSTEM_PROMPT }]
+            parts: [{ text: activeSystemPrompt }]
           },
           contents,
           ...(geminiTools && geminiTools.length > 0 ? { tools: geminiTools } : {})
@@ -896,7 +924,7 @@ export async function runAgentLoop({
         body = {
           model,
           messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'system', content: activeSystemPrompt },
             ...formattedMessages.map(m => {
               if (m.role === 'tool') return m;
               if (m.tool_calls) {

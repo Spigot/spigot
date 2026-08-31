@@ -22,7 +22,7 @@ describe('SpigotChatsEngineAdapter', () => {
       {
         turnId: 'turn-1',
         sessionId: 'session-1',
-        mode: 'chat',
+        mode: 'plan',
         provider: 'openai',
         model: 'gpt-5',
         apiKey: 'k',
@@ -54,7 +54,7 @@ describe('SpigotChatsEngineAdapter', () => {
       {
         turnId: 'turn-2',
         sessionId: 'session-2',
-        mode: 'chat',
+        mode: 'plan',
         provider: 'openai',
         model: 'gpt-5',
         apiKey: 'k',

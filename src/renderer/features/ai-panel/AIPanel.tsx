@@ -131,7 +131,7 @@ export const AIPanel: React.FC = () => {
   } = useAIStore();
 
   const [prompt, setPrompt] = useState('');
-  const [agentModeType, setAgentModeType] = useState<'agent' | 'chat' | 'review'>('agent');
+  const [agentModeType, setAgentModeType] = useState<'orchestrator' | 'build' | 'plan' | 'review'>('orchestrator');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showCommands, setShowCommands] = useState(false);
   const [commandIndex, setCommandIndex] = useState(0);
@@ -297,8 +297,8 @@ export const AIPanel: React.FC = () => {
     }
 
     // Apply Mode behavior prefix
-    if (agentModeType === 'chat') {
-      finalPrompt = `[MODO CHAT / SOLO LECTURA: No ejecutes herramientas de modificación de archivos ni terminal. Responde de forma puramente conversacional y explicativa.]\n\n${finalPrompt}`;
+    if (agentModeType === 'plan') {
+      finalPrompt = `[MODO PLAN / SOLO LECTURA: No ejecutes herramientas de modificación de archivos ni terminal. Realiza una planificación estructurada y orientada al diseño.]\n\n${finalPrompt}`;
     } else if (agentModeType === 'review') {
       finalPrompt = `[MODO REVIEW / CRÍTICA ARQUITECTÓNICA: Realiza una auditoría exhaustiva del código analizando Clean Architecture, principios SOLID, mantenibilidad, edge cases y rendimiento.]\n\n${finalPrompt}`;
     }
@@ -983,32 +983,44 @@ export const AIPanel: React.FC = () => {
               ))}
             </div>
 
-            {/* Mode Pills: Agent | Chat | Review */}
-            <div className="flex items-center bg-editor-sidebar rounded-md border border-editor-border p-0.5 text-[10px] font-medium">
+            {/* Mode Pills: Orchestrator | Build | Plan | Review */}
+            <div className="flex items-center bg-editor-sidebar rounded-md border border-editor-border p-0.5 text-[10px] font-medium gap-0.5">
               <button
                 type="button"
-                onClick={() => setAgentModeType('agent')}
+                onClick={() => setAgentModeType('orchestrator')}
                 className={`px-1.5 py-0.5 rounded transition-all flex items-center gap-1 ${
-                  agentModeType === 'agent'
-                    ? 'bg-sky-500/20 text-sky-300 font-bold border border-sky-500/40 shadow-xs'
+                  agentModeType === 'orchestrator'
+                    ? 'bg-purple-500/20 text-purple-300 font-bold border border-purple-500/40 shadow-xs'
                     : 'text-editor-textDark hover:text-editor-text'
                 }`}
-                title="Modo Agente: ejecución autónoma y edición de archivos"
+                title="Modo Orchestrator (Gentle AI): coordinación autónoma, descomposición arquitectónica y verificación"
               >
-                <Sparkles className="w-2.5 h-2.5" />
-                <span>Agente</span>
+                <Brain className="w-2.5 h-2.5" />
+                <span>Orchestrator</span>
               </button>
               <button
                 type="button"
-                onClick={() => setAgentModeType('chat')}
+                onClick={() => setAgentModeType('build')}
                 className={`px-1.5 py-0.5 rounded transition-all flex items-center gap-1 ${
-                  agentModeType === 'chat'
+                  agentModeType === 'build'
+                    ? 'bg-sky-500/20 text-sky-300 font-bold border border-sky-500/40 shadow-xs'
+                    : 'text-editor-textDark hover:text-editor-text'
+                }`}
+                title="Modo Build: ejecución autónoma y edición directa de archivos"
+              >
+                <span>Build</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAgentModeType('plan')}
+                className={`px-1.5 py-0.5 rounded transition-all flex items-center gap-1 ${
+                  agentModeType === 'plan'
                     ? 'bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/40 shadow-xs'
                     : 'text-editor-textDark hover:text-editor-text'
                 }`}
-                title="Modo Chat: sólo lectura y explicaciones"
+                title="Modo Plan: planificación arquitectónica y diseño sin mutaciones"
               >
-                <span>Chat</span>
+                <span>Plan</span>
               </button>
               <button
                 type="button"
@@ -1018,7 +1030,7 @@ export const AIPanel: React.FC = () => {
                     ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40 shadow-xs'
                     : 'text-editor-textDark hover:text-editor-text'
                 }`}
-                title="Modo Review: auditoría arquitectónica"
+                title="Modo Review: auditoría arquitectónica y calidad"
               >
                 <span>Review</span>
               </button>
