@@ -74,13 +74,31 @@ describe('parseMessageThinking', () => {
   );
 
   it.each([
-    '<think>not standalone</think>',
-    'before <think>\nafter',
-    '<think >\ncontent\n</think >',
     '<thinking>\ncontent\n</thinking>',
     'prefix <think',
-  ])('keeps malformed or non-standalone syntax visible: %s', (response) => {
+    'plain <think > not valid',
+  ])('keeps malformed or non-tag syntax visible: %s', (response) => {
     expect(parseMessageThinking(response)).toEqual({ thought: '', response, isThinking: false });
+  });
+
+  it('extracts single-line thinking tags cleanly', () => {
+    expect(parseMessageThinking('<think>compact reasoning</think>\nVisible answer')).toEqual({
+      thought: 'compact reasoning',
+      response: 'Visible answer',
+      isThinking: false,
+    });
+  });
+
+  it('handles lines where thought content is followed immediately by closing tag without newline', () => {
+    const input = 'where to place the file.</think>\nVoy a crear una calculadora en Python con operaciones básicas.';
+    const result = parseMessageThinking(input);
+
+    expect(result).toEqual({
+      thought: 'where to place the file.',
+      response: 'Voy a crear una calculadora en Python con operaciones básicas.',
+      isThinking: false,
+    });
+    expect(result.response).not.toContain('</think>');
   });
 
   it('handles CRLF control lines while preserving CRLF inside segments', () => {

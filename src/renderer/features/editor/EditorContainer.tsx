@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import * as monaco from 'monaco-editor';
 import MonacoEditor, { DiffEditor, loader } from '@monaco-editor/react';
 import logoSpigotUrl from '../../assets/logoSpigot.png';
 import { RotateCw, Home, ExternalLink, Globe } from 'lucide-react';
@@ -78,17 +79,13 @@ const defineMonacoThemes = (monaco: any) => {
   });
 };
 
-// Configure Monaco to load assets locally from our public folder (works offline and respects CSP 'self')
+// Configure Monaco to use the bundled monaco-editor package directly (zero runtime loader.js network/file fetch)
 loader.config({
-  paths: {
-    vs: '/monaco-editor/min/vs',
-  },
+  monaco,
 });
 
-// Initialize globally as early as possible as fallback
-loader.init().then((monaco) => {
-  defineMonacoThemes(monaco);
-});
+// Initialize themes globally immediately
+defineMonacoThemes(monaco);
 
 const BrowserTab: React.FC<{ url: string }> = ({ url }) => {
   const [currentUrl, setCurrentUrl] = useState('https://google.com');
@@ -195,6 +192,34 @@ const BrowserTab: React.FC<{ url: string }> = ({ url }) => {
   );
 };
 
+// Reads live user preferences from settings or falls back to standard compact VS Code dimensions
+function getEditorSettings() {
+  const size = typeof window !== 'undefined'
+    ? parseInt(localStorage.getItem('spigot_font_size') || '13', 10)
+    : 13;
+  const family = typeof window !== 'undefined'
+    ? localStorage.getItem('spigot_font_family') || "Consolas, 'Courier New', monospace"
+    : "Consolas, 'Courier New', monospace";
+  const tab = typeof window !== 'undefined'
+    ? parseInt(localStorage.getItem('spigot_tab_size') || '2', 10)
+    : 2;
+  const wrap = typeof window !== 'undefined'
+    ? localStorage.getItem('spigot_word_wrap') === 'true'
+    : false;
+  const mini = typeof window !== 'undefined'
+    ? localStorage.getItem('spigot_minimap') !== 'false'
+    : true;
+  const validSize = isNaN(size) || size < 8 || size > 32 ? 13 : size;
+  return {
+    fontSize: validSize,
+    lineHeight: Math.round(validSize * 1.55),
+    fontFamily: family,
+    tabSize: tab,
+    wordWrap: wrap ? ('on' as const) : ('off' as const),
+    minimap: { enabled: mini },
+  };
+}
+
 export const EditorContainer: React.FC = () => {
   const {
     activeTabPath, fileBuffers, updateFileBuffer, selectWorkspace, createNewProject, workspacePath,
@@ -300,17 +325,21 @@ export const EditorContainer: React.FC = () => {
       state.saveActiveFile();
     });
 
-    // Apply specific VS Code editor settings
+    // Apply specific VS Code editor settings from user config
+    const settings = getEditorSettings();
     editor.updateOptions({
-      fontSize: 16,
-      fontFamily: 'Consolas, "Courier New", monospace',
+      fontSize: settings.fontSize,
+      lineHeight: settings.lineHeight,
+      fontFamily: settings.fontFamily,
       fontWeight: '400',
-      minimap: { enabled: true },
+      minimap: settings.minimap,
+      wordWrap: settings.wordWrap,
+      tabSize: settings.tabSize,
       lineNumbers: 'on',
       roundedSelection: false,
       scrollBeyondLastLine: false,
       readOnly: false,
-      automaticLayout: true, // Auto resizes when sidebar panel collapses!
+      automaticLayout: true,
       cursorBlinking: 'smooth',
       cursorSmoothCaretAnimation: 'on',
       padding: { top: 8, bottom: 8 },
@@ -318,41 +347,45 @@ export const EditorContainer: React.FC = () => {
       parameterHints: { enabled: true },
       suggestOnTriggerCharacters: true,
       acceptSuggestionOnEnter: "on",
-      tabSize: 2,
     });
   };
 
   const handleDiffOnMount = (editor: any, monaco: any) => {
     monaco.editor.setTheme(theme);
+    const settings = getEditorSettings();
 
     editor.getModifiedEditor().updateOptions({
-      fontSize: 16,
-      fontFamily: 'Consolas, "Courier New", monospace',
+      fontSize: settings.fontSize,
+      lineHeight: settings.lineHeight,
+      fontFamily: settings.fontFamily,
       fontWeight: '400',
-      minimap: { enabled: true },
+      minimap: settings.minimap,
+      wordWrap: settings.wordWrap,
+      tabSize: settings.tabSize,
       lineNumbers: 'on',
       roundedSelection: false,
       scrollBeyondLastLine: false,
-      readOnly: true, // Hacemos el diff editor de sólo lectura para mayor robustez
+      readOnly: true,
       automaticLayout: true,
       cursorBlinking: 'smooth',
       cursorSmoothCaretAnimation: 'on',
       padding: { top: 8, bottom: 8 },
-      tabSize: 2,
     });
     
     editor.getOriginalEditor().updateOptions({
-      fontSize: 16,
-      fontFamily: 'Consolas, "Courier New", monospace',
+      fontSize: settings.fontSize,
+      lineHeight: settings.lineHeight,
+      fontFamily: settings.fontFamily,
       fontWeight: '400',
       minimap: { enabled: false },
+      wordWrap: settings.wordWrap,
+      tabSize: settings.tabSize,
       lineNumbers: 'on',
       roundedSelection: false,
       scrollBeyondLastLine: false,
       readOnly: true,
       automaticLayout: true,
       padding: { top: 8, bottom: 8 },
-      tabSize: 2,
     });
   };
 

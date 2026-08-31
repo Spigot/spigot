@@ -86,27 +86,66 @@ export function parseMessageThinking(content: string): ParsedMessage {
     }
 
     const boundaryToken = trimHorizontalWhitespace(line).toLowerCase();
-    const isOpeningTag = boundaryToken === '<think>';
-    const isClosingTag = boundaryToken === '</think>';
+    const lowerLine = line.toLowerCase();
+    const openIdx = lowerLine.indexOf('<think>');
+    const closeIdx = lowerLine.indexOf('</think>');
 
-    if (isOpeningTag || isClosingTag) {
-      if (isClosingTag) {
-        addSegment(content.slice(segmentStart, lineStart), 'thought');
-        isThinking = false;
-      } else {
-        addSegment(content.slice(segmentStart, lineStart), isThinking ? 'thought' : 'response');
-        isThinking = true;
+    if (openIdx !== -1 && closeIdx !== -1 && closeIdx > openIdx && !boundaryToken.includes('`')) {
+      addSegment(content.slice(segmentStart, lineStart + openIdx), isThinking ? 'thought' : 'response');
+      addSegment(line.slice(openIdx + '<think>'.length, closeIdx), 'thought');
+      isThinking = false;
+      segmentStart = lineStart + closeIdx + '</think>'.length;
+      const remaining = line.slice(closeIdx + '</think>'.length);
+      if (trimHorizontalWhitespace(remaining) === '') {
+        segmentStart = nextLineStart;
+        lineStart = nextLineStart;
+        continue;
       }
+    } else if (isThinking) {
+      if (closeIdx !== -1) {
+        addSegment(content.slice(segmentStart, lineStart + closeIdx), 'thought');
+        isThinking = false;
+        segmentStart = lineStart + closeIdx + '</think>'.length;
+        const remaining = line.slice(closeIdx + '</think>'.length);
+        if (trimHorizontalWhitespace(remaining) === '') {
+          segmentStart = nextLineStart;
+          lineStart = nextLineStart;
+          continue;
+        }
+      }
+    } else {
+      const isStandaloneOpen = boundaryToken === '<think>';
+      const isStandaloneClose = boundaryToken === '</think>';
+      const isLineEndingClose = boundaryToken.endsWith('</think>') && !boundaryToken.includes('`');
+      const isLineStartingOpen = boundaryToken.startsWith('<think>') && !boundaryToken.includes('`');
 
-      segmentStart = nextLineStart;
-      lineStart = nextLineStart;
-      continue;
-    }
-
-    const isTrailingLine = newlineIndex === -1;
-    if (isTrailingLine && STREAMING_OPEN_TAG_PREFIXES.has(boundaryToken)) {
-      addSegment(content.slice(segmentStart, lineStart), isThinking ? 'thought' : 'response');
-      segmentStart = content.length;
+      if (isStandaloneClose || isLineEndingClose) {
+        addSegment(content.slice(segmentStart, lineStart + closeIdx), 'thought');
+        isThinking = false;
+        segmentStart = lineStart + closeIdx + '</think>'.length;
+        const remaining = line.slice(closeIdx + '</think>'.length);
+        if (trimHorizontalWhitespace(remaining) === '') {
+          segmentStart = nextLineStart;
+          lineStart = nextLineStart;
+          continue;
+        }
+      } else if (isStandaloneOpen || isLineStartingOpen) {
+        addSegment(content.slice(segmentStart, lineStart + openIdx), 'response');
+        isThinking = true;
+        segmentStart = lineStart + openIdx + '<think>'.length;
+        const remaining = line.slice(openIdx + '<think>'.length);
+        if (trimHorizontalWhitespace(remaining) === '') {
+          segmentStart = nextLineStart;
+          lineStart = nextLineStart;
+          continue;
+        }
+      } else {
+        const isTrailingLine = newlineIndex === -1;
+        if (isTrailingLine && STREAMING_OPEN_TAG_PREFIXES.has(boundaryToken)) {
+          addSegment(content.slice(segmentStart, lineStart), 'response');
+          segmentStart = content.length;
+        }
+      }
     }
 
     lineStart = nextLineStart;
