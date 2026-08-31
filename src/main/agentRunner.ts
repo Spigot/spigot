@@ -33,7 +33,9 @@ Core Directives:
    - Maintain strict workspace containment and consistent code style.
 4. SELF-VERIFICATION LOOP:
    - Always run tests and typechecks using 'run_command' (e.g. 'pnpm test', 'npm test', 'tsc --noEmit') to verify changes before concluding.
-5. CONCISE SYNTHESIS:
+5. NO REDUNDANT EXPLORATION:
+   - DO NOT repeatedly execute 'list_dir' or 'glob_search' if you already know the workspace context or if the directory is empty. Immediately proceed to write the requested code with 'write_file'.
+6. CONCISE SYNTHESIS:
    - Synthesize results clearly, outlining architectural decisions, changes made, and test verification outcomes.`;
 
 const SYSTEM_PROMPT_BUILD = `You are Spigot Builder, an expert autonomous AI software engineer integrated directly into the Spigot code editor.
@@ -47,9 +49,11 @@ Key Instructions:
    - Use 'edit_file' for surgical modifications: provide the exact 'oldString' and 'newString'.
    - Use 'read_file', 'grep_search', or 'glob_search' first if you need to inspect existing code before editing.
    - Once a file is created or modified with 'write_file' or 'edit_file', your task is COMPLETE. DO NOT call the same write tool again for the same file.
-2. VERIFICATION & EXECUTION:
+2. NO REPETITIVE EXPLORATION:
+   - DO NOT call 'list_dir' or 'glob_search' repeatedly. If the workspace is empty or you have listed it, IMMEDIATELY create the requested file with 'write_file'.
+3. VERIFICATION & EXECUTION:
    - You can use 'run_command' to run tests, typechecks, linters, or build scripts to verify your changes.
-3. CONCISENESS & COMPLETION:
+4. CONCISENESS & COMPLETION:
    - Keep responses direct and concise. After executing your tools, provide a brief summary of what was accomplished and finish.`;
 
 const SYSTEM_PROMPT_PLAN = `You are Spigot Architect & Planner, a dedicated planning and system design assistant integrated directly into Spigot.
@@ -709,6 +713,7 @@ export async function runAgentLoop({
   let turn = 0;
   const maxTurns = 25;
   const executedWriteSignatures = new Set<string>();
+  const executedToolCounts = new Map<string, number>();
 
   // Standardize historical conversation messages for tool execution context
   const rawHistory = (history || []).map((msg: any) => {
@@ -1142,18 +1147,26 @@ export async function runAgentLoop({
             return false;
           }
 
-          const sig = `${tc.name}:${JSON.stringify(tc.input)}`;
+          const sig = `${tc.name}:${JSON.stringify(tc.input || {})}`;
+          const currentCount = (executedToolCounts.get(sig) || 0) + 1;
+          executedToolCounts.set(sig, currentCount);
+
           if ((tc.name === 'write_file' || tc.name === 'edit_file') && executedWriteSignatures.has(sig)) {
             sendChunk(`[Finalizado] La herramienta \`${tc.name}\` ya creó y aplicó los cambios correctamente en el archivo.\n</think>\n\nOperación completada exitosamente. El archivo ha sido creado en tu espacio de trabajo.`);
             sendEnd();
             return true;
           }
 
-          sendChunk(`Ejecutando herramienta \`${tc.name}\` en el workspace...\n`);
-          
-          const resultStr = await executeTool(tc.name, tc.input, workspacePath, effectiveMode);
-          if (tc.name === 'write_file' || tc.name === 'edit_file') {
-            executedWriteSignatures.add(sig);
+          let resultStr: string;
+          if (currentCount > 2 && (tc.name === 'list_dir' || tc.name === 'glob_search' || tc.name === 'read_file')) {
+            resultStr = `[AVISO ANTI-LOOP] Ya consultaste '${tc.name}' con estos mismos parámetros anteriormente. NO repitas esta llamada. Procedé de inmediato a escribir el código o archivo solicitado con 'write_file' o 'edit_file', o respondé al usuario.`;
+          } else {
+            sendChunk(`Ejecutando herramienta \`${tc.name}\` en el workspace...\n`);
+            resultStr = await executeTool(tc.name, tc.input, workspacePath, effectiveMode);
+            if (tc.name === 'write_file' || tc.name === 'edit_file') {
+              executedWriteSignatures.add(sig);
+            }
+            sendChunk(`Herramienta \`${tc.name}\` completada.\n`);
           }
 
           results.push({
@@ -1161,8 +1174,6 @@ export async function runAgentLoop({
             name: tc.name,
             content: resultStr
           });
-
-          sendChunk(`Herramienta \`${tc.name}\` completada.\n`);
         }
 
         sendChunk(`</think>\n`);
