@@ -6,6 +6,7 @@ import { compileContext } from './contextCompiler';
 import { ApiKeyModal } from './ApiKeyModal';
 import { StyledSelect } from './StyledSelect';
 import { SLASH_COMMANDS, SlashCommand } from './slashCommands';
+import { parseMessageThinking } from '../chat/messageParser';
 import { 
   Sparkles, Settings, 
   ShieldAlert, Folder, FileText, 
@@ -24,66 +25,6 @@ const PROVIDER_LABELS: Record<string, string> = {
   openrouter: 'OpenRouter',
   minimax: 'MiniMax',
 };
-
-interface ParsedThought {
-  thought: string;
-  response: string;
-  isThinking: boolean;
-}
-
-function parseThinking(content: string): ParsedThought {
-  let thought = '';
-  let response = '';
-  let isThinking = false;
-
-  let temp = content;
-
-  while (temp.length > 0) {
-    const startIndex = temp.indexOf('<think>');
-    const endIndex = temp.indexOf('</think>');
-
-    // Case 1: Orphaned </think> before any <think> (or without <think>)
-    if (endIndex !== -1 && (startIndex === -1 || endIndex < startIndex)) {
-      thought += temp.slice(0, endIndex) + '\n';
-      temp = temp.slice(endIndex + '</think>'.length);
-      continue;
-    }
-
-    // Case 2: No more <think> tags
-    if (startIndex === -1) {
-      response += temp;
-      break;
-    }
-
-    // Case 3: Text before <think> belongs to response
-    response += temp.slice(0, startIndex);
-    temp = temp.slice(startIndex + '<think>'.length);
-
-    // Look for closing </think>
-    const nextEndIndex = temp.indexOf('</think>');
-    if (nextEndIndex === -1) {
-      thought += temp;
-      isThinking = true;
-      break;
-    }
-
-    thought += temp.slice(0, nextEndIndex) + '\n';
-    temp = temp.slice(nextEndIndex + '</think>'.length);
-  }
-
-  // Safety cleanup: strip any rogue <think> or </think> tags that might have leaked into response
-  const cleanedResponse = response
-    .replace(/<think>[\s\S]*?<\/think>/gi, '')
-    .replace(/<\/think>/gi, '')
-    .replace(/<think>/gi, '')
-    .trim();
-
-  return {
-    thought: thought.trim(),
-    response: cleanedResponse,
-    isThinking
-  };
-}
 
 const ThoughtBlock: React.FC<{
   thought: string;
@@ -544,7 +485,7 @@ export const AIPanel: React.FC = () => {
       return (
         <span 
           key={idx} 
-          className="text-[13px] leading-relaxed whitespace-pre-wrap select-text selection:bg-editor-active break-words text-editor-text"
+          className="text-[13px] leading-[1.55] whitespace-pre-wrap select-text selection:bg-editor-active break-words text-editor-text"
         >
           {renderInlineMarkdown(part)}
         </span>
@@ -553,7 +494,7 @@ export const AIPanel: React.FC = () => {
   };
 
   const renderAssistantMessage = (content: string, id: string) => {
-    const { thought, response, isThinking } = parseThinking(content);
+    const { thought, response, isThinking } = parseMessageThinking(content);
 
     return (
       <div className="flex flex-col gap-1.5">
@@ -733,7 +674,7 @@ export const AIPanel: React.FC = () => {
       )}
 
       {/* 3. Conversation Area / History */}
-      <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-4">
+      <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-3">
         {!activeKeysConfigured ? (
           /* Welcome screen when no keys are configured */
           <div className="flex-1 flex flex-col items-center justify-center text-center p-6 select-none">
@@ -851,7 +792,7 @@ export const AIPanel: React.FC = () => {
 
                   {/* Message Body Container */}
                   <div 
-                    className={`rounded-[6px] p-3 text-[13px] leading-relaxed ${
+                    className={`rounded-[6px] p-2.5 text-[13px] leading-[1.55] ${
                       isUser 
                         ? 'bg-editor-active border border-editor-border text-editor-text' 
                         : 'bg-editor-bg border border-editor-border text-editor-text'
@@ -885,7 +826,7 @@ export const AIPanel: React.FC = () => {
                   </div>
                   <span>Spigot Copilot</span>
                 </div>
-                <div className="rounded-[6px] p-3 text-[13px] leading-relaxed bg-editor-bg border border-editor-border text-editor-text">
+                <div className="rounded-[6px] p-2.5 text-[13px] leading-[1.55] bg-editor-bg border border-editor-border text-editor-text">
                   {renderAssistantMessage(incomingStreamText, 'streaming')}
                 </div>
               </div>

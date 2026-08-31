@@ -8,68 +8,8 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useAIStore } from '../../store/aiStore';
 import { useLayoutStore } from '../../store/layoutStore';
 import { compileContext } from '../ai-panel/contextCompiler';
+import { parseMessageThinking } from '../chat/messageParser';
 import ConsolePanel from '../terminal/ConsolePanel';
-
-// Helper to parse <think> blocks
-interface ParsedThought {
-  thought: string;
-  response: string;
-  isThinking: boolean;
-}
-
-function parseThinking(content: string): ParsedThought {
-  let thought = '';
-  let response = '';
-  let isThinking = false;
-
-  let temp = content;
-
-  while (temp.length > 0) {
-    const startIndex = temp.indexOf('<think>');
-    const endIndex = temp.indexOf('</think>');
-
-    // Case 1: Orphaned </think> before any <think> (or without <think>)
-    if (endIndex !== -1 && (startIndex === -1 || endIndex < startIndex)) {
-      thought += temp.slice(0, endIndex) + '\n';
-      temp = temp.slice(endIndex + '</think>'.length);
-      continue;
-    }
-
-    // Case 2: No more <think> tags
-    if (startIndex === -1) {
-      response += temp;
-      break;
-    }
-
-    // Case 3: Text before <think> belongs to response
-    response += temp.slice(0, startIndex);
-    temp = temp.slice(startIndex + '<think>'.length);
-
-    // Look for closing </think>
-    const nextEndIndex = temp.indexOf('</think>');
-    if (nextEndIndex === -1) {
-      thought += temp;
-      isThinking = true;
-      break;
-    }
-
-    thought += temp.slice(0, nextEndIndex) + '\n';
-    temp = temp.slice(nextEndIndex + '</think>'.length);
-  }
-
-  // Safety cleanup: strip any rogue <think> or </think> tags that might have leaked into response
-  const cleanedResponse = response
-    .replace(/<think>[\s\S]*?<\/think>/gi, '')
-    .replace(/<\/think>/gi, '')
-    .replace(/<think>/gi, '')
-    .trim();
-
-  return {
-    thought: thought.trim(),
-    response: cleanedResponse,
-    isThinking
-  };
-}
 
 type DiffStats = {
   added: number;
@@ -606,7 +546,7 @@ export const AgentModeView: React.FC = () => {
       return (
         <span 
           key={idx} 
-          className="text-[13px] leading-relaxed whitespace-pre-wrap select-text selection:bg-zinc-800 break-words"
+          className="text-[13px] leading-[1.55] whitespace-pre-wrap select-text selection:bg-zinc-800 break-words"
         >
           {renderInlineMarkdown(part)}
         </span>
@@ -615,7 +555,7 @@ export const AgentModeView: React.FC = () => {
   };
 
   const renderAssistantMessage = (content: string, id: string) => {
-    const { thought, response, isThinking } = parseThinking(content);
+    const { thought, response, isThinking } = parseMessageThinking(content);
 
     return (
       <div className="flex flex-col gap-2">
@@ -883,18 +823,18 @@ export const AgentModeView: React.FC = () => {
                   className="absolute inset-0 overflow-y-auto custom-scrollbar-agent scroll-smooth pl-8 pt-6 pb-44"
                   style={{ paddingRight: isChangesPanelOpen ? '2rem' : '280px' }}
                 >
-                  <div className="w-full max-w-3xl mx-auto flex flex-col gap-6 px-2 pb-4">
+                  <div className="w-full max-w-3xl mx-auto flex flex-col gap-4 px-2 pb-4">
                     {messages.map((msg) => (
                       <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                         <div 
-                          className={`max-w-[85%] rounded-2xl px-5 py-3.5 ${
+                          className={`max-w-[85%] rounded-2xl px-4 py-3 ${
                             msg.role === 'user' 
                               ? 'bg-white/5 backdrop-blur-md text-white ml-auto border border-editor-border shadow-sm' 
                               : 'bg-white/5 backdrop-blur-md border border-editor-border shadow-sm'
                           }`}
                         >
                           {msg.role === 'user' ? (
-                            <div className="text-[13.5px] leading-relaxed whitespace-pre-wrap select-text selection:bg-zinc-800 break-words">
+                            <div className="text-[13.5px] leading-[1.55] whitespace-pre-wrap select-text selection:bg-zinc-800 break-words">
                               {msg.content}
                             </div>
                           ) : (
@@ -909,7 +849,7 @@ export const AgentModeView: React.FC = () => {
                     {incomingStreamText && (
                       <div className="flex justify-start">
                         <div className="max-w-[85%] rounded-2xl">
-                          <div className="bg-white/5 backdrop-blur-md border border-editor-border rounded-2xl px-5 py-3.5 shadow-sm">
+                          <div className="bg-white/5 backdrop-blur-md border border-editor-border rounded-2xl px-4 py-3 shadow-sm">
                             {renderAssistantMessage(incomingStreamText, 'stream')}
                           </div>
                         </div>
