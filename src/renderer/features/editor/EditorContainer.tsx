@@ -192,11 +192,11 @@ const BrowserTab: React.FC<{ url: string }> = ({ url }) => {
   );
 };
 
-// Reads live user preferences from settings or falls back to standard compact VS Code dimensions
+// Reads live user preferences from settings or falls back to standard 14px VS Code dimensions
 function getEditorSettings() {
   const size = typeof window !== 'undefined'
-    ? parseInt(localStorage.getItem('spigot_font_size') || '13', 10)
-    : 13;
+    ? parseInt(localStorage.getItem('spigot_font_size') || '14', 10)
+    : 14;
   const family = typeof window !== 'undefined'
     ? localStorage.getItem('spigot_font_family') || "Consolas, 'Courier New', monospace"
     : "Consolas, 'Courier New', monospace";
@@ -209,10 +209,10 @@ function getEditorSettings() {
   const mini = typeof window !== 'undefined'
     ? localStorage.getItem('spigot_minimap') !== 'false'
     : true;
-  const validSize = isNaN(size) || size < 8 || size > 32 ? 13 : size;
+  const validSize = isNaN(size) || size < 8 || size > 32 ? 14 : size;
   return {
     fontSize: validSize,
-    lineHeight: Math.round(validSize * 1.55),
+    lineHeight: Math.round(validSize * 1.5), // 14px * 1.5 = 21px (standard VS Code line-height)
     fontFamily: family,
     tabSize: tab,
     wordWrap: wrap ? ('on' as const) : ('off' as const),
