@@ -10,6 +10,7 @@ import AIPanel from './features/ai-panel/AIPanel';
 import StatusBar from './features/status-bar/StatusBar';
 import AgentModeView from './features/agent-mode/AgentModeView';
 import SettingsModal from './features/settings/SettingsModal';
+import { UnsavedChangesModal } from './components/ui/UnsavedChangesModal';
 import { useWorkspaceStore } from './store/workspaceStore';
 import { useLayoutStore } from './store/layoutStore';
 import { useGlobalShortcuts } from './features/keyboard/useGlobalShortcuts';
@@ -211,6 +212,9 @@ const App: React.FC = () => {
 
       {/* 4. Global Settings Popup Modal (VS Code style) */}
       <SettingsModal />
+
+      {/* 5. Unsaved Changes Close Confirmation Modal */}
+      <UnsavedChangesModal />
     </div>
   );
 };

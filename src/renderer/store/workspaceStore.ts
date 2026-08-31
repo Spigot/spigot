@@ -16,6 +16,7 @@ export interface WorkspaceState {
   activeTabPath: string | null; // Focused tab path
   fileBuffers: Record<string, string>; // Unsaved/edited content: path -> content
   dirtyFiles: string[]; // List of paths with unsaved changes
+  pendingCloseFile: string | null; // File awaiting save/discard/cancel confirmation
   pendingSelection: { filePath: string; line: number; column: number; length: number } | null;
   explorerSelectedPath: string | null;
   activeDiffFile: { filePath: string; original: string; modified: string } | null;
@@ -30,6 +31,11 @@ export interface WorkspaceState {
   refreshWorkspace: () => Promise<void>;
   openFile: (filePath: string) => Promise<void>;
   closeFile: (filePath: string) => void;
+  requestCloseFile: (filePath: string) => void;
+  cancelCloseFile: () => void;
+  saveAndCloseFile: (filePath: string) => Promise<void>;
+  discardAndCloseFile: (filePath: string) => Promise<void>;
+  saveFile: (filePath: string) => Promise<void>;
   setActiveTab: (filePath: string) => void;
   updateFileBuffer: (filePath: string, content: string) => void;
   saveActiveFile: () => Promise<void>;
@@ -71,6 +77,36 @@ const applyThemeClass = (theme: WorkspaceState['theme']) => {
 const initialTheme = getInitialTheme();
 applyThemeClass(initialTheme);
 
+const RECOVERY_STORAGE_KEY = 'spigot_dirty_recovery_buffers';
+
+function getRecoveryBuffers(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage?.getItem(RECOVERY_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveRecoveryBuffer(filePath: string, content: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    const buffers = getRecoveryBuffers();
+    buffers[filePath] = content;
+    window.localStorage?.setItem(RECOVERY_STORAGE_KEY, JSON.stringify(buffers));
+  } catch {}
+}
+
+function removeRecoveryBuffer(filePath: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    const buffers = getRecoveryBuffers();
+    delete buffers[filePath];
+    window.localStorage?.setItem(RECOVERY_STORAGE_KEY, JSON.stringify(buffers));
+  } catch {}
+}
+
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   workspacePath: null,
   fileTree: [],
@@ -79,6 +115,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   fileBuffers: {},
   imageBuffers: {},
   dirtyFiles: [],
+  pendingCloseFile: null,
   pendingSelection: null,
   explorerSelectedPath: null,
   activeDiffFile: null,
@@ -222,7 +259,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
 
     let nextContent = get().fileBuffers[filePath];
-    if (nextContent === undefined) {
+    const recoveryContent = getRecoveryBuffers()[filePath];
+    let isRecovered = false;
+
+    if (recoveryContent !== undefined) {
+      nextContent = recoveryContent;
+      isRecovered = true;
+    } else if (nextContent === undefined) {
       try {
         nextContent = await (window as any).api.fs.readFile(filePath);
       } catch (err) {
@@ -235,6 +278,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       openTabs: state.openTabs.includes(filePath) ? state.openTabs : [...state.openTabs, filePath],
       activeTabPath: filePath,
       fileBuffers: { ...state.fileBuffers, [filePath]: nextContent },
+      dirtyFiles: isRecovered && !state.dirtyFiles.includes(filePath) ? [...state.dirtyFiles, filePath] : state.dirtyFiles,
     }));
   },
 
@@ -256,8 +300,58 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({
       openTabs: filteredTabs,
       activeTabPath: nextActive,
-      // Remove from dirty file array if closing (discard changes or handled by prompt)
       dirtyFiles: dirtyFiles.filter((f) => f !== filePath),
+    });
+  },
+
+  requestCloseFile: (filePath: string) => {
+    const { dirtyFiles } = get();
+    if (dirtyFiles.includes(filePath)) {
+      set({ pendingCloseFile: filePath });
+    } else {
+      get().closeFile(filePath);
+    }
+  },
+
+  cancelCloseFile: () => {
+    set({ pendingCloseFile: null });
+  },
+
+  saveFile: async (filePath: string) => {
+    const { fileBuffers, dirtyFiles } = get();
+    const content = fileBuffers[filePath] ?? '';
+    try {
+      await (window as any).api.fs.writeFile(filePath, content);
+      removeRecoveryBuffer(filePath);
+      set({
+        dirtyFiles: dirtyFiles.filter((f) => f !== filePath),
+      });
+      await get().refreshWorkspace();
+    } catch (err) {
+      console.error(`Error saving file ${filePath}:`, err);
+      throw err;
+    }
+  },
+
+  saveAndCloseFile: async (filePath: string) => {
+    try {
+      await get().saveFile(filePath);
+      get().closeFile(filePath);
+      set({ pendingCloseFile: null });
+    } catch (err) {
+      console.error(`Failed to save and close ${filePath}:`, err);
+    }
+  },
+
+  discardAndCloseFile: async (filePath: string) => {
+    const { fileBuffers } = get();
+    removeRecoveryBuffer(filePath);
+    const updatedBuffers = { ...fileBuffers };
+    delete updatedBuffers[filePath];
+    get().closeFile(filePath);
+    set({
+      fileBuffers: updatedBuffers,
+      pendingCloseFile: null,
     });
   },
 
@@ -271,9 +365,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     // Quick optimization: only trigger state update if content actually changed
     if (fileBuffers[filePath] === content) return;
 
+    saveRecoveryBuffer(filePath, content);
+
     const newBuffers = { ...fileBuffers, [filePath]: content };
     const newDirty = dirtyFiles.includes(filePath) ? dirtyFiles : [...dirtyFiles, filePath];
-
     const newGitChangedFiles = gitChangedFiles.includes(filePath) ? gitChangedFiles : [...gitChangedFiles, filePath];
 
     set({
@@ -284,19 +379,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   saveActiveFile: async () => {
-    const { activeTabPath, fileBuffers, dirtyFiles } = get();
+    const { activeTabPath } = get();
     if (!activeTabPath) return;
-
-    const content = fileBuffers[activeTabPath] ?? '';
-    try {
-      await (window as any).api.fs.writeFile(activeTabPath, content);
-      set({
-        dirtyFiles: dirtyFiles.filter((f) => f !== activeTabPath)
-      });
-      await get().refreshWorkspace();
-    } catch (err) {
-      console.error(`Error saving file ${activeTabPath}:`, err);
-    }
+    await get().saveFile(activeTabPath);
   },
 
   createItem: async (name: string, type: 'file' | 'directory', parentPath?: string) => {

@@ -5,7 +5,7 @@ import { useTerminalStore } from '../../store/terminalStore';
 import { X, Globe, Play } from 'lucide-react';
 
 export const EditorTabs: React.FC = () => {
-  const { openTabs, activeTabPath, setActiveTab, closeFile, dirtyFiles, activeDiffFile, workspacePath } = useWorkspaceStore();
+  const { openTabs, activeTabPath, setActiveTab, requestCloseFile, dirtyFiles, activeDiffFile, workspacePath } = useWorkspaceStore();
   const { isConsoleOpen, toggleConsole } = useLayoutStore();
   const { sessions, activeSessionId, createSession } = useTerminalStore();
 
@@ -100,7 +100,7 @@ export const EditorTabs: React.FC = () => {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    closeFile(path);
+                    requestCloseFile(path);
                   }}
                   className={`p-0.5 rounded hover:bg-editor-hover text-editor-textDark hover:text-white shrink-0 ${
                     isActive || isDirty ? 'flex' : 'hidden group-hover:flex'

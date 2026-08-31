@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, safeStorage } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { join, relative } from 'path';
 import { promises as fsPromises, watch, FSWatcher, existsSync } from 'fs';
@@ -503,16 +503,71 @@ async function writeStore(data: Record<string, any>): Promise<void> {
   }
 }
 
-// 1. Storage Handlers (electron-store simulation)
+// 1. Storage Handlers (electron-store simulation with safeStorage encryption)
 ipcMain.handle('store:get-keys', async () => {
   const data = await readStore();
-  return data.apiKeys || {};
+  const result: Record<string, string> = {};
+  const canDecrypt = safeStorage?.isEncryptionAvailable?.();
+
+  // 1. Decrypt from encryptedApiKeys
+  if (data.encryptedApiKeys && typeof data.encryptedApiKeys === 'object' && canDecrypt) {
+    for (const [provider, base64] of Object.entries(data.encryptedApiKeys)) {
+      try {
+        if (typeof base64 === 'string' && base64.trim()) {
+          const buf = Buffer.from(base64, 'base64');
+          result[provider] = safeStorage.decryptString(buf);
+        }
+      } catch (e) {
+        console.error(`Failed to decrypt key for ${provider}:`, e);
+      }
+    }
+  }
+
+  // 2. Migration: if legacy plaintext keys exist, encrypt and migrate them
+  if (data.apiKeys && typeof data.apiKeys === 'object') {
+    let migrated = false;
+    for (const [provider, plainKey] of Object.entries(data.apiKeys)) {
+      if (!result[provider] && typeof plainKey === 'string' && plainKey.trim()) {
+        result[provider] = plainKey;
+        if (canDecrypt) {
+          if (!data.encryptedApiKeys) data.encryptedApiKeys = {};
+          data.encryptedApiKeys[provider] = safeStorage.encryptString(plainKey).toString('base64');
+          delete data.apiKeys[provider];
+          migrated = true;
+        }
+      }
+    }
+    if (migrated) {
+      await writeStore(data);
+    }
+  }
+
+  return result;
 });
 
-ipcMain.handle('store:set-key', async (_event, provider: string, key: string) => {
+ipcMain.handle('store:set-key', async (_event, provider: string, key: string, authType?: 'api' | 'oauth') => {
   const data = await readStore();
+  if (!data.encryptedApiKeys) data.encryptedApiKeys = {};
   if (!data.apiKeys) data.apiKeys = {};
-  data.apiKeys[provider] = key;
+
+  const canEncrypt = safeStorage?.isEncryptionAvailable?.();
+
+  if (key && canEncrypt) {
+    const encryptedBuf = safeStorage.encryptString(key);
+    data.encryptedApiKeys[provider] = encryptedBuf.toString('base64');
+    // Ensure plaintext key is never retained
+    delete data.apiKeys[provider];
+  } else {
+    // Fallback if OS encryption is unavailable in the environment
+    data.apiKeys[provider] = key;
+    delete data.encryptedApiKeys[provider];
+  }
+
+  if (authType) {
+    if (!data.authTypes) data.authTypes = {};
+    data.authTypes[provider] = authType;
+  }
+
   await writeStore(data);
   return true;
 });
