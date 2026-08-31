@@ -11,6 +11,13 @@ import {
 } from 'lucide-react';
 import 'xterm/css/xterm.css';
 
+interface TerminalInstance {
+  term: XTerm;
+  fit: FitAddon;
+  host: HTMLDivElement;
+  dispose: () => void;
+}
+
 // Xterm adaptive themes mapping
 const getXtermTheme = (themeName: 'spigot-dark' | 'grayish-dark' | 'solarized-dark') => {
   switch (themeName) {
@@ -108,7 +115,31 @@ export const ConsolePanel: React.FC = () => {
 
   // Each session gets its own container div — no shared ref
   const containerRef = useRef<HTMLDivElement>(null);
-  const xtermInstances = useRef<Record<string, { term: XTerm; fit: FitAddon; disposeData: () => void }>>({});
+  const xtermInstances = useRef<Record<string, TerminalInstance>>({});
+
+  const disposeTerminal = (sessionId: string) => {
+    const instance = xtermInstances.current[sessionId];
+    if (!instance) return;
+    delete xtermInstances.current[sessionId];
+    instance.dispose();
+  };
+
+  const fitTerminal = (sessionId: string, focus = false) => {
+    if (!isConsoleOpen || activePanelTab !== 'terminal' || activeSessionId !== sessionId) return;
+
+    const instance = xtermInstances.current[sessionId];
+    if (!instance) return;
+
+    const { width, height } = instance.host.getBoundingClientRect();
+    if (width <= 0 || height <= 0) return;
+
+    try {
+      instance.fit.fit();
+      (window as any).api?.terminal?.resize?.(sessionId, instance.term.cols, instance.term.rows);
+      instance.term.refresh(0, instance.term.rows - 1);
+      if (focus) instance.term.focus();
+    } catch (_) {}
+  };
 
   // Ensure activeSessionId is always valid when sessions exist
   useEffect(() => {
@@ -126,28 +157,9 @@ export const ConsolePanel: React.FC = () => {
     }
   }, [isConsoleOpen, activePanelTab, sessions.length, createSession, workspacePath]);
 
-  // Dynamic resize and fit on any layout change
+  // Fit after visible layout changes. ResizeObserver handles dimensions that settle later.
   useEffect(() => {
-    if (!isConsoleOpen || activePanelTab !== 'terminal') return;
-
-    const performFit = () => {
-      if (activeSessionId && xtermInstances.current[activeSessionId]) {
-        try {
-          const { term, fit } = xtermInstances.current[activeSessionId];
-          fit.fit();
-          (window as any).api?.terminal?.resize?.(activeSessionId, term.cols, term.rows);
-          term.refresh(0, term.rows - 1);
-          term.focus();
-        } catch (_) {}
-      }
-    };
-
-    const t1 = setTimeout(performFit, 30);
-    const t2 = setTimeout(performFit, 120);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
+    if (activeSessionId) fitTerminal(activeSessionId, true);
   }, [isConsoleOpen, isConsoleMaximized, consoleHeight, activeSessionId, activePanelTab, sessions.length]);
 
   // Dynamic ResizeObserver to auto-fit whenever the container div has actual pixel dimensions
@@ -155,45 +167,30 @@ export const ConsolePanel: React.FC = () => {
     if (!containerRef.current) return;
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
-          if (activeSessionId && xtermInstances.current[activeSessionId]) {
-            try {
-              const { term, fit } = xtermInstances.current[activeSessionId];
-              fit.fit();
-              (window as any).api?.terminal?.resize?.(activeSessionId, term.cols, term.rows);
-              term.refresh(0, term.rows - 1);
-            } catch (_) {}
-          }
+        if (entry.contentRect.width > 0 && entry.contentRect.height > 0 && activeSessionId) {
+          fitTerminal(activeSessionId);
         }
       }
     });
     observer.observe(containerRef.current);
     return () => observer.disconnect();
-  }, [activeSessionId]);
+  }, [isConsoleOpen, activePanelTab, activeSessionId]);
 
   // Mount xterm instances into their individual container divs
   useEffect(() => {
     if (!containerRef.current) return;
 
+    const liveSessionIds = new Set(sessions.map((session) => session.id));
+    for (const sessionId of Object.keys(xtermInstances.current)) {
+      if (!liveSessionIds.has(sessionId)) disposeTerminal(sessionId);
+    }
+
     for (const sess of sessions) {
       const el = containerRef.current.querySelector(`[data-session-id="${sess.id}"]`) as HTMLDivElement | null;
       if (!el) continue;
 
-      // Skip if already mounted and still in DOM; if detached, re-attach
-      if (xtermInstances.current[sess.id]) {
-        const inst = xtermInstances.current[sess.id];
-        if (inst.term.element && !el.contains(inst.term.element)) {
-          el.innerHTML = '';
-          inst.term.open(el);
-          setTimeout(() => {
-            try {
-              inst.fit.fit();
-              inst.term.refresh(0, inst.term.rows - 1);
-            } catch (_) {}
-          }, 30);
-        }
-        continue;
-      }
+      // A live session owns one xterm instance and one persistent host.
+      if (xtermInstances.current[sess.id]) continue;
 
       const sessionId = sess.id;
       const term = new XTerm({
@@ -210,29 +207,6 @@ export const ConsolePanel: React.FC = () => {
       const fit = new FitAddon();
       term.loadAddon(fit);
       term.open(el);
-
-      // Replay any buffered output from spawn
-      (window as any).api?.terminal?.getHistory?.(sessionId).then((history: string[]) => {
-        if (history && history.length > 0) {
-          for (const chunk of history) {
-            term.write(chunk);
-          }
-        } else {
-          setTimeout(() => {
-            try {
-              (window as any).api?.terminal?.write?.(sessionId, '\r');
-            } catch (_) {}
-          }, 150);
-        }
-      }).catch(() => {});
-
-      setTimeout(() => {
-        try {
-          fit.fit();
-          (window as any).api?.terminal?.resize?.(sessionId, term.cols, term.rows);
-          term.refresh(0, term.rows - 1);
-        } catch (e) {}
-      }, 50);
 
       // Enable copy with Ctrl+C/Ctrl+Shift+C and paste with Ctrl+V/Ctrl+Shift+V
       term.attachCustomKeyEventHandler((e) => {
@@ -291,44 +265,50 @@ export const ConsolePanel: React.FC = () => {
       });
 
       const removeCloseListener = (window as any).api.terminal.onClose?.(sessionId, () => {
-        if (xtermInstances.current[sessionId]) {
-          xtermInstances.current[sessionId].disposeData();
-          delete xtermInstances.current[sessionId];
-        }
+        disposeTerminal(sessionId);
         closeSession(sessionId);
         const remaining = useTerminalStore.getState().sessions;
-        if (remaining.length <= 1) {
+        if (remaining.length === 0) {
           if (useLayoutStore.getState().isConsoleOpen) {
             useLayoutStore.getState().toggleConsole();
           }
         }
       });
 
+      let disposed = false;
       xtermInstances.current[sessionId] = {
         term,
         fit,
-        disposeData: () => {
+        host: el,
+        dispose: () => {
+          if (disposed) return;
+          disposed = true;
           el.removeEventListener('contextmenu', handleContextMenu);
           onDataDisposable.dispose();
-          removeIncomingListener();
+          removeIncomingListener?.();
           removeCloseListener?.();
           term.dispose();
         },
       };
-    }
-  }, [sessions, theme]);
 
-  // Fit the active terminal when it becomes visible
+      // Replay buffered output only while this renderer still owns the session.
+      (window as any).api?.terminal?.getHistory?.(sessionId).then((history: string[]) => {
+        if (xtermInstances.current[sessionId]?.term !== term) return;
+        for (const chunk of history || []) term.write(chunk);
+      }).catch(() => {});
+
+      fitTerminal(sessionId);
+    }
+  }, [sessions]);
+
+  // StrictMode replays effects without disconnecting this owner. Dispose only on true DOM removal.
   useEffect(() => {
-    if (!activeSessionId || !xtermInstances.current[activeSessionId]) return;
-    const { term, fit } = xtermInstances.current[activeSessionId];
-    setTimeout(() => {
-      try {
-        fit.fit();
-        (window as any).api.terminal.resize(activeSessionId, term.cols, term.rows);
-      } catch (e) {}
-    }, 30);
-  }, [activeSessionId]);
+    const owner = containerRef.current;
+    return () => {
+      if (owner?.isConnected) return;
+      for (const sessionId of Object.keys(xtermInstances.current)) disposeTerminal(sessionId);
+    };
+  }, []);
 
   // Handle closing a terminal session — kills backend PTY and disposes xterm
   const handleCloseTerminal = (e: React.MouseEvent, id: string) => {
@@ -336,12 +316,9 @@ export const ConsolePanel: React.FC = () => {
     // Kill backend PTY process
     try { (window as any).api.terminal.close(id); } catch (_) {}
     // Dispose xterm frontend
-    if (xtermInstances.current[id]) {
-      xtermInstances.current[id].disposeData();
-      delete xtermInstances.current[id];
-    }
+    disposeTerminal(id);
     // If this is the last session, close the panel automatically
-    if (sessions.length <= 1) {
+    if (sessions.length === 1) {
       if (isConsoleOpen) {
         toggleConsole();
       }
@@ -356,40 +333,10 @@ export const ConsolePanel: React.FC = () => {
 
   // Update theme dynamically in mounted xterm instance
   useEffect(() => {
-    if (activeSessionId && xtermInstances.current[activeSessionId]) {
-      const term = xtermInstances.current[activeSessionId].term;
-      term.options.theme = getXtermTheme(theme);
+    for (const instance of Object.values(xtermInstances.current)) {
+      instance.term.options.theme = getXtermTheme(theme);
     }
-  }, [theme, activeSessionId]);
-
-  // Handle auto-fit when maximizing, resizing, or switching tabs
-  useEffect(() => {
-    let t1: NodeJS.Timeout | undefined;
-    let t2: NodeJS.Timeout | undefined;
-
-    if (activeSessionId && xtermInstances.current[activeSessionId]) {
-      const { term, fit } = xtermInstances.current[activeSessionId];
-      
-      const performResize = () => {
-        try {
-          fit.fit();
-          (window as any).api.terminal.resize(activeSessionId, term.cols, term.rows);
-          term.refresh(0, term.rows - 1);
-        } catch (e) {}
-      };
-
-      performResize();
-      t1 = setTimeout(performResize, 50);
-      t2 = setTimeout(performResize, 150);
-    }
-
-    return () => {
-      if (t1) clearTimeout(t1);
-      if (t2) clearTimeout(t2);
-    };
-  }, [isConsoleMaximized, isConsoleOpen, activeSessionId, activePanelTab, sessions.length]);
-
-  if (!isConsoleOpen) return null;
+  }, [theme]);
 
   // Process LSP Problems counts and groups reactively
   const problemsList = Object.values(fileDiagnostics).filter(f => f.diagnostics.length > 0);
@@ -423,6 +370,7 @@ export const ConsolePanel: React.FC = () => {
         display: isConsoleOpen ? 'flex' : 'none',
         height: isConsoleMaximized ? '100%' : `${consoleHeight}px`
       }}
+      aria-hidden={!isConsoleOpen}
       className="bg-editor-bg border border-editor-border rounded-[6px] flex flex-col z-20 relative overflow-hidden font-sans shadow-sm shrink-0"
     >
       {/* Header menu with VS Code-style Tabs (Problems, Output, Debug, Terminal, Ports) */}
@@ -537,8 +485,11 @@ export const ConsolePanel: React.FC = () => {
       {/* Body Area */}
       <div className="flex-1 overflow-hidden bg-editor-bg relative flex">
         {/* Terminal Tab Container with Viewport on Left and VS Code Instances Sidebar on Right */}
-        {activePanelTab === 'terminal' && (
-          <div className="flex-1 flex w-full h-full overflow-hidden">
+        <div
+          className="flex-1 w-full h-full overflow-hidden"
+          style={{ display: activePanelTab === 'terminal' ? 'flex' : 'none' }}
+          aria-hidden={activePanelTab !== 'terminal'}
+        >
             {/* Terminal Viewport — one div per session, only active one visible */}
             <div ref={containerRef} className="flex-1 h-full overflow-hidden p-1 relative">
               {sessions.length === 0 ? (
@@ -582,19 +533,7 @@ export const ConsolePanel: React.FC = () => {
                     return (
                       <div
                         key={sess.id}
-                        onClick={() => {
-                          setActiveSession(sess.id);
-                          setTimeout(() => {
-                            try {
-                              const inst = xtermInstances.current[sess.id];
-                              if (inst) {
-                                inst.fit.fit();
-                                inst.term.refresh(0, inst.term.rows - 1);
-                                inst.term.focus();
-                              }
-                            } catch (_) {}
-                          }, 20);
-                        }}
+                        onClick={() => setActiveSession(sess.id)}
                         className={`h-[24px] px-2 rounded-[3px] flex items-center justify-between cursor-pointer transition-colors group text-[11.5px] ${
                           isActive
                             ? 'bg-editor-active text-white font-medium border-l-2 border-editor-accent'
@@ -619,8 +558,7 @@ export const ConsolePanel: React.FC = () => {
                 </div>
               </div>
             )}
-          </div>
-        )}
+        </div>
 
         {/* Problems View Tab Container */}
         {activePanelTab === 'problems' && (
