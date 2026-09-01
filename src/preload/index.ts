@@ -83,6 +83,9 @@ contextBridge.exposeInMainWorld('api', {
   },
   oauth: {
     loginGoogle: () => ipcRenderer.invoke('oauth:google-login'),
+    listAccounts: () => ipcRenderer.invoke('oauth:list-accounts'),
+    removeAccount: (accountId: string) => ipcRenderer.invoke('oauth:remove-account', accountId),
+    setActiveAccount: (accountId: string) => ipcRenderer.invoke('oauth:set-active-account', accountId),
   },
   ai: {
     fetchModels: (provider: string, apiKey: string) => ipcRenderer.invoke('ai:fetch-models', provider, apiKey),

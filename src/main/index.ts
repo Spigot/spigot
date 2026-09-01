@@ -19,6 +19,7 @@ import {
   authorizeAntigravity,
   exchangeAntigravity,
 } from './oauth/antigravityOAuth';
+import { getGlobalOAuthAccountPool, type OAuthAccount } from './oauth/accountPool';
 
 // Set App User Model ID for Windows Taskbar icon grouping and display
 if (process.platform === 'win32') {
@@ -737,7 +738,56 @@ ipcMain.handle('store:set-chat-history', async (_event, chatHistory: any[], work
   return true;
 });
 
-// 1.1 OAuth Google Antigravity Login Handler
+// 1.1 OAuth Google Antigravity Account Pool & Handlers
+const oauthAccountPool = getGlobalOAuthAccountPool();
+oauthAccountPool.setOnChange(async (accounts, activeId) => {
+  try {
+    const data = await readStore();
+    data.oauthAccounts = accounts;
+    data.activeOAuthAccountId = activeId;
+    const active = accounts.find((a) => a.id === activeId) || accounts[0];
+    if (active) {
+      const tokenToStore = active.refreshToken;
+      const canEncrypt = safeStorage?.isEncryptionAvailable?.();
+      if (!data.encryptedApiKeys) data.encryptedApiKeys = {};
+      if (!data.apiKeys) data.apiKeys = {};
+      if (!data.authTypes) data.authTypes = {};
+      if (canEncrypt) {
+        data.encryptedApiKeys['gemini'] = safeStorage.encryptString(tokenToStore).toString('base64');
+        delete data.apiKeys['gemini'];
+      } else {
+        data.apiKeys['gemini'] = tokenToStore;
+        delete data.encryptedApiKeys['gemini'];
+      }
+      data.authTypes['gemini'] = 'oauth';
+    } else {
+      delete data.apiKeys?.['gemini'];
+      delete data.encryptedApiKeys?.['gemini'];
+    }
+    await writeStore(data);
+  } catch (err) {
+    console.error('Failed to persist OAuth account pool update:', err);
+  }
+});
+
+// Rehydrate pool on boot
+readStore().then((data) => {
+  if (Array.isArray(data.oauthAccounts) && data.oauthAccounts.length > 0) {
+    oauthAccountPool.rehydrate(data.oauthAccounts, data.activeOAuthAccountId ?? null);
+  } else {
+    const rawKey = data.apiKeys?.['gemini'] || (data.encryptedApiKeys?.['gemini'] && safeStorage?.isEncryptionAvailable?.()
+      ? safeStorage.decryptString(Buffer.from(data.encryptedApiKeys['gemini'], 'base64'))
+      : null);
+    if (rawKey && data.authTypes?.['gemini'] === 'oauth') {
+      oauthAccountPool.addAccount({
+        email: 'Google Account',
+        projectId: 'rising-fact-p41fc',
+        refreshToken: rawKey,
+      });
+    }
+  }
+}).catch(console.error);
+
 ipcMain.handle('oauth:google-login', async () => {
   let listener: Awaited<ReturnType<typeof startOAuthListener>> | null = null;
   try {
@@ -758,31 +808,21 @@ ipcMain.handle('oauth:google-login', async () => {
       throw new Error(exchangeResult.error || 'Error al intercambiar el token de Google.');
     }
 
-    const data = await readStore();
-    if (!data.encryptedApiKeys) data.encryptedApiKeys = {};
-    if (!data.apiKeys) data.apiKeys = {};
-    if (!data.authTypes) data.authTypes = {};
-
-    const canEncrypt = safeStorage?.isEncryptionAvailable?.();
-    const tokenToStore = exchangeResult.refresh;
-
-    if (tokenToStore && canEncrypt) {
-      const encryptedBuf = safeStorage.encryptString(tokenToStore);
-      data.encryptedApiKeys['gemini'] = encryptedBuf.toString('base64');
-      delete data.apiKeys['gemini'];
-    } else {
-      data.apiKeys['gemini'] = tokenToStore;
-      delete data.encryptedApiKeys['gemini'];
-    }
-
-    data.authTypes['gemini'] = 'oauth';
-    await writeStore(data);
+    const email = exchangeResult.email || `google-user-${Date.now().toString(36)}`;
+    const addedAccount = oauthAccountPool.addAccount({
+      email,
+      projectId: exchangeResult.projectId,
+      refreshToken: exchangeResult.refresh,
+      accessToken: exchangeResult.access,
+      expiresAt: exchangeResult.expiresAt,
+    });
 
     return {
       success: true,
-      email: exchangeResult.email,
-      projectId: exchangeResult.projectId,
+      email: addedAccount.email,
+      projectId: addedAccount.projectId,
       token: exchangeResult.refresh,
+      accounts: oauthAccountPool.listPublic(),
     };
   } catch (err: any) {
     if (listener) {
@@ -790,6 +830,20 @@ ipcMain.handle('oauth:google-login', async () => {
     }
     throw new Error(err.message || 'Error durante el inicio de sesión OAuth con Google');
   }
+});
+
+ipcMain.handle('oauth:list-accounts', async () => {
+  return oauthAccountPool.listPublic();
+});
+
+ipcMain.handle('oauth:remove-account', async (_event, accountId: string) => {
+  const removed = oauthAccountPool.removeAccount(accountId);
+  return { success: removed, accounts: oauthAccountPool.listPublic() };
+});
+
+ipcMain.handle('oauth:set-active-account', async (_event, accountId: string) => {
+  const success = oauthAccountPool.setActiveAccount(accountId);
+  return { success, accounts: oauthAccountPool.listPublic() };
 });
 
 // 2. Fetch Models Dynamically from Provider endpoints

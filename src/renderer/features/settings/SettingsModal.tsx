@@ -4,7 +4,8 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useAIStore } from '../../store/aiStore';
 import { 
   Settings, X, Search, Palette, Code, Terminal, GitBranch, 
-  Sparkles, Keyboard, Check, Eye, EyeOff, ChevronDown, AlertCircle, LogIn
+  Sparkles, Keyboard, Check, Eye, EyeOff, ChevronDown, AlertCircle, LogIn,
+  User, Trash2, Plus
 } from 'lucide-react';
 import { ProviderIcon } from '../../components/ui/ProviderIcon';
 import { GentleRoleSettingsFields } from '../ai-panel/ModeModelSettings';
@@ -26,7 +27,14 @@ const PROVIDERS = [
 export const SettingsModal: React.FC = () => {
   const { isSettingsModalOpen, setSettingsModalOpen } = useLayoutStore();
   const { theme, setTheme } = useWorkspaceStore();
-  const { providers, setApiKey, loginWithGoogleOAuth } = useAIStore();
+  const {
+    providers,
+    setApiKey,
+    loginWithGoogleOAuth,
+    oauthAccounts,
+    removeOAuthAccount,
+    setActiveOAuthAccount,
+  } = useAIStore();
 
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>('appearance');
   const [searchQuery, setSearchQuery] = useState('');
@@ -604,29 +612,103 @@ export const SettingsModal: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* OAuth Quick Connect Button */}
+                  {/* OAuth Multi-Account Manager */}
                   {authType === 'oauth' && (
-                    <div className="flex flex-col gap-2 p-3.5 rounded-lg bg-editor-hover border border-editor-accent">
+                    <div className="flex flex-col gap-3 p-3.5 rounded-lg bg-editor-hover border border-editor-accent animate-fade-in">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold text-editor-text flex items-center gap-1.5">
-                          <LogIn className="w-3.5 h-3.5" />
-                          Conexión Automática OAuth 2.0
+                          <LogIn className="w-3.5 h-3.5 text-editor-accent" />
+                          Cuentas de Google Antigravity OAuth
                         </span>
                         <span className="text-[10px] bg-editor-active text-editor-accent border border-editor-border px-2 py-0.5 rounded-full font-bold">
-                          Recomendado
+                          {oauthAccounts.length} {oauthAccounts.length === 1 ? 'cuenta' : 'cuentas'}
                         </span>
                       </div>
-                      <p className="text-[11px] text-editor-textDark leading-relaxed">
-                        Iniciá sesión para autorizar y conectar automáticamente tu cuenta de <strong>{PROVIDERS.find(p => p.id === selectedProvider)?.name}</strong>.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={handleOAuthConnect}
-                        className="w-full py-2 px-3 rounded-md bg-editor-accent text-editor-bg text-xs font-bold flex items-center justify-center gap-2 transition-all hover:brightness-110 shadow-md cursor-pointer mt-1"
-                      >
-                        <LogIn className="w-4 h-4" />
-                        <span>Iniciar sesión y Conectar</span>
-                      </button>
+
+                      {oauthAccounts.length > 0 ? (
+                        <div className="flex flex-col gap-2">
+                          <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto pr-1">
+                            {oauthAccounts.map((acc) => (
+                              <div
+                                key={acc.id}
+                                className={`flex items-center justify-between p-2 rounded-md border text-xs transition-colors ${
+                                  acc.isActive
+                                    ? 'bg-editor-active border-editor-accent'
+                                    : 'bg-editor-bg border-editor-border hover:border-editor-borderActive'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <User className="w-3.5 h-3.5 text-editor-textDark shrink-0" />
+                                  <div className="flex flex-col min-w-0">
+                                    <span className="font-semibold text-editor-text truncate text-[11.5px]">
+                                      {acc.email}
+                                    </span>
+                                    <span className="text-[10px] text-editor-textDark font-mono truncate">
+                                      Project: {acc.projectId}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {acc.isCoolingDown ? (
+                                    <span className="text-[9.5px] bg-editor-bg text-editor-warning border border-editor-warning px-1.5 py-0.5 rounded">
+                                      En enfriamiento ({acc.cooldownRemainingSeconds}s)
+                                    </span>
+                                  ) : acc.isActive ? (
+                                    <span className="text-[9.5px] bg-editor-bg text-editor-accent border border-editor-accent px-1.5 py-0.5 rounded font-bold">
+                                      Activa
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => setActiveOAuthAccount(acc.id)}
+                                      className="text-[10px] px-2 py-0.5 rounded bg-editor-active hover:bg-editor-hover text-editor-text border border-editor-border cursor-pointer transition-colors"
+                                    >
+                                      Usar
+                                    </button>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    onClick={() => removeOAuthAccount(acc.id)}
+                                    title="Eliminar cuenta"
+                                    className="p-1 text-editor-textDark hover:text-editor-error rounded hover:bg-editor-hover cursor-pointer transition-colors"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          <p className="text-[10.5px] text-editor-textDark leading-tight italic">
+                            ⚡ <strong>Rotación inteligente activa:</strong> si tu cuenta activa se agota (429/cuota), Spigot rota automáticamente a la siguiente cuenta disponible.
+                          </p>
+
+                          <button
+                            type="button"
+                            onClick={handleOAuthConnect}
+                            className="w-full py-1.5 px-3 rounded-md bg-editor-active hover:bg-editor-hover border border-editor-border text-editor-text text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5 text-editor-accent" />
+                            <span>Agregar otra cuenta de Google</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          <p className="text-[11px] text-editor-textDark leading-relaxed">
+                            Iniciá sesión para autorizar y conectar automáticamente tu cuenta de <strong>{PROVIDERS.find(p => p.id === selectedProvider)?.name}</strong> sin ingresar tokens manualmente.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleOAuthConnect}
+                            className="w-full py-2 px-3 rounded-md bg-editor-accent text-editor-bg text-xs font-bold flex items-center justify-center gap-2 transition-all hover:brightness-110 shadow-md cursor-pointer mt-1"
+                          >
+                            <LogIn className="w-4 h-4" />
+                            <span>Iniciar sesión y Conectar</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
 

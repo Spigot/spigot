@@ -77,6 +77,18 @@ export interface ActiveStreamState {
   contextWarning?: ContextBoundEvent;
 }
 
+export interface OAuthAccountInfo {
+  id: string;
+  email: string;
+  projectId: string;
+  addedAt: number;
+  lastUsedAt: number;
+  isActive: boolean;
+  isCoolingDown: boolean;
+  cooldownRemainingSeconds?: number;
+  cooldownReason?: string;
+}
+
 interface AIState {
   conversations: ChatConversation[];
   activeConversationId: string | null;
@@ -88,8 +100,12 @@ interface AIState {
   error: string | null;
   activeStreams: Record<string, ActiveStreamState>;
   modelConfiguration: ModelConfiguration;
+  oauthAccounts: OAuthAccountInfo[];
 
-  loginWithGoogleOAuth: () => Promise<{ email?: string; projectId?: string; token: string }>;
+  loginWithGoogleOAuth: () => Promise<{ email?: string; projectId?: string; token: string; accounts?: OAuthAccountInfo[] }>;
+  fetchOAuthAccounts: () => Promise<OAuthAccountInfo[]>;
+  removeOAuthAccount: (accountId: string) => Promise<void>;
+  setActiveOAuthAccount: (accountId: string) => Promise<void>;
   initializeStore: () => Promise<void>;
   setApiKey: (provider: string, key: string, authType?: 'api' | 'oauth') => Promise<void>;
   selectModel: (provider: string, model: string) => Promise<void>;
@@ -506,6 +522,52 @@ export const useAIStore = create<AIState>((set, get) => {
     error: null,
     activeStreams: {},
     modelConfiguration: createModelConfiguration(undefined),
+    oauthAccounts: [],
+
+    fetchOAuthAccounts: async () => {
+      try {
+        if ((window as any).api?.oauth?.listAccounts) {
+          const accounts = await (window as any).api.oauth.listAccounts();
+          set({ oauthAccounts: accounts || [] });
+          return accounts || [];
+        }
+      } catch (err) {
+        console.error('Failed to fetch OAuth accounts:', err);
+      }
+      return [];
+    },
+
+    removeOAuthAccount: async (accountId: string) => {
+      try {
+        if ((window as any).api?.oauth?.removeAccount) {
+          const res = await (window as any).api.oauth.removeAccount(accountId);
+          const accounts = res?.accounts || [];
+          set({ oauthAccounts: accounts });
+          if (accounts.length === 0) {
+            await get().setApiKey('gemini', '', 'api');
+          } else {
+            const active = accounts.find((a: any) => a.isActive) || accounts[0];
+            if (active) {
+              await get().setApiKey('gemini', `oauth_${active.id}`, 'oauth');
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to remove OAuth account:', err);
+      }
+    },
+
+    setActiveOAuthAccount: async (accountId: string) => {
+      try {
+        if ((window as any).api?.oauth?.setActiveAccount) {
+          const res = await (window as any).api.oauth.setActiveAccount(accountId);
+          const accounts = res?.accounts || [];
+          set({ oauthAccounts: accounts });
+        }
+      } catch (err) {
+        console.error('Failed to set active OAuth account:', err);
+      }
+    },
 
     loginWithGoogleOAuth: async () => {
       const result = await (window as any).api.oauth.loginGoogle();
@@ -514,6 +576,12 @@ export const useAIStore = create<AIState>((set, get) => {
       }
 
       await get().setApiKey('gemini', result.token, 'oauth');
+      if (result.accounts) {
+        set({ oauthAccounts: result.accounts });
+      } else {
+        await get().fetchOAuthAccounts();
+      }
+
       try {
         localStorage.setItem('spigot_ai_oauth_email_gemini', result.email || '');
       } catch {}
@@ -522,6 +590,7 @@ export const useAIStore = create<AIState>((set, get) => {
         email: result.email,
         projectId: result.projectId,
         token: result.token,
+        accounts: result.accounts,
       };
     },
 
@@ -613,6 +682,8 @@ export const useAIStore = create<AIState>((set, get) => {
             modelConfiguration,
           };
         });
+
+        await get().fetchOAuthAccounts();
 
         // Query models dynamically for configured providers
         const { providers } = get();

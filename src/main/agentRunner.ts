@@ -22,6 +22,7 @@ import {
   recoverMessageHistory,
 } from './engine/providers';
 import { getValidAccessToken } from './oauth/antigravityOAuth';
+import { getGlobalOAuthAccountPool } from './oauth/accountPool';
 
 export type { ToolDefinition, ToolCall, ToolResult, UnifiedMessage };
 
@@ -785,18 +786,38 @@ export async function runAgentLoop({
       const sanitizedMessages = recoverMessageHistory(requestMessages);
 
       let effectiveApiKey = apiKey;
-      if (provider === 'gemini' && apiKey) {
-        try {
-          const validAuth = await getValidAccessToken(apiKey);
-          if (validAuth) {
-            effectiveApiKey = JSON.stringify({
-              accessToken: validAuth.accessToken,
-              projectId: validAuth.projectId,
-              isOAuth: true,
-            });
+      let usedOAuthAccountId: string | null = null;
+      if (provider === 'gemini') {
+        const pool = getGlobalOAuthAccountPool();
+        if (pool.getAccounts().length > 0) {
+          try {
+            const nextToken = await pool.getValidTokenForNextAccount();
+            if (nextToken) {
+              effectiveApiKey = JSON.stringify({
+                accessToken: nextToken.accessToken,
+                projectId: nextToken.projectId,
+                isOAuth: true,
+              });
+              usedOAuthAccountId = nextToken.account.id;
+            }
+          } catch {
+            // Fallback to apiKey resolution
           }
-        } catch {
-          // Fallback to raw apiKey
+        }
+        
+        if (!usedOAuthAccountId && apiKey) {
+          try {
+            const validAuth = await getValidAccessToken(apiKey);
+            if (validAuth) {
+              effectiveApiKey = JSON.stringify({
+                accessToken: validAuth.accessToken,
+                projectId: validAuth.projectId,
+                isOAuth: true,
+              });
+            }
+          } catch {
+            // Fallback to raw apiKey
+          }
         }
       }
 
@@ -821,6 +842,9 @@ export async function runAgentLoop({
 
       if (!response.ok) {
         const errText = await response.text();
+        if (usedOAuthAccountId && (response.status === 429 || response.status === 503 || errText.includes('RESOURCE_EXHAUSTED') || errText.includes('quota'))) {
+          getGlobalOAuthAccountPool().markAccountCooldown(usedOAuthAccountId, 'QUOTA_EXHAUSTED');
+        }
         throw new Error(`API returned HTTP ${response.status}: ${errText}`);
       }
 
