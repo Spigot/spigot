@@ -47,8 +47,9 @@ Core Directives:
    - Always run tests and typechecks using 'run_command' (e.g. 'pnpm test', 'npm test', 'tsc --noEmit') to verify changes before concluding.
 5. NO REDUNDANT EXPLORATION:
    - DO NOT repeatedly execute 'list_dir' or 'glob_search' if you already know the workspace context or if the directory is empty. Immediately proceed to write the requested code with 'write_file'.
-6. CONCISE SYNTHESIS:
-   - Synthesize results clearly, outlining architectural decisions, changes made, and test verification outcomes.`;
+6. CONCISE SYNTHESIS & CLEAN FORMATTING:
+   - Present your final answer with clean GitHub-flavored Markdown: use clear headings (#, ##), clean markdown tables, bullet lists, and code blocks.
+   - When executing tools, do NOT emit conversational filler, repetitive greetings, or intermediate chatter. Go straight to tool execution and present your answer cleanly upon receiving the tool results.`;
 
 const SYSTEM_PROMPT_BUILD = `You are Spigot Builder, an expert autonomous AI software engineer integrated directly into the Spigot code editor.
 You have tools to explore, search, read, surgically edit, create files, and execute terminal commands in the active workspace.
@@ -65,8 +66,8 @@ Key Instructions:
    - DO NOT call 'list_dir' or 'glob_search' repeatedly. If the workspace is empty or you have listed it, IMMEDIATELY create the requested file with 'write_file'.
 3. VERIFICATION & EXECUTION:
    - You can use 'run_command' to run tests, typechecks, linters, or build scripts to verify your changes.
-4. CONCISENESS & COMPLETION:
-   - Keep responses direct and concise. After executing your tools, provide a brief summary of what was accomplished and finish.`;
+4. CONCISENESS & CLEAN FORMATTING:
+   - Keep responses direct, structured, and beautifully formatted with Markdown headings, lists, and tables. Avoid conversational filler.`;
 
 const SYSTEM_PROMPT_PLAN = `You are Spigot Architect & Planner, a dedicated planning and system design assistant integrated directly into Spigot.
 Your purpose is to formulate structured implementation plans, breakdown complex features, analyze tradeoffs, and guide architectural strategy.
@@ -751,6 +752,8 @@ export async function runAgentLoop({
     sendPart({ partId, kind: 'reasoning', lifecycle: 'end' });
   };
 
+  let accumulatedOutputLength = 0;
+
   while (turn < maxTurns) {
     if (signal.aborted) {
       sendEnd(true);
@@ -804,12 +807,38 @@ export async function runAgentLoop({
         throw new Error(`API returned HTTP ${response.status}: ${errText}`);
       }
 
+      let turnEmittedText = false;
+      const wrappedSendChunk = (chunk: string) => {
+        if (!chunk) return;
+        if (accumulatedOutputLength > 0 && !turnEmittedText && !chunk.startsWith('\n')) {
+          sendChunk('\n\n' + chunk);
+        } else {
+          sendChunk(chunk);
+        }
+        turnEmittedText = true;
+        accumulatedOutputLength += chunk.length;
+      };
+
+      const wrappedSendPart = sendPart ? (part: ProviderStreamPart) => {
+        if (part.kind === 'text' && part.text) {
+          if (accumulatedOutputLength > 0 && !turnEmittedText && !part.text.startsWith('\n')) {
+            sendPart({ ...part, text: '\n\n' + part.text, partId: `provider-${turn}-${part.partId}` });
+          } else {
+            sendPart({ ...part, partId: `provider-${turn}-${part.partId}` });
+          }
+          turnEmittedText = true;
+          accumulatedOutputLength += part.text.length;
+        } else {
+          sendPart({ ...part, partId: `provider-${turn}-${part.partId}` });
+        }
+      } : undefined;
+
       const { textContent, reasoningContent, toolCalls } = await adapter.parseStream(response, {
-        sendChunk,
+        sendChunk: wrappedSendChunk,
         signal,
         provider,
         model,
-        onPart: part => sendPart?.({ ...part, partId: `provider-${turn}-${part.partId}` }),
+        onPart: wrappedSendPart,
       });
 
       if (!textContent && !reasoningContent && toolCalls.length === 0) {

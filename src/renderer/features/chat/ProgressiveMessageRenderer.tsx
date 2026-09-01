@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { parseMessageThinking } from './messageParser';
+import { MarkdownRenderer } from './MarkdownRenderer';
 
 export type AssistantDisplayPart = {
   partId: string;
@@ -43,25 +44,15 @@ const MessageText = React.memo(function MessageText({
   renderCodeBlock,
   textClassName,
 }: Pick<ProgressiveMessageRendererProps, 'content' | 'messageId' | 'renderCodeBlock' | 'textClassName'>) {
-  const parts = content.split(/(```[\s\S]*?```)/g);
-  return <>{parts.map((part, index) => {
-    if (part.startsWith('```') && part.endsWith('```')) {
-      const lines = part.split('\n');
-      return <React.Fragment key={`code-${index}`}>{renderCodeBlock(lines.slice(1, -1).join('\n'), lines[0].slice(3).trim(), `${messageId}-${index}`)}</React.Fragment>;
-    }
-    return <span key={`text-${index}`} className={textClassName}>{renderInlineMarkdown(part)}</span>;
-  })}</>;
+  return (
+    <MarkdownRenderer
+      content={content}
+      messageId={messageId}
+      renderCodeBlock={renderCodeBlock}
+      textClassName={textClassName}
+    />
+  );
 });
-
-function renderInlineMarkdown(text: string): React.ReactNode {
-  return text.split(/(\*\*.*?\*\*)/g).map((boldPart, boldIndex) => {
-    const value = boldPart.startsWith('**') && boldPart.endsWith('**') ? boldPart.slice(2, -2) : boldPart;
-    const inline = value.split(/(`.*?`)/g).map((codePart, codeIndex) => codePart.startsWith('`') && codePart.endsWith('`')
-      ? <code key={codeIndex} className="px-1 py-0.5 mx-0.5 rounded bg-editor-hover font-mono text-[11px] border border-editor-border select-all">{codePart.slice(1, -1)}</code>
-      : codePart);
-    return boldPart.startsWith('**') && boldPart.endsWith('**') ? <strong key={boldIndex} className="font-semibold text-editor-text">{inline}</strong> : <React.Fragment key={boldIndex}>{inline}</React.Fragment>;
-  });
-}
 
 /** Keeps finalized Markdown blocks mounted while only the active suffix changes. */
 export const ProgressiveMessageRenderer: React.FC<ProgressiveMessageRendererProps> = ({
