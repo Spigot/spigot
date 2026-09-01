@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { useWorkspaceStore } from './workspaceStore';
+import { parseMessageThinking } from '../features/chat/messageParser';
 import type { ChangeSetReview } from '../features/chat/ChangeSetReviewCard';
 import type { AssistantPart } from '../../main/engine/types';
 import type { ContextBoundEvent } from '../../shared/contextBudget';
@@ -421,8 +422,20 @@ export const useAIStore = create<AIState>((set, get) => {
       legacyFallbackTurns.delete(`${conversationId}:${turnId}`);
       turnContexts.delete(`${conversationId}:${turnId}`);
 
-       const finalParts = (stream?.parts || []).map(part => ({ ...part, terminal: aborted ? 'cancelled' as const : 'completed' as const }));
-       const finalContent = stream?.text || finalParts.filter(part => part.kind === 'text').map(part => part.text).join('');
+       const rawParts = (stream?.parts || []).map(part => ({ ...part, terminal: aborted ? 'cancelled' as const : 'completed' as const }));
+       let finalParts = rawParts;
+       let finalContent = stream?.text || rawParts.filter(part => part.kind === 'text').map(part => part.text).join('');
+
+       if (finalContent.includes('<think>') || finalContent.includes('</think>') || finalContent.toLowerCase().includes('<think')) {
+         const parsed = parseMessageThinking(finalContent);
+         finalContent = parsed.response;
+         if (parsed.thought && !finalParts.some(p => p.kind === 'reasoning')) {
+           finalParts = [
+             { partId: `reasoning-parsed-${Date.now()}`, kind: 'reasoning', ordinal: 0, text: parsed.thought, terminal: aborted ? 'cancelled' : 'completed' },
+             { partId: `text-parsed-${Date.now()}`, kind: 'text', ordinal: 1, text: parsed.response, terminal: aborted ? 'cancelled' : 'completed' },
+           ];
+         }
+       }
 
       let updatedConvs = conversations;
        if (finalParts.length || finalContent) {

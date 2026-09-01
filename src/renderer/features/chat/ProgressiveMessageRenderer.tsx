@@ -1,4 +1,5 @@
 import React, { useRef } from 'react';
+import { parseMessageThinking } from './messageParser';
 
 export type AssistantDisplayPart = {
   partId: string;
@@ -72,13 +73,22 @@ export const ProgressiveMessageRenderer: React.FC<ProgressiveMessageRendererProp
   contentRef.current = content;
 
   const displayParts = parts?.length ? [...parts].sort((a, b) => a.ordinal - b.ordinal) : content ? [{ partId: 'legacy-text-0', kind: 'text' as const, ordinal: 0, text: content }] : [];
-  const text = displayParts.filter(part => part.kind === 'text').map(part => part.text).join('');
+  let text = displayParts.filter(part => part.kind === 'text').map(part => part.text).join('');
+  const reasoningParts = displayParts.filter(part => part.kind === 'reasoning');
+  let reasoningText = reasoningParts.reduce((acc, part) => acc + part.text, '');
+
+  if (text.includes('<think>') || text.includes('</think>') || text.toLowerCase().includes('<think')) {
+    const parsed = parseMessageThinking(text);
+    if (parsed.thought) {
+      reasoningText = reasoningText ? `${reasoningText}\n${parsed.thought}` : parsed.thought;
+    }
+    text = parsed.response;
+  }
+
   const boundary = isStreaming ? stableBoundary(text, boundaryRef.current) : text.length;
   boundaryRef.current = boundary;
   const stable = text.slice(0, boundary);
   const active = text.slice(boundary);
-  const reasoningParts = displayParts.filter(part => part.kind === 'reasoning');
-  const reasoningText = reasoningParts.reduce((acc, part) => acc + part.text, '');
 
   return <div className="flex flex-col gap-1.5">
     {reasoningText && <>{renderThought(reasoningText, isStreaming)}</>}

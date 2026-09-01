@@ -192,9 +192,8 @@ export class OpenAIAdapter implements AIProviderAdapter {
     let textPartIndex = 0;
     const toolCallsMap = new Map<number | string, { id: string; name: string; arguments: string }>();
     const priorReasoningDetails = new Map<string, string>();
-    const normalizeMiniMaxM3Content = isMiniMaxM3(context.provider ?? '', context.model ?? '');
-    let miniMaxContentBuffer = '';
-    let miniMaxInsideThinkTag = false;
+    let thinkContentBuffer = '';
+    let insideThinkTag = false;
     const diagnostics = {
       receivedFrameCount: 0,
       invalidJsonCount: 0,
@@ -237,36 +236,36 @@ export class OpenAIAdapter implements AIProviderAdapter {
       emitStreamPart(context, { partId: textPartId, kind: 'text', lifecycle: 'delta', text: content });
     };
 
-    const normalizeMiniMaxContent = (content: string, flush = false): void => {
-      miniMaxContentBuffer += content;
-      while (miniMaxContentBuffer) {
-        const tag = miniMaxInsideThinkTag ? '</think>' : '<think>';
-        const lowerBuffer = miniMaxContentBuffer.toLowerCase();
+    const normalizeThinkContent = (content: string, flush = false): void => {
+      thinkContentBuffer += content;
+      while (thinkContentBuffer) {
+        const tag = insideThinkTag ? '</think>' : '<think>';
+        const lowerBuffer = thinkContentBuffer.toLowerCase();
         const tagIndex = lowerBuffer.indexOf(tag);
         if (tagIndex >= 0) {
-          emitContentDelta(miniMaxInsideThinkTag ? 'reasoning' : 'text', miniMaxContentBuffer.slice(0, tagIndex));
-          miniMaxContentBuffer = miniMaxContentBuffer.slice(tagIndex + tag.length);
-          miniMaxInsideThinkTag = !miniMaxInsideThinkTag;
+          emitContentDelta(insideThinkTag ? 'reasoning' : 'text', thinkContentBuffer.slice(0, tagIndex));
+          thinkContentBuffer = thinkContentBuffer.slice(tagIndex + tag.length);
+          insideThinkTag = !insideThinkTag;
           continue;
         }
 
         if (flush) {
-          emitContentDelta(miniMaxInsideThinkTag ? 'reasoning' : 'text', miniMaxContentBuffer);
-          miniMaxContentBuffer = '';
+          emitContentDelta(insideThinkTag ? 'reasoning' : 'text', thinkContentBuffer);
+          thinkContentBuffer = '';
           return;
         }
 
         let tagPrefixLength = 0;
-        const maxPrefixLength = Math.min(tag.length - 1, miniMaxContentBuffer.length);
+        const maxPrefixLength = Math.min(tag.length - 1, thinkContentBuffer.length);
         for (let length = maxPrefixLength; length > 0; length--) {
           if (lowerBuffer.endsWith(tag.slice(0, length))) {
             tagPrefixLength = length;
             break;
           }
         }
-        const safeContent = miniMaxContentBuffer.slice(0, miniMaxContentBuffer.length - tagPrefixLength);
-        emitContentDelta(miniMaxInsideThinkTag ? 'reasoning' : 'text', safeContent);
-        miniMaxContentBuffer = miniMaxContentBuffer.slice(safeContent.length);
+        const safeContent = thinkContentBuffer.slice(0, thinkContentBuffer.length - tagPrefixLength);
+        emitContentDelta(insideThinkTag ? 'reasoning' : 'text', safeContent);
+        thinkContentBuffer = thinkContentBuffer.slice(safeContent.length);
         return;
       }
     };
@@ -311,8 +310,7 @@ export class OpenAIAdapter implements AIProviderAdapter {
           }
 
           if (delta?.content) {
-            if (normalizeMiniMaxM3Content) normalizeMiniMaxContent(delta.content);
-            else emitContentDelta('text', delta.content);
+            normalizeThinkContent(delta.content);
           }
 
           if (delta?.tool_calls) {
@@ -348,7 +346,7 @@ export class OpenAIAdapter implements AIProviderAdapter {
       }
     }
 
-    if (normalizeMiniMaxM3Content) normalizeMiniMaxContent('', true);
+    normalizeThinkContent('', true);
     if (reasoningPartId) emitStreamPart(context, { partId: reasoningPartId, kind: 'reasoning', lifecycle: 'end' });
     if (textPartId) emitStreamPart(context, { partId: textPartId, kind: 'text', lifecycle: 'end' });
 
