@@ -240,8 +240,8 @@ export const AIPanel: React.FC = () => {
     messages,
     incomingStreamText,
     activeStream?.parts,
-    activeStream?.toolEvents,
-    activeStream?.subagents,
+    activeStream?.tools,
+    activeStream?.changeSet,
     isGenerating,
   ]);
 
@@ -719,7 +719,7 @@ export const AIPanel: React.FC = () => {
             <div className="w-12 h-12 bg-editor-hover rounded-xl flex items-center justify-center border border-editor-border shadow mb-4">
               <Sparkles className="w-6 h-6 text-editor-accent animate-pulse" />
             </div>
-            <h2 className="text-[13px] font-semibold text-editor-text mb-1.5 tracking-wide">Spigot Copilot</h2>
+            <h2 className="text-[13px] font-semibold text-editor-text mb-1.5 tracking-wide">Spigot</h2>
             <p className="text-[12px] text-editor-textDark leading-relaxed mb-5 max-w-[240px]">
               Configurá una clave de API para activar el asistente de IA y empezar a construir en tu proyecto.
             </p>
@@ -753,7 +753,7 @@ export const AIPanel: React.FC = () => {
             <div className="w-10 h-10 rounded-full bg-editor-hover border border-editor-border flex items-center justify-center mb-3">
               <Sparkles className="w-5 h-5 text-editor-accent" />
             </div>
-            <span className="text-[13px] font-semibold text-editor-text mb-1">Spigot Copilot</span>
+            <span className="text-[13px] font-semibold text-editor-text mb-1">Spigot</span>
             <p className="text-[11.5px] text-editor-textDark leading-relaxed max-w-[260px] mb-5">
               Preguntá sobre tu código, generá funciones, encontrá errores o realizá cambios con contexto automático.
             </p>
@@ -814,7 +814,7 @@ export const AIPanel: React.FC = () => {
                         </div>
                       )}
                       <span className={isUser ? 'text-editor-text' : 'text-editor-accent'}>
-                        {isUser ? 'Tú' : 'Spigot Copilot'}
+                        {isUser ? 'Tú' : 'Spigot'}
                       </span>
                     </div>
 
@@ -865,7 +865,7 @@ export const AIPanel: React.FC = () => {
                   <div className="w-4 h-4 rounded-full bg-editor-active border border-editor-border text-editor-accent flex items-center justify-center">
                     <Sparkles className="w-2.5 h-2.5 animate-pulse" />
                   </div>
-                  <span>Spigot Copilot</span>
+                  <span>Spigot</span>
                 </div>
                 <div className="rounded-[6px] p-2.5 text-[13px] leading-[1.55] bg-editor-bg border border-editor-border text-editor-text">
                   {renderAssistantMessage(incomingStreamText, 'streaming', undefined, true, useAIStore.getState().activeStreams[activeConversationId || '']?.parts)}

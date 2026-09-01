@@ -290,8 +290,8 @@ export const AgentModeView: React.FC = () => {
     messages,
     incomingStreamText,
     activeStream?.parts,
-    activeStream?.toolEvents,
-    activeStream?.subagents,
+    activeStream?.tools,
+    activeStream?.changeSet,
     isGenerating,
   ]);
 
