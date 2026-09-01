@@ -141,4 +141,49 @@ describe('GeminiAdapter', () => {
     expect(result.toolCalls[0].name).toBe('list_dir');
     expect(result.toolCalls[0].input).toEqual({ dirPath: 'src' });
   });
+
+  it('builds Antigravity OAuth request with wrapped project body and headers', () => {
+    const options: ProviderRequestOptions = {
+      provider: 'gemini',
+      model: 'gemini-3.7-flash',
+      apiKey: 'ya29.a0AfH6SMB...|custom-project-999',
+      prompt: 'Hello Antigravity',
+      systemPrompt: 'System',
+      messages: [{ role: 'user', content: 'Hello Antigravity' }],
+    };
+
+    const req = adapter.buildRequest(options);
+    expect(req.url).toBe('https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse');
+    expect(req.headers.Authorization).toBe('Bearer ya29.a0AfH6SMB...');
+    expect(req.headers['Client-Metadata']).toContain('ANTIGRAVITY');
+    expect(req.headers['User-Agent']).toContain('Antigravity');
+
+    const body = req.body as any;
+    expect(body.project).toBe('custom-project-999');
+    expect(body.model).toBe('gemini-3.7-flash');
+    expect(body.request.contents[0].parts[0].text).toBe('Hello Antigravity');
+  });
+
+  it('parses Antigravity wrapped response SSE stream', async () => {
+    const streamData = [
+      'data: {"response":{"candidates":[{"content":{"parts":[{"text":"Hello from Antigravity OAuth!"}]}}]}}\n\n',
+    ].join('');
+
+    const encoder = new TextEncoder();
+    const responseStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(streamData));
+        controller.close();
+      },
+    });
+
+    const response = new Response(responseStream);
+    const chunks: string[] = [];
+    const result = await adapter.parseStream(response, {
+      sendChunk: (chunk: string) => chunks.push(chunk),
+    });
+
+    expect(result.textContent).toBe('Hello from Antigravity OAuth!');
+  });
 });
+

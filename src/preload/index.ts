@@ -81,6 +81,9 @@ contextBridge.exposeInMainWorld('api', {
     getSSHServers: () => ipcRenderer.invoke('store:get-ssh-servers'),
     addSSHServer: (server: { id: string; name: string; host: string; user: string; port?: number; identityFile?: string }) => ipcRenderer.invoke('store:add-ssh-server', server),
   },
+  oauth: {
+    loginGoogle: () => ipcRenderer.invoke('oauth:google-login'),
+  },
   ai: {
     fetchModels: (provider: string, apiKey: string) => ipcRenderer.invoke('ai:fetch-models', provider, apiKey),
     streamChat: (args: { 

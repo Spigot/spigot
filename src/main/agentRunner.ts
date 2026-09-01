@@ -21,6 +21,7 @@ import {
   providerRegistry,
   recoverMessageHistory,
 } from './engine/providers';
+import { getValidAccessToken } from './oauth/antigravityOAuth';
 
 export type { ToolDefinition, ToolCall, ToolResult, UnifiedMessage };
 
@@ -783,10 +784,26 @@ export async function runAgentLoop({
       // Validate & recover message history (injects synthetic tool result if prior turn was cancelled)
       const sanitizedMessages = recoverMessageHistory(requestMessages);
 
+      let effectiveApiKey = apiKey;
+      if (provider === 'gemini' && apiKey) {
+        try {
+          const validAuth = await getValidAccessToken(apiKey);
+          if (validAuth) {
+            effectiveApiKey = JSON.stringify({
+              accessToken: validAuth.accessToken,
+              projectId: validAuth.projectId,
+              isOAuth: true,
+            });
+          }
+        } catch {
+          // Fallback to raw apiKey
+        }
+      }
+
       const requestPayload = adapter.buildRequest({
         provider,
         model,
-        apiKey,
+        apiKey: effectiveApiKey,
         prompt: fullUserPrompt,
         systemPrompt: activeSystemPrompt,
         messages: sanitizedMessages,

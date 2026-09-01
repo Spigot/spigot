@@ -14,6 +14,11 @@ import { mapEngineEventToIpc } from './engine/types';
 import { CheckpointJournal, WorkspaceChangeSetService } from './changes/WorkspaceChangeSetService';
 import { createModelConfiguration } from '../shared/modelConfiguration';
 import { createChatLogger } from '../shared/chatLogger';
+import {
+  startOAuthListener,
+  authorizeAntigravity,
+  exchangeAntigravity,
+} from './oauth/antigravityOAuth';
 
 // Set App User Model ID for Windows Taskbar icon grouping and display
 if (process.platform === 'win32') {
@@ -732,6 +737,61 @@ ipcMain.handle('store:set-chat-history', async (_event, chatHistory: any[], work
   return true;
 });
 
+// 1.1 OAuth Google Antigravity Login Handler
+ipcMain.handle('oauth:google-login', async () => {
+  let listener: Awaited<ReturnType<typeof startOAuthListener>> | null = null;
+  try {
+    listener = await startOAuthListener();
+    const auth = authorizeAntigravity();
+    await shell.openExternal(auth.url);
+    const callbackUrl = await listener.waitForCallback();
+
+    const code = callbackUrl.searchParams.get('code');
+    const state = callbackUrl.searchParams.get('state');
+
+    if (!code || !state) {
+      throw new Error('Google OAuth no devolvió los parámetros de autorización requeridos.');
+    }
+
+    const exchangeResult = await exchangeAntigravity(code, state);
+    if (exchangeResult.type === 'failed') {
+      throw new Error(exchangeResult.error || 'Error al intercambiar el token de Google.');
+    }
+
+    const data = await readStore();
+    if (!data.encryptedApiKeys) data.encryptedApiKeys = {};
+    if (!data.apiKeys) data.apiKeys = {};
+    if (!data.authTypes) data.authTypes = {};
+
+    const canEncrypt = safeStorage?.isEncryptionAvailable?.();
+    const tokenToStore = exchangeResult.refresh;
+
+    if (tokenToStore && canEncrypt) {
+      const encryptedBuf = safeStorage.encryptString(tokenToStore);
+      data.encryptedApiKeys['gemini'] = encryptedBuf.toString('base64');
+      delete data.apiKeys['gemini'];
+    } else {
+      data.apiKeys['gemini'] = tokenToStore;
+      delete data.encryptedApiKeys['gemini'];
+    }
+
+    data.authTypes['gemini'] = 'oauth';
+    await writeStore(data);
+
+    return {
+      success: true,
+      email: exchangeResult.email,
+      projectId: exchangeResult.projectId,
+      token: exchangeResult.refresh,
+    };
+  } catch (err: any) {
+    if (listener) {
+      await listener.close().catch(() => {});
+    }
+    throw new Error(err.message || 'Error durante el inicio de sesión OAuth con Google');
+  }
+});
+
 // 2. Fetch Models Dynamically from Provider endpoints
 ipcMain.handle('ai:fetch-models', async (_event, provider: string, apiKey: string) => {
   if (process.env.SPIGOT_E2E_TYPED_STREAM === '1') return ['e2e-typed-model'];
@@ -755,6 +815,21 @@ ipcMain.handle('ai:fetch-models', async (_event, provider: string, apiKey: strin
       const json = await res.json() as any;
       return json.data.map((m: any) => m.id);
     } else if (provider === 'gemini') {
+      const isOAuth = apiKey.includes('|') || apiKey.startsWith('{') || apiKey.startsWith('ya29.');
+      if (isOAuth) {
+        return [
+          'gemini-2.5-pro',
+          'gemini-2.5-flash',
+          'gemini-3.7-flash',
+          'gemini-3.1-pro-preview',
+          'gemini-3-pro-preview',
+          'gemini-3-flash-preview',
+          'gemini-1.5-pro',
+          'gemini-1.5-flash',
+          'claude-3-7-sonnet',
+          'claude-opus-4-6-thinking',
+        ];
+      }
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
       if (!res.ok) return [];
       const json = await res.json() as any;

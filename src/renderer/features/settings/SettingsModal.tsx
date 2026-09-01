@@ -13,20 +13,20 @@ import { GENTLE_ROLE_GROUPS, GENTLE_ROLE_LABELS } from '../../../shared/modelCon
 type SettingsCategory = 'appearance' | 'editor' | 'terminal' | 'git' | 'ai' | 'orchestrator' | 'shortcuts';
 
 const PROVIDERS = [
-  { id: 'openai', name: 'OpenAI (GPT-4o, o1, o3-mini)' },
-  { id: 'anthropic', name: 'Anthropic (Claude 3.5 Sonnet, Claude 3.7 Sonnet)' },
-  { id: 'gemini', name: 'Google Gemini (Gemini 1.5 Pro, 2.0 Flash)' },
-  { id: 'deepseek', name: 'DeepSeek (DeepSeek V3, DeepSeek R1)' },
-  { id: 'qwen', name: 'Qwen (Qwen 2.5 Coder)' },
-  { id: 'kimi', name: 'Moonshot Kimi' },
-  { id: 'openrouter', name: 'OpenRouter (Multi-Model Router)' },
+  { id: 'openai', name: 'OpenAI' },
+  { id: 'anthropic', name: 'Anthropic' },
+  { id: 'gemini', name: 'Gemini' },
+  { id: 'deepseek', name: 'DeepSeek' },
+  { id: 'qwen', name: 'Qwen' },
+  { id: 'kimi', name: 'Kimi' },
+  { id: 'openrouter', name: 'OpenRouter' },
   { id: 'minimax', name: 'MiniMax' },
 ];
 
 export const SettingsModal: React.FC = () => {
   const { isSettingsModalOpen, setSettingsModalOpen } = useLayoutStore();
   const { theme, setTheme } = useWorkspaceStore();
-  const { providers, setApiKey } = useAIStore();
+  const { providers, setApiKey, loginWithGoogleOAuth } = useAIStore();
 
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>('appearance');
   const [searchQuery, setSearchQuery] = useState('');
@@ -104,13 +104,21 @@ export const SettingsModal: React.FC = () => {
 
   const handleOAuthConnect = async () => {
     try {
-      const generatedToken = apiKeyInput.trim() || `oauth_${selectedProvider}_${Date.now().toString(36)}`;
-      setApiKeyInput(generatedToken);
-      await setApiKey(selectedProvider, generatedToken, 'oauth');
-      setKeySavedStatus({ message: '¡Sesión OAuth conectada exitosamente!', tone: 'success' });
-      setTimeout(() => setKeySavedStatus(null), 2500);
+      if (selectedProvider === 'gemini') {
+        setKeySavedStatus({ message: 'Esperando autorización en el navegador...', tone: 'success' });
+        const res = await loginWithGoogleOAuth();
+        setApiKeyInput(res.token);
+        setKeySavedStatus({ message: `¡Conectado exitosamente${res.email ? ` como ${res.email}` : ''}!`, tone: 'success' });
+        setTimeout(() => setKeySavedStatus(null), 3000);
+      } else {
+        const generatedToken = apiKeyInput.trim() || `oauth_${selectedProvider}_${Date.now().toString(36)}`;
+        setApiKeyInput(generatedToken);
+        await setApiKey(selectedProvider, generatedToken, 'oauth');
+        setKeySavedStatus({ message: '¡Sesión OAuth conectada exitosamente!', tone: 'success' });
+        setTimeout(() => setKeySavedStatus(null), 2500);
+      }
     } catch (err: any) {
-      setKeySavedStatus({ message: 'Error al conectar por OAuth', tone: 'error' });
+      setKeySavedStatus({ message: err.message || 'Error al conectar por OAuth', tone: 'error' });
     }
   };
 
@@ -622,45 +630,55 @@ export const SettingsModal: React.FC = () => {
                     </div>
                   )}
 
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[13px] font-semibold text-editor-text flex items-center justify-between">
-                      <span>{authType === 'oauth' ? 'Token OAuth' : 'Clave de API (API Key)'}</span>
-                      {providers[selectedProvider]?.key && (
-                        <span className="text-[11px] text-editor-success font-bold flex items-center gap-1">
-                          <Check className="w-3.5 h-3.5" /> Conectada
-                        </span>
-                      )}
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showApiKey ? 'text' : 'password'}
-                        placeholder={authType === 'oauth' ? 'Token OAuth...' : 'sk-...'}
-                        value={apiKeyInput}
-                        onChange={(e) => setApiKeyInput(e.target.value)}
-                        className="w-full bg-editor-bg border border-editor-border text-[12.5px] pl-3 pr-10 py-2 rounded-md text-editor-text font-mono outline-none focus:border-editor-accent focus:ring-1 focus:ring-editor-accent"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowApiKey(!showApiKey)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-editor-textDark hover:text-editor-text"
-                        title={showApiKey ? "Ocultar" : "Mostrar"}
-                      >
-                        {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
+                  {authType === 'api' && (
+                    <>
+                      <div className="flex flex-col gap-1.5 animate-fade-in">
+                        <label className="text-[13px] font-semibold text-editor-text flex items-center justify-between">
+                          <span>Clave de API (API Key)</span>
+                          {providers[selectedProvider]?.key && (
+                            <span className="text-[11px] text-editor-success font-bold flex items-center gap-1">
+                              <Check className="w-3.5 h-3.5" /> Conectada
+                            </span>
+                          )}
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showApiKey ? 'text' : 'password'}
+                            placeholder="sk-..."
+                            value={apiKeyInput}
+                            onChange={(e) => setApiKeyInput(e.target.value)}
+                            className="w-full bg-editor-bg border border-editor-border text-[12.5px] pl-3 pr-10 py-2 rounded-md text-editor-text font-mono outline-none focus:border-editor-accent focus:ring-1 focus:ring-editor-accent"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowApiKey(!showApiKey)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-editor-textDark hover:text-editor-text"
+                            title={showApiKey ? "Ocultar" : "Mostrar"}
+                          >
+                            {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
 
-                  <div className="flex items-center justify-between pt-2">
-                    {keySavedStatus ? (
+                      <div className="flex items-center justify-between pt-2">
+                        {keySavedStatus ? (
+                          <span className={`text-[12px] font-semibold ${keySavedStatus.tone === 'success' ? 'text-editor-success' : 'text-editor-error'}`}>{keySavedStatus.message}</span>
+                        ) : <span />}
+                        <button
+                          type="submit"
+                          className="px-4 py-1.5 bg-editor-active hover:bg-editor-hover border border-editor-border rounded-md text-[12.5px] font-semibold text-editor-text transition-colors"
+                        >
+                          Guardar y Vincular
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {authType === 'oauth' && keySavedStatus && (
+                    <div className="pt-1">
                       <span className={`text-[12px] font-semibold ${keySavedStatus.tone === 'success' ? 'text-editor-success' : 'text-editor-error'}`}>{keySavedStatus.message}</span>
-                    ) : <span />}
-                    <button
-                      type="submit"
-                      className="px-4 py-1.5 bg-editor-active hover:bg-editor-hover border border-editor-border rounded-md text-[12.5px] font-semibold text-editor-text transition-colors"
-                    >
-                      Guardar y Vincular
-                    </button>
-                  </div>
+                    </div>
+                  )}
                 </form>
 
                 {/* Section: Connected IAs status */}

@@ -89,6 +89,7 @@ interface AIState {
   activeStreams: Record<string, ActiveStreamState>;
   modelConfiguration: ModelConfiguration;
 
+  loginWithGoogleOAuth: () => Promise<{ email?: string; projectId?: string; token: string }>;
   initializeStore: () => Promise<void>;
   setApiKey: (provider: string, key: string, authType?: 'api' | 'oauth') => Promise<void>;
   selectModel: (provider: string, model: string) => Promise<void>;
@@ -108,7 +109,7 @@ interface AIState {
 const DEFAULT_MODELS: Record<string, string[]> = {
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
   anthropic: ['claude-3-5-sonnet-20241022', 'claude-3-opus-20240229', 'claude-3-haiku-20240307'],
-  gemini: ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-1.0-pro'],
+  gemini: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-3.7-flash', 'gemini-3.1-pro-preview', 'gemini-3-pro-preview', 'gemini-3-flash-preview', 'gemini-1.5-pro', 'gemini-1.5-flash'],
   deepseek: ['deepseek-reasoner', 'deepseek-chat', 'deepseek-coder'],
   qwen: ['qwen-turbo', 'qwen-plus', 'qwen-max'],
   kimi: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'],
@@ -505,6 +506,24 @@ export const useAIStore = create<AIState>((set, get) => {
     error: null,
     activeStreams: {},
     modelConfiguration: createModelConfiguration(undefined),
+
+    loginWithGoogleOAuth: async () => {
+      const result = await (window as any).api.oauth.loginGoogle();
+      if (!result?.token) {
+        throw new Error('No se recibió token de autenticación de Google');
+      }
+
+      await get().setApiKey('gemini', result.token, 'oauth');
+      try {
+        localStorage.setItem('spigot_ai_oauth_email_gemini', result.email || '');
+      } catch {}
+
+      return {
+        email: result.email,
+        projectId: result.projectId,
+        token: result.token,
+      };
+    },
 
     initializeStore: async () => {
       setupAiListeners();

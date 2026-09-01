@@ -72,11 +72,41 @@ export class GeminiAdapter implements AIProviderAdapter {
   }
 
   buildRequest(options: ProviderRequestOptions): ProviderHttpRequest {
-    const baseUrl =
-      options.baseUrl ||
-      `https://generativelanguage.googleapis.com/v1beta/models/${options.model}:streamGenerateContent?key=${options.apiKey}`;
+    let isOAuth = false;
+    let accessToken = options.apiKey;
+    let projectId = 'rising-fact-p41fc';
+
+    if (options.apiKey) {
+      if (options.apiKey.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(options.apiKey);
+          if (parsed.isOAuth || parsed.access || parsed.accessToken) {
+            isOAuth = true;
+            accessToken = parsed.accessToken || parsed.access || options.apiKey;
+            projectId = parsed.projectId || projectId;
+          }
+        } catch {}
+      } else if (options.apiKey.includes('|') || options.apiKey.startsWith('ya29.')) {
+        isOAuth = true;
+        const [tokenPart, projPart] = options.apiKey.split('|');
+        accessToken = tokenPart;
+        if (projPart) projectId = projPart;
+      }
+    }
+
+    const defaultUrl = isOAuth
+      ? 'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse'
+      : `https://generativelanguage.googleapis.com/v1beta/models/${options.model}:streamGenerateContent?key=${options.apiKey}`;
+
+    const baseUrl = options.baseUrl || defaultUrl;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      ...(isOAuth ? {
+        Authorization: `Bearer ${accessToken}`,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Antigravity/1.18.3 Chrome/138.0.7204.235 Electron/37.3.1 Safari/537.36',
+        'X-Goog-Api-Client': 'google-cloud-sdk vscode_cloudshelleditor/0.1',
+        'Client-Metadata': '{"ideType":"ANTIGRAVITY","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}',
+      } : {}),
       ...(options.extraHeaders || {}),
     };
 
@@ -126,16 +156,27 @@ export class GeminiAdapter implements AIProviderAdapter {
       }
     }
 
-    const body: Record<string, unknown> = {
-      systemInstruction: {
-        parts: [{ text: options.systemPrompt }],
-      },
-      contents,
-    };
+    const sanitizedTools = options.tools && options.tools.length > 0 ? this.sanitizeTools(options.tools) : undefined;
 
-    if (options.tools && options.tools.length > 0) {
-      body.tools = this.sanitizeTools(options.tools);
-    }
+    const body: Record<string, unknown> = isOAuth
+      ? {
+          project: projectId,
+          model: options.model,
+          request: {
+            systemInstruction: {
+              parts: [{ text: options.systemPrompt }],
+            },
+            contents,
+            ...(sanitizedTools ? { tools: sanitizedTools } : {}),
+          },
+        }
+      : {
+          systemInstruction: {
+            parts: [{ text: options.systemPrompt }],
+          },
+          contents,
+          ...(sanitizedTools ? { tools: sanitizedTools } : {}),
+        };
 
     return { url: baseUrl, headers, body };
   }
@@ -177,10 +218,11 @@ export class GeminiAdapter implements AIProviderAdapter {
           if (cleanLine.trim() === '[DONE]') continue;
 
           const parsed = JSON.parse(cleanLine);
-          // Can be array or single object with candidates
-          const candidate = Array.isArray(parsed)
-            ? parsed[0]?.candidates?.[0]
-            : parsed.candidates?.[0];
+          // Handle standard Gemini and Antigravity response shapes (which may wrap payload under .response)
+          const root = parsed && typeof parsed === 'object' && parsed.response !== undefined ? parsed.response : parsed;
+          const candidate = Array.isArray(root)
+            ? root[0]?.candidates?.[0]
+            : root?.candidates?.[0];
           const parts = candidate?.content?.parts;
 
           if (Array.isArray(parts)) {

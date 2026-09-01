@@ -11,7 +11,7 @@ interface ApiKeyModalProps {
 const PROVIDERS = [
   { id: 'openai', name: 'OpenAI' },
   { id: 'anthropic', name: 'Anthropic' },
-  { id: 'gemini', name: 'Google Gemini' },
+  { id: 'gemini', name: 'Gemini' },
   { id: 'deepseek', name: 'DeepSeek' },
   { id: 'qwen', name: 'Qwen' },
   { id: 'kimi', name: 'Kimi' },
@@ -25,8 +25,8 @@ const PROVIDER_OPTIONS = PROVIDERS.map((provider) => ({
 }));
 
 export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => {
-  const { providers, setApiKey } = useAIStore();
-  const [selectedProvider, setSelectedProvider] = useState('openai');
+  const { providers, setApiKey, loginWithGoogleOAuth } = useAIStore();
+  const [selectedProvider, setSelectedProvider] = useState('gemini');
   const [authType, setAuthType] = useState<'api' | 'oauth'>('api');
   const [apiKey, setApiKeyInput] = useState('');
   const [showKey, setShowKey] = useState(false);
@@ -43,6 +43,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
       setAuthType('api');
     }
     setStatus('idle');
+    setErrorMsg('');
   }, [selectedProvider, providers, isOpen]);
 
   if (!isOpen) return null;
@@ -70,14 +71,26 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
   };
 
   const handleOAuthConnect = async () => {
+    setStatus('saving');
+    setErrorMsg('');
     try {
-      const generatedToken = apiKey.trim() || `oauth_${selectedProvider}_${Date.now().toString(36)}`;
-      setApiKeyInput(generatedToken);
-      await setApiKey(selectedProvider, generatedToken, 'oauth');
-      setStatus('success');
-      setTimeout(() => {
-        setStatus('idle');
-      }, 1500);
+      if (selectedProvider === 'gemini') {
+        const res = await loginWithGoogleOAuth();
+        setStatus('success');
+        setApiKeyInput(res.token);
+        setTimeout(() => {
+          setStatus('idle');
+          onClose();
+        }, 1200);
+      } else {
+        const generatedToken = apiKey.trim() || `oauth_${selectedProvider}_${Date.now().toString(36)}`;
+        setApiKeyInput(generatedToken);
+        await setApiKey(selectedProvider, generatedToken, 'oauth');
+        setStatus('success');
+        setTimeout(() => {
+          setStatus('idle');
+        }, 1500);
+      }
     } catch (err: any) {
       setStatus('error');
       setErrorMsg(err.message || 'Error al conectar por OAuth.');
@@ -236,40 +249,36 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
             </div>
           )}
 
-          <div className="flex flex-col gap-1.5 relative">
-            <label className="text-[11px] text-editor-textDark font-bold uppercase tracking-wider">
-              {authType === 'oauth' ? 'Token OAuth' : 'Clave API (API Key)'}
-            </label>
-            <div className="relative flex items-center">
-              <input
-                type={showKey ? 'text' : 'password'}
-                value={apiKey}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                placeholder={
-                  authType === 'oauth'
-                    ? `Ingresá tu token OAuth para ${PROVIDERS.find(p => p.id === selectedProvider)?.name}`
-                    : `Ingresá tu clave de API de ${PROVIDERS.find(p => p.id === selectedProvider)?.name}`
-                }
-                className="w-full bg-editor-bg border border-editor-border text-xs rounded-lg pl-3 pr-10 py-2 text-editor-text placeholder:text-editor-textDark outline-none focus:border-editor-accent transition-all-custom font-mono"
-              />
-              <button
-                type="button"
-                onClick={() => setShowKey(!showKey)}
-                className="absolute right-3 text-editor-textDark hover:text-editor-text p-0.5 rounded transition-all-custom"
-              >
-                {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
+          {authType === 'api' && (
+            <div className="flex flex-col gap-1.5 relative animate-fade-in">
+              <label className="text-[11px] text-editor-textDark font-bold uppercase tracking-wider">
+                Clave API (API Key)
+              </label>
+              <div className="relative flex items-center">
+                <input
+                  type={showKey ? 'text' : 'password'}
+                  value={apiKey}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  placeholder={`Ingresá tu clave de API de ${PROVIDERS.find(p => p.id === selectedProvider)?.name}`}
+                  className="w-full bg-editor-bg border border-editor-border text-xs rounded-lg pl-3 pr-10 py-2 text-editor-text placeholder:text-editor-textDark outline-none focus:border-editor-accent transition-all-custom font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey(!showKey)}
+                  className="absolute right-3 text-editor-textDark hover:text-editor-text p-0.5 rounded transition-all-custom"
+                >
+                  {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[10px] text-editor-textDark leading-normal mt-0.5">
+                Esta credencial se almacena de forma local y segura en tu equipo.
+              </p>
             </div>
-            <p className="text-[10px] text-editor-textDark leading-normal mt-0.5">
-              Esta credencial se almacena de forma local y segura en tu equipo.
-            </p>
-          </div>
+          )}
 
           {/* Messages */}
           {status === 'error' && (
             <div className="flex items-center gap-2 p-2.5 rounded-lg bg-editor-hover border border-editor-error text-editor-error text-xs">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{errorMsg}</span>
             </div>
           )}
 
@@ -353,13 +362,15 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
             >
               Cerrar
             </button>
-            <button
-              type="submit"
-              disabled={status === 'saving' || status === 'success'}
-              className="px-4 py-1.5 bg-editor-accent hover:brightness-110 text-editor-bg font-bold text-xs rounded-md shadow active:scale-95 disabled:opacity-40 transition-all-custom"
-            >
-              {status === 'saving' ? 'Guardando...' : 'Guardar y Conectar'}
-            </button>
+            {authType === 'api' && (
+              <button
+                type="submit"
+                disabled={status === 'saving' || status === 'success'}
+                className="px-4 py-1.5 bg-editor-accent hover:brightness-110 text-editor-bg font-bold text-xs rounded-md shadow active:scale-95 disabled:opacity-40 transition-all-custom"
+              >
+                {status === 'saving' ? 'Guardando...' : 'Guardar y Conectar'}
+              </button>
+            )}
           </div>
         </form>
       </div>

@@ -13,6 +13,7 @@ playwright-report/
 test-results/
 # TypeScript Cache
 *.tsbuildinfo
+adaptar_antigravity_oauth
 
 # Log Files
 *.log
