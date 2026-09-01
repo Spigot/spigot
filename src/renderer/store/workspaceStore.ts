@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useSystemDialogStore } from '../components/ui/systemDialogStore';
 
 export interface FileNode {
   name: string;
@@ -167,7 +168,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       if (!parentDir) return;
       
       // 2. Prompt for name of new project folder
-      const name = prompt('Ingresá el nombre para la carpeta del nuevo proyecto:');
+      const name = await useSystemDialogStore.getState().prompt('Nuevo proyecto', 'Ingresá el nombre para la carpeta del nuevo proyecto:');
       if (!name || !name.trim()) return;
       
       // 3. Create the folder on disk

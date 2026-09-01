@@ -6,8 +6,24 @@ import {
   type EngineEvent,
 } from './types';
 import { EngineSessionService } from './EngineSessionService';
+import { EngineHistoryStore } from './historyStore';
 
 describe('normalizeEngineEvents', () => {
+  it('preserves interleaved typed part ordering', () => {
+    const turnId = 'turn-parts';
+    const base = { conversationId: 'conversation-1', turnId };
+    const events: EngineEvent[] = [
+      { type: 'part', turnId, part: { ...base, partId: 'reasoning-1', kind: 'reasoning', lifecycle: 'start', ordinal: 0 } },
+      { type: 'part', turnId, part: { ...base, partId: 'reasoning-1', kind: 'reasoning', lifecycle: 'delta', ordinal: 1, text: 'First.' } },
+      { type: 'part', turnId, part: { ...base, partId: 'text-1', kind: 'text', lifecycle: 'delta', ordinal: 2, text: 'Answer' } },
+      { type: 'part', turnId, part: { ...base, partId: 'reasoning-2', kind: 'reasoning', lifecycle: 'start', ordinal: 3 } },
+      { type: 'end', turnId },
+    ];
+
+    expect(normalizeEngineEvents(events)).toEqual(events);
+    const reasoningDelta = events[1] as Extract<EngineEvent, { type: 'part' }>;
+    expect(mapEngineEventToIpc(reasoningDelta)).toEqual({ channel: 'ai:stream-part', payload: reasoningDelta.part });
+  });
   it('keeps content/tool/bridge order and appends terminal event last', () => {
     const turnId = 'turn-1';
     const events: EngineEvent[] = [
@@ -49,6 +65,23 @@ describe('mapEngineEventToIpc', () => {
     expect(mapEngineEventToIpc({ type: 'content', turnId: 't1', text: 'A' })).toEqual({
       channel: 'ai:stream-chunk',
       payload: 'A',
+    });
+
+    expect(mapEngineEventToIpc({
+      type: 'tool',
+      turnId: 't1',
+      id: 'subagent-tool-1',
+      name: 'subagent:sdd-propose',
+      status: 'start',
+      data: { role: 'sdd-propose', model: 'claude-sonnet-4-6' },
+    })).toEqual({
+      channel: 'ai:stream-tool',
+      payload: {
+        id: 'subagent-tool-1',
+        name: 'subagent:sdd-propose',
+        status: 'start',
+        data: { role: 'sdd-propose', model: 'claude-sonnet-4-6' },
+      },
     });
 
     expect(mapEngineEventToIpc({ type: 'error', turnId: 't1', message: 'x' })).toEqual({
@@ -112,6 +145,40 @@ describe('EngineSessionService', () => {
     expect(success).toBe(false);
   });
 
+  it('persists content emitted by an enabled engine turn', async () => {
+    const historyStore = new EngineHistoryStore();
+    const service = new EngineSessionService(
+      {
+        startTurn: vi.fn(async (request, onEvent) => {
+          onEvent({ type: 'content', turnId: request.turnId, text: 'engine response' });
+          onEvent({ type: 'end', turnId: request.turnId, aborted: false });
+          return true;
+        }),
+        abortTurn: vi.fn(),
+      },
+      { enabled: true, historyStore },
+    );
+
+    await service.startTurn(
+      {
+        sessionId: 'content-history',
+        mode: 'plan',
+        provider: 'openai',
+        model: 'gpt-5',
+        apiKey: 'k',
+        prompt: 'hello',
+        history: [],
+        workspacePath: 'C:/repo',
+      },
+      () => {},
+    );
+
+    await expect(historyStore.load('C:/repo', 'content-history')).resolves.toEqual({
+      messages: [{ role: 'assistant', content: 'engine response' }],
+      fileHistory: [],
+    });
+  });
+
   it('falls back to legacy runner when engine flag is disabled', async () => {
     const legacyRunner = vi.fn(async options => {
       options.sendChunk('legacy');
@@ -146,6 +213,78 @@ describe('EngineSessionService', () => {
     expect(success).toBe(true);
     expect(legacyRunner).toHaveBeenCalledTimes(1);
     expect(events).toEqual(['content', 'end']);
+  });
+
+  it('forwards ordered typed legacy parts with session and turn metadata', async () => {
+    const legacyRunner = vi.fn(async options => {
+      options.sendPart?.({ partId: 'reasoning-1', kind: 'reasoning', lifecycle: 'start' });
+      options.sendPart?.({ partId: 'reasoning-1', kind: 'reasoning', lifecycle: 'delta', text: 'Thinking' });
+      options.sendPart?.({ partId: 'reasoning-1', kind: 'reasoning', lifecycle: 'end' });
+      options.sendPart?.({ partId: 'text-1', kind: 'text', lifecycle: 'delta', text: 'Answer' });
+      options.sendEnd(false);
+      return true;
+    });
+    const service = new EngineSessionService(
+      { startTurn: vi.fn(), abortTurn: vi.fn() },
+      { enabled: false, legacyRunner },
+    );
+    const events: EngineEvent[] = [];
+
+    await service.startTurn({
+      sessionId: 'conversation-legacy',
+      turnId: 'turn-legacy',
+      mode: 'plan',
+      provider: 'openai',
+      model: 'gpt-5',
+      apiKey: 'k',
+      prompt: 'hello',
+      history: [],
+      workspacePath: 'C:/repo',
+    }, event => events.push(event));
+
+    const parts = events.filter((event): event is Extract<EngineEvent, { type: 'part' }> => event.type === 'part');
+    expect(parts.map(event => event.part)).toEqual([
+      { partId: 'reasoning-1', kind: 'reasoning', lifecycle: 'start', ordinal: 0, conversationId: 'conversation-legacy', turnId: 'turn-legacy' },
+      { partId: 'reasoning-1', kind: 'reasoning', lifecycle: 'delta', text: 'Thinking', ordinal: 1, conversationId: 'conversation-legacy', turnId: 'turn-legacy' },
+      { partId: 'reasoning-1', kind: 'reasoning', lifecycle: 'end', ordinal: 2, conversationId: 'conversation-legacy', turnId: 'turn-legacy' },
+      { partId: 'text-1', kind: 'text', lifecycle: 'delta', text: 'Answer', ordinal: 3, conversationId: 'conversation-legacy', turnId: 'turn-legacy' },
+    ]);
+    expect(events.map(event => event.type)).toEqual(['part', 'part', 'part', 'part', 'end']);
+  });
+
+  it('opens and closes a no-op staged-change boundary for a legacy turn', async () => {
+    const changeSetService = {
+      beginTurn: vi.fn(async () => ({ id: 'changeset-1' })),
+      closeTurn: vi.fn(),
+    };
+    const service = new EngineSessionService(
+      { startTurn: vi.fn(), abortTurn: vi.fn() },
+      {
+        enabled: false,
+        changeSetService,
+        legacyRunner: async options => {
+          options.sendEnd(false);
+          return true;
+        },
+      },
+    );
+
+    await service.startTurn({
+      sessionId: 'conversation-1',
+      turnId: 'turn-1',
+      mode: 'build',
+      provider: 'openai',
+      model: 'gpt-5',
+      apiKey: 'k',
+      prompt: 'hello',
+      history: [],
+      workspacePath: 'C:/workspace',
+    }, () => {});
+
+    expect(changeSetService.beginTurn).toHaveBeenCalledWith({
+      turnId: 'turn-1', conversationId: 'conversation-1', workspacePath: 'C:/workspace',
+    });
+    expect(changeSetService.closeTurn).toHaveBeenCalledWith('turn-1');
   });
 
   it('emits inline permission request/result events and resolves grant', async () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -7,10 +7,98 @@ import {
   normalizeQuotes,
   executeTool,
   assertPathContained,
-  getToolsForMode
+  getToolsForMode,
+  budgetRequestComponents,
+  runAgentLoop,
 } from './agentRunner';
+import { applyModelEffort } from './agentRunner';
+import { lspManager } from './lspManager';
+import { CheckpointJournal, WorkspaceChangeSetService } from './changes/WorkspaceChangeSetService';
 
 describe('agentRunner - code editing tools', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  describe('model effort payloads', () => {
+    it('omits effort for unsupported exact models', () => {
+      expect(applyModelEffort({ model: 'gpt-4o' }, 'openai', 'gpt-4o', 'high')).toEqual({ model: 'gpt-4o' });
+    });
+
+    it('compiles supported provider payloads only for their registered exact models', () => {
+      expect(applyModelEffort({}, 'openai', 'gpt-5', 'high')).toEqual({ reasoning_effort: 'high' });
+      expect(applyModelEffort({}, 'anthropic', 'claude-opus-4-6', 'max')).toEqual({ output_config: { effort: 'max' } });
+      expect(applyModelEffort({}, 'anthropic', 'claude-sonnet-4-6', 'max')).toEqual({});
+    });
+  });
+
+  describe('request context budgeting', () => {
+    it('budgets system, schemas, prompt, context, history, and iterative tool results', () => {
+      const result = budgetRequestComponents({
+        provider: 'unknown',
+        model: 'unknown',
+        systemPrompt: 'system '.repeat(2_000),
+        tools: [{ name: 'tool', description: 'schema '.repeat(2_000), parameters: { type: 'object', properties: {} } }],
+        prompt: 'prompt '.repeat(2_000),
+        context: `header\n--- ARCHIVO: first ---\n${'context '.repeat(4_000)}`,
+        contextSource: 'explicit',
+        history: [{ role: 'user', content: 'history '.repeat(4_000) }, {
+          role: 'user', content: 'tool results', tool_results: [{ tool_use_id: 'call-1', name: 'read_file', content: 'result '.repeat(5_000) }],
+        }],
+      });
+
+      expect(result.warning).toMatchObject({ omittedExplicitContext: true, omittedHistory: true, reason: 'input_budget' });
+      expect(result.history.length).toBeLessThan(2);
+    });
+  });
+
+  describe('provider stream completion', () => {
+    const responseFrom = (streamData: string) => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(streamData));
+        controller.close();
+      },
+    }));
+
+    const run = (response: Response) => {
+      const errors: string[] = [];
+      const ends: boolean[] = [];
+      const parts: Array<{ kind: string; lifecycle: string; text?: string }> = [];
+      vi.stubGlobal('fetch', vi.fn(async () => response));
+      return {
+        errors,
+        ends,
+        parts,
+        result: runAgentLoop({
+          provider: 'openai', model: 'gpt-4o', apiKey: 'test-key', prompt: 'Hello', contextText: null, history: [], image: null,
+          workspacePath: process.cwd(), signal: new AbortController().signal, sendChunk: vi.fn(), sendPart: part => parts.push(part),
+          sendError: message => errors.push(message), sendEnd: aborted => ends.push(Boolean(aborted)), customTools: [],
+        }),
+      };
+    };
+
+    it('fails role-only finish and DONE streams as an explicit failed turn', async () => {
+      const turn = run(responseFrom('data: {"choices":[{"delta":{"role":"assistant"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'));
+
+      await expect(turn.result).resolves.toBe(false);
+      expect(turn.errors).toEqual(['El proveedor terminó sin contenido de respuesta. Intente nuevamente.']);
+      expect(turn.ends).toEqual([]);
+    });
+
+    it('keeps normal content and reasoning-only streams successful', async () => {
+      const contentTurn = run(responseFrom('data: {"choices":[{"delta":{"content":"Normal response"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'));
+      await expect(contentTurn.result).resolves.toBe(true);
+      expect(contentTurn.errors).toEqual([]);
+      expect(contentTurn.ends).toEqual([false]);
+
+      const reasoningTurn = run(responseFrom('data: {"choices":[{"delta":{"reasoning_content":"Reasoning only"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'));
+      await expect(reasoningTurn.result).resolves.toBe(true);
+      expect(reasoningTurn.errors).toEqual([]);
+      expect(reasoningTurn.parts).toContainEqual(expect.objectContaining({ kind: 'reasoning', lifecycle: 'delta', text: 'Reasoning only' }));
+      expect(reasoningTurn.ends).toEqual([false]);
+    });
+  });
+
   describe('normalizeQuotes', () => {
     it('normalizes curly quotes to straight quotes', () => {
       const input = '“hello” and ‘world’';
@@ -175,6 +263,44 @@ describe('agentRunner - code editing tools', () => {
   });
 
   describe('executeTool integration', () => {
+    it('captures multi-file writes and reads them back through the staged overlay', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'spigot-staged-agent-'));
+      const appData = path.join(tempDir, 'app-data');
+      const changes = new WorkspaceChangeSetService(new CheckpointJournal(appData));
+      const set = await changes.beginTurn({ turnId: 'turn-1', conversationId: 'conversation-1', workspacePath: tempDir });
+      const context = { changeSetService: changes, changeSetId: set.id, toolCallId: 'tool-1' };
+
+      await executeTool('write_file', { filePath: 'a.txt', content: 'A' }, tempDir, 'build', context);
+      await executeTool('write_file', { filePath: 'b.txt', content: 'B' }, tempDir, 'build', context);
+      expect(await executeTool('read_file', { filePath: 'a.txt' }, tempDir, 'build', context)).toBe('A');
+      await expect(fs.access(path.join(tempDir, 'a.txt'))).rejects.toThrow();
+      expect(changes.summary(set.id).entries.map(entry => entry.relativePath)).toEqual(['a.txt', 'b.txt']);
+      await fs.rm(tempDir, { recursive: true, force: true });
+    });
+
+    it('feeds bounded post-write LSP diagnostics through the tool result and event', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'spigot-lsp-agent-'));
+      const events: any[] = [];
+      const connection: any = {
+        handler: undefined,
+        sendNotification(_method: string, params: any) {
+          const document = params.textDocument;
+          if (document?.version) {
+            queueMicrotask(() => this.handler?.({ uri: document.uri, version: document.version, diagnostics: [{ severity: 1, message: 'post-write error', range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } } }] }));
+          }
+        },
+        sendRequest: () => Promise.resolve([]),
+        onNotification(_method: string, handler: any) { this.handler = handler; },
+        listen() {}, dispose() {},
+      };
+      lspManager.addSessionForTesting(tempDir, 'typescript', connection);
+      const result = await executeTool('write_file', { filePath: 'sample.ts', content: 'bad' }, tempDir, 'build', { turnId: 'turn-1', onEvent: (event) => events.push(event) });
+
+      expect(result).toContain('LSP_POST_WRITE_DIAGNOSTICS:{"status":"ok"');
+      expect(events).toContainEqual(expect.objectContaining({ name: 'lsp_post_write_diagnostics', data: expect.objectContaining({ status: 'ok' }) }));
+      await fs.rm(tempDir, { recursive: true, force: true });
+    });
+
     it('executes edit_file tool on real temp file', async () => {
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'spigot-test-'));
       const testFile = path.join(tempDir, 'sample.ts');

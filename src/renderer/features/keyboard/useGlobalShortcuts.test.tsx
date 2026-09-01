@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { useGlobalShortcuts } from './useGlobalShortcuts';
+import { useSystemDialogStore } from '../../components/ui/systemDialogStore';
 
 const mockSaveActiveFile = vi.fn();
 const mockSelectWorkspace = vi.fn();
@@ -50,17 +51,17 @@ describe('useGlobalShortcuts', () => {
     expect(mockSelectWorkspace).toHaveBeenCalledOnce();
   });
 
-  it('creates a new file with Ctrl+N when a workspace is open', () => {
-    vi.spyOn(window, 'prompt').mockReturnValue('feature.ts');
+  it('creates a new file with Ctrl+N when a workspace is open', async () => {
+    vi.spyOn(useSystemDialogStore.getState(), 'prompt').mockResolvedValue('feature.ts');
     render(<ShortcutHarness />);
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', ctrlKey: true }));
 
-    expect(mockCreateItem).toHaveBeenCalledWith('feature.ts', 'file');
+    await vi.waitFor(() => expect(mockCreateItem).toHaveBeenCalledWith('feature.ts', 'file'));
   });
 
   it('does not steal Ctrl+N from editable fields', () => {
-    vi.spyOn(window, 'prompt').mockReturnValue('feature.ts');
+    vi.spyOn(useSystemDialogStore.getState(), 'prompt').mockResolvedValue('feature.ts');
     render(<ShortcutHarness />);
 
     const input = document.createElement('input');

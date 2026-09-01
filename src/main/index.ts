@@ -1,15 +1,19 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, safeStorage } from 'electron';
 import { autoUpdater } from 'electron-updater';
-import { join, relative } from 'path';
+import { join, relative, resolve } from 'path';
 import { promises as fsPromises, watch, FSWatcher, existsSync } from 'fs';
 import { exec, execFile } from 'child_process';
 import { SshSessionConfig, terminalManager } from './terminal';
 import { lspManager } from './lspManager';
+import { semanticCatalogService } from './SemanticCatalogService';
 import { runAgentLoop } from './agentRunner';
 import { isSpigotChatsEngineEnabled } from './engine/featureGate';
-import { SpigotChatsEngineAdapter } from './engine/SpigotChatsEngineAdapter';
+import { createE2ETypedStreamRuntime, SpigotChatsEngineAdapter } from './engine/SpigotChatsEngineAdapter';
 import { EngineSessionService } from './engine/EngineSessionService';
 import { mapEngineEventToIpc } from './engine/types';
+import { CheckpointJournal, WorkspaceChangeSetService } from './changes/WorkspaceChangeSetService';
+import { createModelConfiguration } from '../shared/modelConfiguration';
+import { createChatLogger } from '../shared/chatLogger';
 
 // Set App User Model ID for Windows Taskbar icon grouping and display
 if (process.platform === 'win32') {
@@ -18,6 +22,7 @@ if (process.platform === 'win32') {
 
 let mainWindow: BrowserWindow | null = null;
 const workspaceWatchers = new Map<number, FSWatcher>();
+const chatLog = createChatLogger();
 
 // Must be registered before Electron is ready; otherwise DevTools may still call
 // the unsupported Autofill protocol and print noisy console errors.
@@ -119,6 +124,12 @@ function createWindow() {
     mainWindow.setIcon(windowIcon);
   }
 
+  (mainWindow.webContents as unknown as { on(event: 'console-message', listener: (details: { level: 'debug' | 'info' | 'warning' | 'error'; message: string; lineNumber: number; sourceId: string }) => void): void }).on('console-message', (details) => {
+    if (typeof details.message !== 'string' || !details.message.startsWith('[chat]')) return;
+    const level = details.level === 'warning' ? 'warn' : details.level;
+    console[level](`[renderer] ${details.message}`, { lineNumber: details.lineNumber, hasSource: Boolean(details.sourceId) });
+  });
+
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
     mainWindow?.maximize();
@@ -134,9 +145,10 @@ function createWindow() {
     mainWindow.loadFile(join(__dirname, '../../dist/index.html'));
   }
 
-mainWindow.on('closed', () => {
+ mainWindow.on('closed', () => {
     terminalManager.clearAll();
     lspManager.shutdownAll();
+    if (cachedWorkspacePath) semanticCatalogService.clearWorkspace(cachedWorkspacePath);
     mainWindow = null;
   });
 }
@@ -325,6 +337,7 @@ ipcMain.handle('fs:read-dir', async (_event, dirPath: string): Promise<FileNode[
   }
 
   const tree = await buildTree(dirPath);
+  if (cachedWorkspacePath && cachedWorkspacePath !== dirPath) semanticCatalogService.clearWorkspace(cachedWorkspacePath);
   cachedWorkspacePath = dirPath;
   cachedTree = tree;
   return tree;
@@ -355,6 +368,7 @@ ipcMain.handle('fs:write-file', async (_event, filePath: string, content: string
   try {
     cachedTree = null; // Invalidate cached tree on write
     await fsPromises.writeFile(filePath, content, 'utf-8');
+    if (cachedWorkspacePath) semanticCatalogService.invalidate(cachedWorkspacePath, filePath);
     return true;
   } catch (err: any) {
     console.error(`Error writing file ${filePath}:`, err);
@@ -369,6 +383,7 @@ ipcMain.handle('fs:create-item', async (_event, itemPath: string, type: 'file' |
       await fsPromises.mkdir(itemPath, { recursive: true });
     } else {
       await fsPromises.writeFile(itemPath, '', 'utf-8');
+      if (cachedWorkspacePath) semanticCatalogService.invalidate(cachedWorkspacePath, itemPath);
     }
     return true;
   } catch (err: any) {
@@ -385,6 +400,7 @@ ipcMain.handle('fs:delete-item', async (_event, itemPath: string) => {
       await fsPromises.rm(itemPath, { recursive: true, force: true });
     } else {
       await fsPromises.unlink(itemPath);
+      if (cachedWorkspacePath) semanticCatalogService.invalidate(cachedWorkspacePath, itemPath);
     }
     return true;
   } catch (err: any) {
@@ -403,6 +419,7 @@ ipcMain.handle('fs:watch-workspace', async (event, workspacePath: string) => {
       { recursive: process.platform === 'win32' },
       (_eventType, filename) => {
         cachedTree = null; // Invalidate cached tree on watch change event
+        if (filename) semanticCatalogService.invalidate(workspacePath, filename.toString());
         event.sender.send('workspace:changed', filename?.toString() ?? null);
       },
     );
@@ -424,20 +441,28 @@ ipcMain.handle('fs:unwatch-workspace', async (event) => {
   const webContentsId = event.sender.id;
   workspaceWatchers.get(webContentsId)?.close();
   workspaceWatchers.delete(webContentsId);
+  if (cachedWorkspacePath) semanticCatalogService.clearWorkspace(cachedWorkspacePath);
   return true;
 });
 
 ipcMain.handle('lsp:open-document', async (_event, args) => {
   if (!mainWindow) return false;
+  semanticCatalogService.invalidate(args.workspacePath, args.document.uri);
   return lspManager.openDocument(mainWindow, args.workspacePath, args.document);
 });
 
 ipcMain.handle('lsp:change-document', async (_event, args) => {
+  semanticCatalogService.invalidate(args.workspacePath, args.document.uri);
   return lspManager.changeDocument(args.workspacePath, args.languageId, args.document);
 });
 
 ipcMain.handle('lsp:save-document', async (_event, args) => {
+  semanticCatalogService.invalidate(args.workspacePath, args.uri);
   return lspManager.saveDocument(args.workspacePath, args.languageId, args.uri, args.text);
+});
+
+ipcMain.handle('semantic:retrieve', async (_event, args: { workspacePath: string; query: string; explicitPaths?: string[] }) => {
+  return semanticCatalogService.retrieve(args);
 });
 
 ipcMain.handle('lsp:completion', async (_event, args) => {
@@ -503,8 +528,7 @@ async function writeStore(data: Record<string, any>): Promise<void> {
   }
 }
 
-// 1. Storage Handlers (electron-store simulation with safeStorage encryption)
-ipcMain.handle('store:get-keys', async () => {
+async function getDecryptedKeys(): Promise<Record<string, string>> {
   const data = await readStore();
   const result: Record<string, string> = {};
   const canDecrypt = safeStorage?.isEncryptionAvailable?.();
@@ -543,6 +567,12 @@ ipcMain.handle('store:get-keys', async () => {
   }
 
   return result;
+}
+
+// 1. Storage Handlers (electron-store simulation with safeStorage encryption)
+ipcMain.handle('store:get-keys', async () => {
+  if (process.env.SPIGOT_E2E_TYPED_STREAM === '1') return { openai: 'e2e-fixture-key' };
+  return getDecryptedKeys();
 });
 
 ipcMain.handle('store:set-key', async (_event, provider: string, key: string, authType?: 'api' | 'oauth') => {
@@ -581,6 +611,18 @@ ipcMain.handle('store:set-selected-model', async (_event, provider: string, mode
   const data = await readStore();
   if (!data.selectedModels) data.selectedModels = {};
   data.selectedModels[provider] = model;
+  await writeStore(data);
+  return true;
+});
+
+ipcMain.handle('store:get-model-configuration', async () => {
+  const data = await readStore();
+  return createModelConfiguration(data.modelConfiguration, data.selectedModels || {});
+});
+
+ipcMain.handle('store:set-model-configuration', async (_event, configuration: unknown) => {
+  const data = await readStore();
+  data.modelConfiguration = createModelConfiguration(configuration, data.selectedModels || {});
   await writeStore(data);
   return true;
 });
@@ -692,6 +734,7 @@ ipcMain.handle('store:set-chat-history', async (_event, chatHistory: any[], work
 
 // 2. Fetch Models Dynamically from Provider endpoints
 ipcMain.handle('ai:fetch-models', async (_event, provider: string, apiKey: string) => {
+  if (process.env.SPIGOT_E2E_TYPED_STREAM === '1') return ['e2e-typed-model'];
   if (!apiKey || !apiKey.trim()) {
     return [];
   }
@@ -751,48 +794,137 @@ ipcMain.handle('ai:fetch-models', async (_event, provider: string, apiKey: strin
 });
 
 // 3. Unified Stream Chat SSE Handler
-let activeAbortController: AbortController | null = null;
-const engineSessionService = new EngineSessionService(new SpigotChatsEngineAdapter(), {
-  enabled: isSpigotChatsEngineEnabled(process.env.SPIGOT_CHATS_ENGINE),
+const workspaceChangeSetService = new WorkspaceChangeSetService(new CheckpointJournal(app.getPath('userData')));
+const isE2ETypedStreamFixture = process.env.SPIGOT_E2E_TYPED_STREAM === '1';
+const engineSessionService = new EngineSessionService(new SpigotChatsEngineAdapter({
+  ...(isE2ETypedStreamFixture ? { runtime: createE2ETypedStreamRuntime() } : {}),
+}), {
+  enabled: isE2ETypedStreamFixture || isSpigotChatsEngineEnabled(process.env.SPIGOT_CHATS_ENGINE),
   legacyRunner: runAgentLoop,
+  changeSetService: workspaceChangeSetService,
+});
+
+function stagedChangeSet(changeSetId: unknown) {
+  if (typeof changeSetId !== 'string' || !changeSetId) throw new Error('A change-set identity is required.');
+  return workspaceChangeSetService.get(changeSetId);
+}
+
+function dirtyRelativePaths(changeSetId: string, dirtyPaths: unknown): string[] {
+  if (!Array.isArray(dirtyPaths) || !dirtyPaths.every(path => typeof path === 'string')) {
+    throw new Error('Dirty buffer identities must be a string array.');
+  }
+
+  const workspace = stagedChangeSet(changeSetId).workspace.canonicalPath;
+  return dirtyPaths.map(candidate => {
+    const target = resolve(workspace, candidate);
+    const rel = relative(workspace, target).replace(/\\/g, '/');
+    if (!rel || rel === '..' || rel.startsWith('../')) throw new Error('Dirty buffer path is outside the staged workspace.');
+    return rel;
+  });
+}
+
+async function activeWorkspacePath(): Promise<string> {
+  const storeData = await readStore();
+  const workspacePath = storeData.lastWorkspacePath;
+  if (typeof workspacePath !== 'string' || !workspacePath.trim()) throw new Error('No active workspace is available for rollback.');
+  return workspacePath;
+}
+
+ipcMain.handle('changes:summary', (_event, changeSetId: unknown) => {
+  stagedChangeSet(changeSetId);
+  return workspaceChangeSetService.summary(changeSetId as string);
+});
+
+ipcMain.handle('changes:entry', (_event, args: { changeSetId?: unknown; relativePath?: unknown }) => {
+  if (!args || typeof args.changeSetId !== 'string' || typeof args.relativePath !== 'string') throw new Error('A staged file identity is required.');
+  const entry = workspaceChangeSetService.entry(args.changeSetId, args.relativePath);
+  return { relativePath: entry.relativePath, operation: entry.operation, before: entry.before.content, after: entry.after.content };
+});
+
+ipcMain.handle('changes:accept', async (_event, args: { changeSetId?: unknown; dirtyPaths?: unknown }) => {
+  if (!args || typeof args.changeSetId !== 'string') throw new Error('A change-set identity is required.');
+  const dirty = dirtyRelativePaths(args.changeSetId, args.dirtyPaths);
+  await workspaceChangeSetService.validateDirtyBuffers(args.changeSetId, dirty);
+  const checkpoint = await workspaceChangeSetService.apply(args.changeSetId);
+  chatLog('info', { conversationId: checkpoint.changeSet.conversationId, turnId: checkpoint.changeSet.turnId }, 'main.changes', 'changeset.accepted', { entryCount: checkpoint.changeSet.entries.length });
+  cachedTree = null;
+  return { checkpointId: checkpoint.id, summary: workspaceChangeSetService.summary(args.changeSetId) };
+});
+
+ipcMain.handle('changes:reject', (_event, changeSetId: unknown) => {
+  const changeSet = stagedChangeSet(changeSetId);
+  const summary = workspaceChangeSetService.reject(changeSetId as string);
+  chatLog('info', { conversationId: changeSet.conversationId, turnId: changeSet.turnId }, 'main.changes', 'changeset.rejected', { entryCount: summary.entries.length });
+  return summary;
+});
+
+ipcMain.handle('changes:list-rollbacks', async (_event, query?: { changeSetId?: unknown; turnId?: unknown; conversationId?: unknown }) => {
+  if (query && Object.values(query).some(value => value !== undefined && typeof value !== 'string')) throw new Error('Rollback lookup identities must be strings.');
+  const rollbackQuery = query ? {
+    changeSetId: query.changeSetId as string | undefined,
+    turnId: query.turnId as string | undefined,
+    conversationId: query.conversationId as string | undefined,
+  } : {};
+  return workspaceChangeSetService.listRollbackRecords(await activeWorkspacePath(), rollbackQuery);
+});
+
+ipcMain.handle('changes:preview-rollback', async (_event, checkpointId: unknown) => {
+  if (typeof checkpointId !== 'string' || !checkpointId) throw new Error('A checkpoint identity is required.');
+  return workspaceChangeSetService.previewRollback(await activeWorkspacePath(), checkpointId);
+});
+
+ipcMain.handle('changes:rollback', async (_event, checkpointId: unknown) => {
+  if (typeof checkpointId !== 'string' || !checkpointId) throw new Error('A checkpoint identity is required.');
+  const rolledBack = await workspaceChangeSetService.rollback(await activeWorkspacePath(), checkpointId);
+  chatLog('info', { conversationId: rolledBack.conversationId, turnId: rolledBack.turnId }, 'main.changes', 'changeset.rolled_back', { entryCount: rolledBack.entries.length });
+  cachedTree = null;
+  return { summary: workspaceChangeSetService.summary(rolledBack.id), checkpointId };
 });
 
 ipcMain.on('ai:abort-chat', (_event, args?: { conversationId?: string; turnId?: string }) => {
-  if (activeAbortController) {
-    activeAbortController.abort();
-    activeAbortController = null;
-  }
-
   engineSessionService.abortActiveTurn(args?.conversationId, args?.turnId);
 });
 
 ipcMain.handle('ai:stream-chat', async (
   _event, 
-  { conversationId, turnId, mode, provider, model, apiKey, prompt, contextText, history, image }: {
+  { conversationId, turnId, mode, provider, model, effort, apiKey, prompt, contextText, contextSource, history, image }: {
     conversationId?: string;
     turnId?: string;
     mode?: 'orchestrator' | 'build' | 'plan' | 'review';
     provider: string;
     model: string;
+    effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
     apiKey: string;
     prompt: string;
     contextText?: string | null;
+    contextSource?: 'default' | 'explicit';
     history: any[];
     image?: string | null;
   }
 ): Promise<boolean> => {
-  if (activeAbortController) {
-    activeAbortController.abort();
-  }
-  activeAbortController = new AbortController();
-
   const activeConvId = conversationId || 'default';
   const effectiveMode = mode || 'orchestrator';
+  const startedAt = Date.now();
+  const logContext = { conversationId: activeConvId, turnId, mode: effectiveMode, providerModelId: `${provider}/${model}`, startedAt };
+  chatLog('info', logContext, 'main.ipc', 'turn.accepted', { historyCount: Array.isArray(history) ? history.length : 0, hasImage: Boolean(image), contextBytes: typeof contextText === 'string' ? Buffer.byteLength(contextText) : 0 });
 
   try {
     const storeData = await readStore();
     const workspacePath = storeData.lastWorkspacePath || app.getPath('documents');
+    const modelConfig = createModelConfiguration(storeData.modelConfiguration, storeData.selectedModels || {});
 
+    const decryptedKeys = await getDecryptedKeys();
+    const providersMap: Record<string, { apiKey: string }> = {};
+    for (const [p, k] of Object.entries(decryptedKeys)) {
+      if (k && typeof k === 'string' && k.trim()) {
+        providersMap[p] = { apiKey: k.trim() };
+      }
+    }
+    if (provider && apiKey) {
+      providersMap[provider] = { apiKey: apiKey.trim() };
+    }
+
+    chatLog('info', logContext, 'main.engine', 'provider.dispatch.started');
     const success = await engineSessionService.startTurn(
       {
         sessionId: activeConvId,
@@ -800,40 +932,57 @@ ipcMain.handle('ai:stream-chat', async (
         mode: effectiveMode,
         provider,
         model,
+        effort,
         apiKey,
         prompt,
         contextText,
+        contextSource,
         history,
         image,
         workspacePath,
+        modelConfig,
+        providers: providersMap,
       },
       event => {
+        if (event.type === 'context:bounded') chatLog('info', logContext, 'main.engine', 'context.result', { keptCount: event.data.keptItems, removedCount: event.data.removedItems, omittedExplicitContext: event.data.omittedExplicitContext, omittedHistory: event.data.omittedHistory });
+        if (event.type === 'part' && event.part.lifecycle !== 'delta') chatLog('info', logContext, 'main.stream', `part.${event.part.lifecycle}`, { ordinal: event.part.ordinal, textBytes: event.part.text?.length ?? 0 });
+        if (event.type === 'tool') chatLog(event.status === 'end' ? 'info' : 'info', logContext, 'main.tool', `tool.${event.status}`, { toolIdPresent: Boolean(event.id) });
+        if (event.type === 'end') chatLog('info', logContext, 'main.stream', event.aborted ? 'terminal.cancelled' : 'terminal.completed');
+        if (event.type === 'error') chatLog('error', logContext, 'main.stream', 'terminal.error');
         const mapped = mapEngineEventToIpc(event);
         if (mapped.channel) {
           mainWindow?.webContents.send(mapped.channel, {
             conversationId: activeConvId,
             turnId: event.turnId,
             ...(mapped.channel === 'ai:stream-chunk' ? { chunk: mapped.payload } : {}),
+            ...(mapped.channel === 'ai:stream-part' ? { part: mapped.payload } : {}),
             ...(mapped.channel === 'ai:stream-error' ? { error: mapped.payload } : {}),
             ...(mapped.channel === 'ai:stream-end' ? { aborted: mapped.payload } : {}),
+            ...(mapped.channel === 'ai:stream-tool' ? { tool: mapped.payload } : {}),
+            ...(mapped.channel === 'ai:context-bounded' ? { warning: mapped.payload } : {}),
           });
-        }
-
-        if (event.type === 'end' || event.type === 'error') {
-          activeAbortController = null;
         }
       },
     );
 
+    chatLog('info', logContext, 'main.engine', 'provider.dispatch.completed', { success });
+
+    const changeSet = workspaceChangeSetService.findByTurn(turnId || '');
+    if (changeSet?.entries.length) {
+      mainWindow?.webContents.send('ai:changeset-ready', { conversationId: activeConvId, turnId: changeSet.turnId, changeSet });
+    }
+
     return success;
   } catch (err: any) {
     if (err.name === 'AbortError') {
+      chatLog('warn', logContext, 'main.stream', 'terminal.cancelled');
       mainWindow?.webContents.send('ai:stream-end', {
         conversationId: activeConvId,
         turnId,
         aborted: true,
       });
     } else {
+      chatLog('error', logContext, 'main.stream', 'terminal.error');
       console.error('Error during AI agent execution:', err);
       mainWindow?.webContents.send('ai:stream-error', {
         conversationId: activeConvId,
@@ -841,7 +990,6 @@ ipcMain.handle('ai:stream-chat', async (
         error: err.message || 'Error desconocido.',
       });
     }
-    activeAbortController = null;
     return false;
   }
 });

@@ -6,6 +6,7 @@ import {
 import { useWorkspaceStore, FileNode } from '../../store/workspaceStore';
 import { useDiagnosticsStore } from '../../store/diagnosticsStore';
 import { FileIcon } from './FileIcon';
+import { useSystemDialogStore } from '../../components/ui/systemDialogStore';
 
 interface FileTreeItemProps {
   node: FileNode;
@@ -249,6 +250,7 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
 };
 
 export const FileTree: React.FC = () => {
+  const confirmDialog = useSystemDialogStore(state => state.confirm);
   const {
     workspacePath,
     fileTree,
@@ -347,7 +349,7 @@ export const FileTree: React.FC = () => {
     if (!explorerSelectedPath) return;
     const parts = explorerSelectedPath.split(/[/\\]/);
     const itemName = parts[parts.length - 1];
-    if (window.confirm(`¿Estás seguro de que deseas eliminar "${itemName}"?`)) {
+    if (await confirmDialog('Eliminar elemento', `¿Estás seguro de que deseas eliminar "${itemName}"?`, true)) {
       await deleteItem(explorerSelectedPath);
       setExplorerSelectedPath(null);
     }

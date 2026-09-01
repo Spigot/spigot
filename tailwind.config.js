@@ -28,6 +28,8 @@ module.exports = {
           active: 'var(--editor-active)',
           tabActive: 'var(--editor-tabActive)',
           tabInactive: 'var(--editor-tabInactive)',
+          success: 'var(--editor-success)',
+          error: 'var(--editor-error)',
         }
       },
       fontFamily: {

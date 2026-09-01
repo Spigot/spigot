@@ -35,7 +35,7 @@ describe('SpigotChatsEngineAdapter', () => {
     );
 
     expect(success).toBe(true);
-    expect(events).toEqual(['content', 'tool', 'bridge', 'tool', 'end']);
+    expect(events).toEqual(['content', 'part', 'tool', 'bridge', 'tool', 'end']);
   });
 
   it('ignores runtime events after terminal event', async () => {
@@ -67,5 +67,26 @@ describe('SpigotChatsEngineAdapter', () => {
     );
 
     expect(events).toEqual(['end']);
+  });
+
+  it('forwards the engine mode to the legacy runner', async () => {
+    let receivedMode: string | undefined;
+    const adapter = new SpigotChatsEngineAdapter({
+      legacyRunner: async (options) => {
+        receivedMode = options.mode;
+        options.sendEnd();
+        return true;
+      },
+    });
+
+    await adapter.startTurn(
+      {
+        turnId: 'turn-3', sessionId: 'session-3', mode: 'review', provider: 'openai', model: 'gpt-5',
+        apiKey: 'k', prompt: 'hi', history: [], workspacePath: 'C:/repo', signal: new AbortController().signal,
+      },
+      () => undefined,
+    );
+
+    expect(receivedMode).toBe('review');
   });
 });

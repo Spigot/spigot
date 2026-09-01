@@ -7,8 +7,10 @@ import {
   Sparkles, Keyboard, Check, Eye, EyeOff, ChevronDown, AlertCircle, LogIn
 } from 'lucide-react';
 import { ProviderIcon } from '../../components/ui/ProviderIcon';
+import { GentleRoleSettingsFields } from '../ai-panel/ModeModelSettings';
+import { GENTLE_ROLE_GROUPS, GENTLE_ROLE_LABELS } from '../../../shared/modelConfiguration';
 
-type SettingsCategory = 'appearance' | 'editor' | 'terminal' | 'git' | 'ai' | 'shortcuts';
+type SettingsCategory = 'appearance' | 'editor' | 'terminal' | 'git' | 'ai' | 'orchestrator' | 'shortcuts';
 
 const PROVIDERS = [
   { id: 'openai', name: 'OpenAI (GPT-4o, o1, o3-mini)' },
@@ -63,7 +65,7 @@ export const SettingsModal: React.FC = () => {
   const [authType, setAuthType] = useState<'api' | 'oauth'>('api');
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
-  const [keySavedStatus, setKeySavedStatus] = useState<string | null>(null);
+  const [keySavedStatus, setKeySavedStatus] = useState<{ message: string; tone: 'success' | 'error' } | null>(null);
 
   // Sync AI key and authType when selected provider changes
   useEffect(() => {
@@ -93,10 +95,10 @@ export const SettingsModal: React.FC = () => {
     e.preventDefault();
     try {
       await setApiKey(selectedProvider, apiKeyInput.trim(), authType);
-      setKeySavedStatus('Clave guardada con éxito');
+      setKeySavedStatus({ message: 'Clave guardada con éxito', tone: 'success' });
       setTimeout(() => setKeySavedStatus(null), 2500);
     } catch (err: any) {
-      setKeySavedStatus('Error al guardar clave');
+      setKeySavedStatus({ message: 'Error al guardar clave', tone: 'error' });
     }
   };
 
@@ -105,10 +107,10 @@ export const SettingsModal: React.FC = () => {
       const generatedToken = apiKeyInput.trim() || `oauth_${selectedProvider}_${Date.now().toString(36)}`;
       setApiKeyInput(generatedToken);
       await setApiKey(selectedProvider, generatedToken, 'oauth');
-      setKeySavedStatus('¡Sesión OAuth conectada exitosamente!');
+      setKeySavedStatus({ message: '¡Sesión OAuth conectada exitosamente!', tone: 'success' });
       setTimeout(() => setKeySavedStatus(null), 2500);
     } catch (err: any) {
-      setKeySavedStatus('Error al conectar por OAuth');
+      setKeySavedStatus({ message: 'Error al conectar por OAuth', tone: 'error' });
     }
   };
 
@@ -130,7 +132,7 @@ export const SettingsModal: React.FC = () => {
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm app-non-draggable p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-editor-bg/80 backdrop-blur-sm app-non-draggable p-4"
       onClick={(e) => {
         if (e.target === e.currentTarget) setSettingsModalOpen(false);
       }}
@@ -202,7 +204,7 @@ export const SettingsModal: React.FC = () => {
                   : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover font-medium'
               }`}
             >
-              <Code className="w-4 h-4 shrink-0 text-blue-400" />
+              <Code className="w-4 h-4 shrink-0 text-editor-accent" />
               <span>Editor de Código</span>
             </button>
 
@@ -214,7 +216,7 @@ export const SettingsModal: React.FC = () => {
                   : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover font-medium'
               }`}
             >
-              <Terminal className="w-4 h-4 shrink-0 text-emerald-400" />
+              <Terminal className="w-4 h-4 shrink-0 text-editor-accent" />
               <span>Terminal Integrada</span>
             </button>
 
@@ -226,7 +228,7 @@ export const SettingsModal: React.FC = () => {
                   : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover font-medium'
               }`}
             >
-              <GitBranch className="w-4 h-4 shrink-0 text-amber-400" />
+              <GitBranch className="w-4 h-4 shrink-0 text-editor-accent" />
               <span>Control de Versiones</span>
             </button>
 
@@ -238,8 +240,20 @@ export const SettingsModal: React.FC = () => {
                   : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover font-medium'
               }`}
             >
-              <ProviderIcon className="w-4 h-4 shrink-0 text-amber-500" />
+              <ProviderIcon className="w-4 h-4 shrink-0 text-editor-accent" />
               <span>Provider (IA)</span>
+            </button>
+
+            <button
+              onClick={() => { setActiveCategory('orchestrator'); setSearchQuery(''); }}
+              className={`flex items-center gap-3 px-3 py-2 rounded-md text-[12.5px] transition-all text-left ${
+                activeCategory === 'orchestrator' && !searchQuery
+                  ? 'bg-editor-active text-editor-text font-semibold border-l-2 border-editor-accent shadow-sm'
+                  : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover font-medium'
+              }`}
+            >
+              <Sparkles className="w-4 h-4 shrink-0 text-editor-accent" />
+              <span>Orchestrator</span>
             </button>
 
             <button
@@ -250,7 +264,7 @@ export const SettingsModal: React.FC = () => {
                   : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover font-medium'
               }`}
             >
-              <Keyboard className="w-4 h-4 shrink-0 text-zinc-400" />
+              <Keyboard className="w-4 h-4 shrink-0 text-editor-accent" />
               <span>Atajos de Teclado</span>
             </button>
           </div>
@@ -301,7 +315,7 @@ export const SettingsModal: React.FC = () => {
                     Tarjetas redondeadas con divisores sash de precisión inspirados en VS Code.
                   </p>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className="px-2.5 py-1 rounded bg-emerald-950/70 border border-emerald-500/50 text-emerald-400 text-[11px] font-bold">
+                    <span className="px-2.5 py-1 rounded bg-editor-hover border border-editor-accent text-editor-accent text-[11px] font-bold">
                       Habilitado
                     </span>
                   </div>
@@ -314,7 +328,7 @@ export const SettingsModal: React.FC = () => {
               <div className="flex flex-col gap-4">
                 <div className="border-b border-editor-border pb-2">
                   <h3 className="text-[14px] font-bold text-editor-text flex items-center gap-2">
-                    <Code className="w-4 h-4 text-blue-400" />
+                    <Code className="w-4 h-4 text-editor-accent" />
                     Editor de Código
                   </h3>
                   <p className="text-[12px] text-editor-textDark mt-1">
@@ -439,7 +453,7 @@ export const SettingsModal: React.FC = () => {
               <div className="flex flex-col gap-4">
                 <div className="border-b border-editor-border pb-2">
                   <h3 className="text-[14px] font-bold text-editor-text flex items-center gap-2">
-                    <Terminal className="w-4 h-4 text-emerald-400" />
+                    <Terminal className="w-4 h-4 text-editor-accent" />
                     Terminal Integrada
                   </h3>
                   <p className="text-[12px] text-editor-textDark mt-1">
@@ -490,7 +504,7 @@ export const SettingsModal: React.FC = () => {
               <div className="flex flex-col gap-4">
                 <div className="border-b border-editor-border pb-2">
                   <h3 className="text-[14px] font-bold text-editor-text flex items-center gap-2">
-                    <GitBranch className="w-4 h-4 text-amber-400" />
+                    <GitBranch className="w-4 h-4 text-editor-accent" />
                     Control de Versiones (Git)
                   </h3>
                   <p className="text-[12px] text-editor-textDark mt-1">
@@ -523,7 +537,7 @@ export const SettingsModal: React.FC = () => {
               <div className="flex flex-col gap-4">
                 <div className="border-b border-editor-border pb-2">
                   <h3 className="text-[14px] font-bold text-editor-text flex items-center gap-2">
-                    <ProviderIcon className="w-4 h-4 text-amber-500" />
+                    <ProviderIcon className="w-4 h-4 text-editor-accent" />
                     Provider & Modelos de Inteligencia Artificial
                   </h3>
                   <p className="text-[12px] text-editor-textDark mt-1">
@@ -562,7 +576,7 @@ export const SettingsModal: React.FC = () => {
                         onClick={() => setAuthType('api')}
                         className={`py-1.5 px-3 rounded-md font-medium transition-all ${
                           authType === 'api'
-                            ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
+                            ? 'bg-editor-active text-editor-text border border-editor-accent shadow-sm'
                             : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover'
                         }`}
                       >
@@ -573,7 +587,7 @@ export const SettingsModal: React.FC = () => {
                         onClick={() => setAuthType('oauth')}
                         className={`py-1.5 px-3 rounded-md font-medium transition-all ${
                           authType === 'oauth'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                            ? 'bg-editor-active text-editor-text border border-editor-accent shadow-sm'
                             : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover'
                         }`}
                       >
@@ -584,23 +598,23 @@ export const SettingsModal: React.FC = () => {
 
                   {/* OAuth Quick Connect Button */}
                   {authType === 'oauth' && (
-                    <div className="flex flex-col gap-2 p-3.5 rounded-lg bg-emerald-950/30 border border-emerald-500/30">
+                    <div className="flex flex-col gap-2 p-3.5 rounded-lg bg-editor-hover border border-editor-accent">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-emerald-300 flex items-center gap-1.5">
+                        <span className="text-xs font-semibold text-editor-text flex items-center gap-1.5">
                           <LogIn className="w-3.5 h-3.5" />
                           Conexión Automática OAuth 2.0
                         </span>
-                        <span className="text-[10px] bg-emerald-900/60 text-emerald-300 border border-emerald-700/60 px-2 py-0.5 rounded-full font-bold">
+                        <span className="text-[10px] bg-editor-active text-editor-accent border border-editor-border px-2 py-0.5 rounded-full font-bold">
                           Recomendado
                         </span>
                       </div>
-                      <p className="text-[11px] text-zinc-300 leading-relaxed">
+                      <p className="text-[11px] text-editor-textDark leading-relaxed">
                         Iniciá sesión para autorizar y conectar automáticamente tu cuenta de <strong>{PROVIDERS.find(p => p.id === selectedProvider)?.name}</strong>.
                       </p>
                       <button
                         type="button"
                         onClick={handleOAuthConnect}
-                        className="w-full py-2 px-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer mt-1"
+                        className="w-full py-2 px-3 rounded-md bg-editor-accent text-editor-bg text-xs font-bold flex items-center justify-center gap-2 transition-all hover:brightness-110 shadow-md cursor-pointer mt-1"
                       >
                         <LogIn className="w-4 h-4" />
                         <span>Iniciar sesión y Conectar</span>
@@ -612,7 +626,7 @@ export const SettingsModal: React.FC = () => {
                     <label className="text-[13px] font-semibold text-editor-text flex items-center justify-between">
                       <span>{authType === 'oauth' ? 'Token OAuth' : 'Clave de API (API Key)'}</span>
                       {providers[selectedProvider]?.key && (
-                        <span className="text-[11px] text-emerald-400 font-bold flex items-center gap-1">
+                        <span className="text-[11px] text-editor-success font-bold flex items-center gap-1">
                           <Check className="w-3.5 h-3.5" /> Conectada
                         </span>
                       )}
@@ -638,7 +652,7 @@ export const SettingsModal: React.FC = () => {
 
                   <div className="flex items-center justify-between pt-2">
                     {keySavedStatus ? (
-                      <span className="text-[12px] text-emerald-400 font-semibold">{keySavedStatus}</span>
+                      <span className={`text-[12px] font-semibold ${keySavedStatus.tone === 'success' ? 'text-editor-success' : 'text-editor-error'}`}>{keySavedStatus.message}</span>
                     ) : <span />}
                     <button
                       type="submit"
@@ -663,7 +677,7 @@ export const SettingsModal: React.FC = () => {
 
                   {Object.entries(providers).filter(([, d]) => Boolean(d.key && d.key.trim().length > 0)).length === 0 ? (
                     <div className="flex items-center gap-2 py-3 px-3 rounded-md bg-editor-bg border border-dashed border-editor-border text-[12px] text-editor-textDark">
-                      <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <AlertCircle className="w-4 h-4 text-editor-accent shrink-0" />
                       <span>No hay ninguna IA conectada todavía. Ingresá una clave para comenzar.</span>
                     </div>
                   ) : (
@@ -684,7 +698,7 @@ export const SettingsModal: React.FC = () => {
                               }`}
                             >
                               <div className="flex items-center gap-2.5">
-                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse" />
+                                <span className="w-2.5 h-2.5 rounded-full bg-editor-success animate-pulse" />
                                 <div className="flex flex-col">
                                   <span className="font-semibold text-editor-text text-[12.5px]">
                                     {provInfo?.name || id}
@@ -699,15 +713,15 @@ export const SettingsModal: React.FC = () => {
                               <div className="flex items-center gap-2">
                                 <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
                                   isOAuth
-                                    ? 'bg-emerald-950/60 text-emerald-300 border-emerald-700/60'
-                                    : 'bg-sky-950/60 text-sky-300 border-sky-700/60'
+                                    ? 'bg-editor-active text-editor-success border-editor-border'
+                                    : 'bg-editor-active text-editor-accent border-editor-border'
                                 }`}>
                                   {isOAuth ? '● Conectada por OAuth' : '● Conectada por API'}
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => handleDisconnectProvider(id)}
-                                  className="text-[11px] text-zinc-500 hover:text-red-400 px-2 py-0.5 rounded hover:bg-red-950/30 transition-colors"
+                                  className="text-[11px] text-editor-textDark hover:text-editor-error px-2 py-0.5 rounded hover:bg-editor-hover transition-colors"
                                 >
                                   Desconectar
                                 </button>
@@ -721,12 +735,69 @@ export const SettingsModal: React.FC = () => {
               </div>
             )}
 
-            {/* Category 6: Keyboard Shortcuts */}
+            {/* Category 6: Orchestrator */}
+            {(activeCategory === 'orchestrator' || searchQuery) && (
+              <div className="flex flex-col gap-4">
+                <div className="border-b border-editor-border pb-2">
+                  <h3 className="text-[14px] font-bold text-editor-text flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-editor-accent" />
+                    Orchestrator
+                  </h3>
+                  <p className="text-[12px] text-editor-textDark mt-1">
+                    Configurá el coordinador y cada rol verificado de Gentle AI.
+                  </p>
+                  <p className="mt-2 text-xs text-editor-textDark" role="note">
+                    El esfuerzo solo está disponible para combinaciones de proveedor y modelo con capacidad registrada.
+                  </p>
+                </div>
+
+                <section className="overflow-hidden rounded-lg border border-editor-border bg-editor-sidebar shadow-sm" aria-labelledby="orchestrator-model-heading">
+                  <div className="hidden grid-cols-[minmax(12rem,1.35fr)_minmax(12rem,1fr)_minmax(10rem,0.7fr)] gap-4 border-b border-editor-border bg-editor-active/50 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-editor-textDark sm:grid">
+                    <span>Rol</span>
+                    <span>Modelo</span>
+                    <span>Esfuerzo</span>
+                  </div>
+                    <div className="grid grid-cols-1 gap-3 px-4 py-3 sm:grid-cols-[minmax(12rem,1.35fr)_minmax(12rem,1fr)_minmax(10rem,0.7fr)] sm:items-start sm:gap-4">
+                      <div>
+                        <h4 id="orchestrator-model-heading" className="text-[13px] font-semibold text-editor-text">Orquestador de Gentle AI</h4>
+                      </div>
+                    <GentleRoleSettingsFields role="gentle-orchestrator" label="Orquestador de Gentle AI" compact />
+                  </div>
+                </section>
+                {GENTLE_ROLE_GROUPS.map((group) => (
+                  <details key={group.label} className="rounded-lg border border-editor-border bg-editor-sidebar shadow-sm">
+                    <summary className="cursor-pointer px-4 py-3 text-[13px] font-semibold text-editor-text focus:outline-none focus-visible:ring-1 focus-visible:ring-editor-accent">
+                      Roles de {group.label} ({group.roles.length})
+                    </summary>
+                    <div className="border-t border-editor-border">
+                      <div className="hidden grid-cols-[minmax(12rem,1.35fr)_minmax(12rem,1fr)_minmax(10rem,0.7fr)] gap-4 border-b border-editor-border bg-editor-active/50 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-editor-textDark sm:grid">
+                        <span>Rol</span>
+                        <span>Modelo</span>
+                        <span>Esfuerzo</span>
+                      </div>
+                      {group.roles.map((role) => {
+                        const label = GENTLE_ROLE_LABELS[role];
+                        return (
+                          <section key={role} className="grid grid-cols-1 gap-3 border-b border-editor-border px-4 py-3 last:border-b-0 sm:grid-cols-[minmax(12rem,1.35fr)_minmax(12rem,1fr)_minmax(10rem,0.7fr)] sm:items-start sm:gap-4" aria-labelledby={`${role}-heading`}>
+                            <div>
+                            <h5 id={`${role}-heading`} className="text-xs font-semibold text-editor-text">{label}</h5>
+                            </div>
+                            <GentleRoleSettingsFields role={role} label={label} compact />
+                          </section>
+                        );
+                      })}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            )}
+
+            {/* Category 7: Keyboard Shortcuts */}
             {(activeCategory === 'shortcuts' || searchQuery) && (
               <div className="flex flex-col gap-4">
                 <div className="border-b border-editor-border pb-2">
                   <h3 className="text-[14px] font-bold text-editor-text flex items-center gap-2">
-                    <Keyboard className="w-4 h-4 text-zinc-400" />
+                    <Keyboard className="w-4 h-4 text-editor-accent" />
                     Atajos de Teclado
                   </h3>
                   <p className="text-[12px] text-editor-textDark mt-1">

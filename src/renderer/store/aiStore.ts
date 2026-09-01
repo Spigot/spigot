@@ -1,12 +1,52 @@
 import { create } from 'zustand';
 import { useWorkspaceStore } from './workspaceStore';
+import type { ChangeSetReview } from '../features/chat/ChangeSetReviewCard';
+import type { AssistantPart } from '../../main/engine/types';
+import type { ContextBoundEvent } from '../../shared/contextBudget';
+import { createChatLogger, type ChatLogContext } from '../../shared/chatLogger';
+import {
+  createModelConfiguration,
+  getAssignmentEffort,
+  resolveModeAssignment,
+  resolveRoleAssignment,
+  setModeAssignment,
+  setRoleAssignment,
+  setRoleEffort,
+  type ChatMode,
+  type GentleRoleId,
+  type ModelAssignment,
+  type ModelConfiguration,
+  type ModelEffort,
+} from '../../shared/modelConfiguration';
+
+export interface ToolCallState {
+  id: string;
+  name: string;
+  status: 'start' | 'progress' | 'end';
+  data?: any;
+  timestamp: number;
+}
 
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  parts?: PersistedAssistantPart[];
   image?: string; // Base64 data URL
   timestamp: number;
+  tools?: ToolCallState[];
+  changeSet?: ChangeSetReview;
+  contextWarning?: ContextBoundEvent;
+}
+
+export type PersistedAssistantPart = Pick<AssistantPart, 'partId' | 'kind' | 'ordinal'> & { text: string; terminal?: 'completed' | 'cancelled' | 'error' };
+
+export function assistantPartsFromLegacy(content: string): PersistedAssistantPart[] {
+  return content === '' ? [] : [{ partId: 'legacy-text-0', kind: 'text', ordinal: 0, text: content }];
+}
+
+export function messageParts(message: Pick<ChatMessage, 'content' | 'parts'>): PersistedAssistantPart[] {
+  return message.parts ?? assistantPartsFromLegacy(message.content);
 }
 
 export interface ChatConversation {
@@ -27,8 +67,13 @@ export interface ActiveStreamState {
   conversationId: string;
   turnId: string;
   text: string;
+  parts?: PersistedAssistantPart[];
+  sawTypedParts?: boolean;
   isGenerating: boolean;
   error?: string | null;
+  tools?: ToolCallState[];
+  changeSet?: ChangeSetReview;
+  contextWarning?: ContextBoundEvent;
 }
 
 interface AIState {
@@ -41,12 +86,16 @@ interface AIState {
   incomingStreamText: string;
   error: string | null;
   activeStreams: Record<string, ActiveStreamState>;
+  modelConfiguration: ModelConfiguration;
 
   initializeStore: () => Promise<void>;
   setApiKey: (provider: string, key: string, authType?: 'api' | 'oauth') => Promise<void>;
   selectModel: (provider: string, model: string) => Promise<void>;
+  setModeModelAssignment: (mode: ChatMode, assignment: ModelAssignment) => Promise<void>;
+  setRoleModelAssignment: (role: GentleRoleId, assignment: ModelAssignment) => Promise<void>;
+  setRoleModelEffort: (role: GentleRoleId, effort: ModelEffort | undefined) => Promise<void>;
   setActiveProvider: (provider: string) => void;
-  sendMessage: (prompt: string, contextText: string | null, image?: string | null, mode?: 'orchestrator' | 'build' | 'plan' | 'review') => Promise<void>;
+  sendMessage: (prompt: string, contextText: string | null, image?: string | null, mode?: 'orchestrator' | 'build' | 'plan' | 'review', contextSource?: 'default' | 'explicit') => Promise<void>;
   abortChat: (conversationId?: string) => void;
   generateCommitMessage: (gitDiff: string, onChunk: (chunk: string) => void) => Promise<string>;
   clearHistory: () => void;
@@ -67,6 +116,7 @@ const DEFAULT_MODELS: Record<string, string[]> = {
 };
 
 let turnCounter = 0;
+const chatLog = createChatLogger();
 function generateTurnId(): string {
   turnCounter += 1;
   return `turn-${Date.now()}-${turnCounter}-${Math.random().toString(36).substring(2, 7)}`;
@@ -74,6 +124,88 @@ function generateTurnId(): string {
 
 export const useAIStore = create<AIState>((set, get) => {
   let boundApiAi: any = null;
+  const pendingChunks = new Map<string, { turnId?: string; chunks: string[]; parts: AssistantPart[]; sawTypedParts: boolean }>();
+  let pendingFrame: number | null = null;
+  const terminalWatchdogs = new Map<string, number>();
+  const turnContexts = new Map<string, ChatLogContext>();
+  const legacyFallbackTurns = new Set<string>();
+  const contextFor = (conversationId: string, turnId?: string): ChatLogContext => turnContexts.get(`${conversationId}:${turnId}`) ?? { conversationId, turnId };
+
+  const clearTerminalWatchdog = (conversationId: string) => {
+    const timer = terminalWatchdogs.get(conversationId);
+    if (timer !== undefined) window.clearTimeout(timer);
+    terminalWatchdogs.delete(conversationId);
+  };
+
+  const isValidTypedPart = (payload: any, existing: ActiveStreamState): payload is { conversationId: string; turnId: string; part: AssistantPart } => {
+    const part = payload?.part;
+    return payload?.conversationId === existing.conversationId
+      && payload?.turnId === existing.turnId
+      && typeof part?.partId === 'string' && part.partId.length > 0
+      && (part.kind === 'text' || part.kind === 'reasoning')
+      && (part.lifecycle === 'start' || part.lifecycle === 'delta' || part.lifecycle === 'end')
+      && Number.isInteger(part.ordinal) && part.ordinal >= 0
+      && part.conversationId === existing.conversationId
+      && part.turnId === existing.turnId
+      && (part.lifecycle !== 'delta' || typeof part.text === 'string');
+  };
+
+  const flushPendingChunks = () => {
+    if (pendingFrame !== null) {
+      const cancel = typeof window.cancelAnimationFrame === 'function' ? window.cancelAnimationFrame.bind(window) : window.clearTimeout.bind(window);
+      cancel(pendingFrame);
+      pendingFrame = null;
+    }
+    if (pendingChunks.size === 0) return;
+
+    const chunks = [...pendingChunks.entries()];
+    pendingChunks.clear();
+    set((state: AIState) => {
+      let activeStreams = state.activeStreams;
+      let incomingStreamText = state.incomingStreamText;
+      let isGenerating = state.isGenerating;
+      for (const [conversationId, pending] of chunks) {
+        const existing = activeStreams[conversationId];
+        if (!existing || (pending.turnId && existing.turnId !== pending.turnId)) {
+          chatLog('warn', contextFor(conversationId, pending.turnId), 'renderer.stream', 'chunk.batch_ignored_stale', { chunkCount: pending.chunks.length, partCount: pending.parts.length });
+          continue;
+        }
+        let parts = existing.parts ?? [];
+        const sawTypedParts = existing.sawTypedParts || pending.sawTypedParts;
+        for (const part of pending.parts) {
+          const index = parts.findIndex(candidate => candidate.partId === part.partId);
+          if (part.lifecycle === 'start' && index === -1) {
+            parts = [...parts, { partId: part.partId, kind: part.kind, ordinal: part.ordinal, text: '' }];
+          } else if (part.lifecycle === 'delta') {
+            if (index === -1) parts = [...parts, { partId: part.partId, kind: part.kind, ordinal: part.ordinal, text: part.text ?? '' }];
+            else parts = parts.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, text: candidate.text + (part.text ?? '') } : candidate);
+          } else if (index >= 0) {
+            parts = parts.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, terminal: 'completed' } : candidate);
+          }
+        }
+        const typedText = parts.filter(part => part.kind === 'text').map(part => part.text).join('');
+        const text = sawTypedParts ? typedText : existing.text + pending.chunks.join('');
+        chatLog('debug', contextFor(conversationId, existing.turnId), 'renderer.stream', 'chunk.batch_flushed', { chunkCount: pending.chunks.length, partCount: pending.parts.length, textBytes: text.length });
+        activeStreams = { ...activeStreams, [conversationId]: { ...existing, text, parts, sawTypedParts } };
+        if (conversationId === state.activeConversationId) {
+          incomingStreamText = text;
+          isGenerating = true;
+        }
+      }
+      return activeStreams === state.activeStreams ? {} : { activeStreams, incomingStreamText, isGenerating };
+    });
+  };
+
+  const schedulePendingChunkFlush = () => {
+    if (pendingFrame !== null) return;
+    const schedule = typeof window.requestAnimationFrame === 'function'
+      ? window.requestAnimationFrame.bind(window)
+      : (callback: FrameRequestCallback) => window.setTimeout(() => callback(Date.now()), 16);
+    pendingFrame = schedule(() => {
+      pendingFrame = null;
+      flushPendingChunks();
+    });
+  };
 
   const setupAiListeners = () => {
     const apiAi = (window as any).api?.ai;
@@ -86,34 +218,137 @@ export const useAIStore = create<AIState>((set, get) => {
       const turnId: string | undefined = isObject ? payload.turnId : undefined;
       const chunk: string = isObject ? payload.chunk : payload;
 
-      if (!conversationId || typeof chunk !== 'string') return;
+      if (!conversationId || typeof chunk !== 'string') {
+        chatLog('warn', { conversationId, turnId }, 'renderer.ipc', 'chunk.ignored_malformed');
+        return;
+      }
 
+      const existing = get().activeStreams[conversationId];
+      if (!existing || (turnId && existing.turnId !== turnId)) {
+        chatLog('warn', contextFor(conversationId, turnId), 'renderer.ipc', 'chunk.ignored_stale');
+        return;
+      }
+      const pending = pendingChunks.get(conversationId);
+      if (existing.sawTypedParts || (pending && (pending.turnId !== turnId || pending.sawTypedParts))) {
+        chatLog('info', contextFor(conversationId, turnId), 'renderer.stream', 'legacy_fallback.rejected_typed_authoritative');
+        return;
+      }
+      const streamKey = `${conversationId}:${existing.turnId}`;
+      if (!legacyFallbackTurns.has(streamKey)) {
+        legacyFallbackTurns.add(streamKey);
+        chatLog('info', contextFor(conversationId, turnId), 'renderer.stream', 'legacy_fallback.selected', { initialChunkBytes: chunk.length });
+      }
+      pendingChunks.set(conversationId, { turnId, chunks: [...(pending?.chunks || []), chunk], parts: pending?.parts || [], sawTypedParts: false });
+      schedulePendingChunkFlush();
+    });
+
+    (window as any).api.ai.onPart?.((payload: any) => {
+      const conversationId = payload?.conversationId;
+      const turnId = payload?.turnId;
+      if (!conversationId) {
+        chatLog('warn', { turnId }, 'renderer.ipc', 'part.ignored_malformed');
+        return;
+      }
+      const existing = get().activeStreams[conversationId];
+      if (!existing || existing.turnId !== turnId || !isValidTypedPart(payload, existing)) {
+        chatLog('warn', contextFor(conversationId, turnId), 'renderer.ipc', 'part.rejected', { hasActiveStream: Boolean(existing) });
+        return;
+      }
+      const part = payload.part;
+      if (part.lifecycle !== 'delta') chatLog('info', contextFor(conversationId, turnId), 'renderer.stream', `part.${part.lifecycle}`, { ordinal: part.ordinal, textBytes: part.text?.length ?? 0 });
+      const pending = pendingChunks.get(conversationId);
+      if (pending && pending.turnId !== turnId) {
+        chatLog('warn', contextFor(conversationId, turnId), 'renderer.ipc', 'part.ignored_stale_pending');
+        return;
+      }
+      pendingChunks.set(conversationId, { turnId, chunks: [], parts: [...(pending?.parts || []), part], sawTypedParts: true });
+      schedulePendingChunkFlush();
+    });
+
+    (window as any).api.ai.onChangeSetReady?.((payload: any) => {
+      if (!payload?.conversationId || !payload?.turnId || !payload?.changeSet) return;
       set((state: AIState) => {
-        const existing = state.activeStreams[conversationId];
-        if (turnId && existing && existing.turnId !== turnId) {
-          return {};
+        const stream = state.activeStreams[payload.conversationId];
+        if (stream?.turnId === payload.turnId) {
+          return { activeStreams: { ...state.activeStreams, [payload.conversationId]: { ...stream, changeSet: payload.changeSet } } };
         }
+        const conversations = state.conversations.map(conversation => conversation.id === payload.conversationId
+          ? { ...conversation, messages: conversation.messages.map((message, index, messages) => message.role === 'assistant' && index === messages.length - 1 ? { ...message, changeSet: payload.changeSet } : message) }
+          : conversation);
+        const active = conversations.find(conversation => conversation.id === state.activeConversationId);
+        const workspacePath = useWorkspaceStore.getState().workspacePath;
+        (window as any).api?.store?.setChatHistory(conversations, workspacePath).catch(console.error);
+        return { conversations, ...(active ? { messages: active.messages } : {}) };
+      });
+    });
 
-        const currentText = existing?.text || '';
-        const newText = currentText + chunk;
-        const updatedStream: ActiveStreamState = {
-          conversationId,
-          turnId: turnId || existing?.turnId || 'turn-default',
-          text: newText,
-          isGenerating: true,
-          error: null,
-        };
+    if ((window as any).api?.ai?.onTool) {
+      (window as any).api.ai.onTool((payload: any) => {
+        const isObject = typeof payload === 'object' && payload !== null;
+        const conversationId: string = isObject ? payload.conversationId : get().activeConversationId;
+        const turnId: string | undefined = isObject ? payload.turnId : undefined;
+        const toolData = isObject ? payload.tool : payload;
 
-        const updatedStreams = {
-          ...state.activeStreams,
-          [conversationId]: updatedStream,
-        };
+        if (!conversationId || !toolData) return;
 
-        const isActive = conversationId === state.activeConversationId;
-        return {
-          activeStreams: updatedStreams,
-          ...(isActive ? { incomingStreamText: newText, isGenerating: true } : {}),
-        };
+        set((state: AIState) => {
+          const existing = state.activeStreams[conversationId];
+          if (turnId && existing && existing.turnId !== turnId) {
+            return {};
+          }
+
+          const existingTools = existing?.tools || [];
+          const toolIndex = existingTools.findIndex(t => t.id === toolData.id);
+          let newTools: ToolCallState[];
+          if (toolIndex >= 0) {
+            newTools = [...existingTools];
+            newTools[toolIndex] = {
+              ...newTools[toolIndex],
+              status: toolData.status ?? newTools[toolIndex].status,
+              data: toolData.data !== undefined ? toolData.data : newTools[toolIndex].data,
+              name: toolData.name || newTools[toolIndex].name,
+            };
+          } else {
+            newTools = [
+              ...existingTools,
+              {
+                id: toolData.id || `tool-${Date.now()}`,
+                name: toolData.name || 'tool',
+                status: toolData.status || 'start',
+                data: toolData.data,
+                timestamp: Date.now(),
+              },
+            ];
+          }
+
+          const updatedStream: ActiveStreamState = {
+            conversationId,
+            turnId: turnId || existing?.turnId || 'turn-default',
+            text: existing?.text || '',
+            parts: existing?.parts || [],
+            isGenerating: true,
+            error: null,
+            tools: newTools,
+          };
+
+          const updatedStreams = {
+            ...state.activeStreams,
+            [conversationId]: updatedStream,
+          };
+
+          return {
+            activeStreams: updatedStreams,
+          };
+        });
+      });
+    }
+
+    (window as any).api.ai.onContextBounded?.((payload: any) => {
+      if (!payload?.conversationId || !payload?.turnId || !payload.warning) return;
+      set((state: AIState) => {
+        const stream = state.activeStreams[payload.conversationId];
+        if (!stream || stream.turnId !== payload.turnId) return {};
+        return { activeStreams: { ...state.activeStreams, [payload.conversationId]: { ...stream, contextWarning: payload.warning } } };
       });
     });
 
@@ -124,19 +359,43 @@ export const useAIStore = create<AIState>((set, get) => {
       const errorMsg: string = isObject ? payload.error : payload;
 
       if (!conversationId) return;
+      flushPendingChunks();
 
       set((state: AIState) => {
         const existing = state.activeStreams[conversationId];
-        if (turnId && existing && existing.turnId !== turnId) {
+        if (!existing || !turnId || existing.turnId !== turnId) {
+          chatLog('warn', contextFor(conversationId, turnId), 'renderer.stream', 'terminal.error_ignored');
           return {};
         }
+        chatLog('error', contextFor(conversationId, turnId), 'renderer.stream', 'terminal.error_accepted', { partCount: existing.parts?.length ?? 0, textBytes: existing.text.length });
+        clearTerminalWatchdog(conversationId);
+        legacyFallbackTurns.delete(`${conversationId}:${turnId}`);
+        turnContexts.delete(`${conversationId}:${turnId}`);
 
+        const finalParts = (existing?.parts || []).map(part => ({ ...part, terminal: 'error' as const }));
+        const finalContent = existing?.text || finalParts.filter(part => part.kind === 'text').map(part => part.text).join('');
+        const updatedConversations = finalParts.length || finalContent
+          ? state.conversations.map(conversation => conversation.id === conversationId ? {
+            ...conversation,
+            messages: [...conversation.messages, {
+              id: `assistant-${conversationId}-${existing?.turnId || turnId || 'turn-default'}`,
+              role: 'assistant' as const,
+              content: finalContent,
+              parts: finalParts,
+              timestamp: Date.now(),
+              tools: existing?.tools,
+              changeSet: existing?.changeSet,
+            }],
+          } : conversation)
+          : state.conversations;
         const updatedStreams = { ...state.activeStreams };
         delete updatedStreams[conversationId];
 
         const isActive = conversationId === state.activeConversationId;
         return {
           activeStreams: updatedStreams,
+          conversations: updatedConversations,
+          ...(isActive ? { messages: updatedConversations.find(conversation => conversation.id === conversationId)?.messages || state.messages } : {}),
           ...(isActive ? { error: errorMsg || 'Error desconocido.', isGenerating: false, incomingStreamText: '' } : {}),
         };
       });
@@ -149,22 +408,32 @@ export const useAIStore = create<AIState>((set, get) => {
       const aborted: boolean = isObject ? Boolean(payload.aborted) : Boolean(payload);
 
       if (!conversationId) return;
+      flushPendingChunks();
 
       const { activeStreams, conversations } = get();
       const stream = activeStreams[conversationId];
-      if (turnId && stream && stream.turnId !== turnId) {
+      if (!stream || !turnId || stream.turnId !== turnId) {
+        chatLog('warn', contextFor(conversationId, turnId), 'renderer.stream', 'terminal.ignored_stale', { hasActiveStream: Boolean(stream) });
         return;
       }
+      chatLog('info', contextFor(conversationId, turnId), 'renderer.stream', aborted ? 'terminal.cancelled_accepted' : 'terminal.completed_accepted', { partCount: stream.parts?.length ?? 0, textBytes: stream.text.length });
+      clearTerminalWatchdog(conversationId);
+      legacyFallbackTurns.delete(`${conversationId}:${turnId}`);
+      turnContexts.delete(`${conversationId}:${turnId}`);
 
-      const finalContent = stream?.text || (aborted ? '*Generación cancelada por el usuario.*' : '');
+       const finalParts = (stream?.parts || []).map(part => ({ ...part, terminal: aborted ? 'cancelled' as const : 'completed' as const }));
+       const finalContent = stream?.text || finalParts.filter(part => part.kind === 'text').map(part => part.text).join('');
 
       let updatedConvs = conversations;
-      if (finalContent.trim()) {
+       if (finalParts.length || finalContent) {
         const assistantMessage: ChatMessage = {
-          id: `assistant-${Date.now()}`,
+          id: `assistant-${conversationId}-${stream?.turnId || turnId || 'turn-default'}`,
           role: 'assistant',
-          content: finalContent,
+            content: finalContent,
+            parts: finalParts,
           timestamp: Date.now(),
+            tools: stream?.tools,
+            changeSet: stream?.changeSet,
         };
 
         updatedConvs = conversations.map(c => {
@@ -222,6 +491,7 @@ export const useAIStore = create<AIState>((set, get) => {
     incomingStreamText: '',
     error: null,
     activeStreams: {},
+    modelConfiguration: createModelConfiguration(undefined),
 
     initializeStore: async () => {
       setupAiListeners();
@@ -233,6 +503,11 @@ export const useAIStore = create<AIState>((set, get) => {
       try {
         const keys = await (window as any).api.store.getKeys();
         const selectedModels = await (window as any).api.store.getSelectedModels();
+        const storedModelConfiguration = await (window as any).api.store.getModelConfiguration();
+        const modelConfiguration = createModelConfiguration(storedModelConfiguration, selectedModels);
+        if ((storedModelConfiguration as { version?: unknown } | undefined)?.version !== 2) {
+          await (window as any).api.store.setModelConfiguration(modelConfiguration);
+        }
         const workspacePath = useWorkspaceStore.getState().workspacePath;
         const chatHistory = await (window as any).api.store.getChatHistory(workspacePath);
         
@@ -262,7 +537,7 @@ export const useAIStore = create<AIState>((set, get) => {
           let loadedMessages: ChatMessage[] = [];
           if (chatHistory && Array.isArray(chatHistory)) {
             if (chatHistory.length > 0 && (chatHistory[0] as any).messages) {
-              loadedConvs = chatHistory as ChatConversation[];
+              loadedConvs = (chatHistory as ChatConversation[]).map(conversation => ({ ...conversation, messages: conversation.messages.map(message => message.role === 'assistant' && !message.parts ? { ...message, parts: assistantPartsFromLegacy(message.content) } : message) }));
               loadedActiveId = loadedConvs[0]?.id ?? null;
               loadedMessages = loadedConvs[0]?.messages ?? [];
             } else {
@@ -270,6 +545,7 @@ export const useAIStore = create<AIState>((set, get) => {
                 id: msg.id || `legacy-${idx}`,
                 role: (msg.role === 'assistant' ? 'assistant' : 'user') as 'assistant' | 'user',
                 content: msg.content || '',
+                ...(msg.role === 'assistant' ? { parts: assistantPartsFromLegacy(msg.content || '') } : {}),
                 timestamp: msg.timestamp || Date.now() - (chatHistory.length - idx) * 1000,
               }));
               const legacyConv: ChatConversation = {
@@ -302,6 +578,7 @@ export const useAIStore = create<AIState>((set, get) => {
             conversations: loadedConvs,
             activeConversationId: loadedActiveId,
             messages: loadedMessages,
+            modelConfiguration,
           };
         });
 
@@ -389,32 +666,58 @@ export const useAIStore = create<AIState>((set, get) => {
           if (updated[provider]) {
             updated[provider].activeModel = model;
           }
-          return { providers: updated };
+          // A chat model identifies both its provider and model without changing the active conversation.
+          return { providers: updated, activeProvider: provider };
         });
       } catch (err) {
         console.error(`Failed to store selected model for ${provider}:`, err);
       }
     },
 
+    setModeModelAssignment: async (mode: ChatMode, assignment: ModelAssignment) => {
+      const next = setModeAssignment(get().modelConfiguration, mode, assignment);
+      await (window as any).api.store.setModelConfiguration(next);
+      set({ modelConfiguration: next });
+    },
+
+    setRoleModelAssignment: async (role: GentleRoleId, assignment: ModelAssignment) => {
+      const next = setRoleAssignment(get().modelConfiguration, role, assignment);
+      await (window as any).api.store.setModelConfiguration(next);
+      set({ modelConfiguration: next });
+    },
+
+    setRoleModelEffort: async (role: GentleRoleId, effort: ModelEffort | undefined) => {
+      const next = setRoleEffort(get().modelConfiguration, role, effort);
+      await (window as any).api.store.setModelConfiguration(next);
+      set({ modelConfiguration: next });
+    },
+
     setActiveProvider: (provider: string) => {
       set({ activeProvider: provider });
     },
 
-    sendMessage: async (prompt: string, contextText: string | null, image?: string | null, mode: 'orchestrator' | 'build' | 'plan' | 'review' = 'orchestrator') => {
+    sendMessage: async (prompt: string, contextText: string | null, image?: string | null, mode: 'orchestrator' | 'build' | 'plan' | 'review' = 'orchestrator', contextSource: 'default' | 'explicit' = 'default') => {
       setupAiListeners();
 
-      const { activeProvider, providers, conversations, activeConversationId, activeStreams } = get();
+      const { activeProvider, providers, conversations, activeConversationId, activeStreams, modelConfiguration } = get();
       const targetConvId = activeConversationId || `conv-${Date.now()}`;
       const isTargetGenerating = Boolean(activeStreams[targetConvId]?.isGenerating);
       if (isTargetGenerating || (!prompt.trim() && !image)) return;
 
-      const providerData = providers[activeProvider];
+      const fallbackAssignment = providers[activeProvider]?.activeModel
+        ? { providerId: activeProvider, modelId: providers[activeProvider].activeModel }
+        : undefined;
+      const legacyAssignment = resolveModeAssignment(modelConfiguration, mode, fallbackAssignment);
+      const assignment = mode === 'orchestrator'
+        ? resolveRoleAssignment(modelConfiguration, 'gentle-orchestrator', legacyAssignment)
+        : legacyAssignment;
+      const providerData = assignment ? providers[assignment.providerId] : undefined;
       if (!providerData || !providerData.key) {
         set({ error: 'Falta configurar la API Key para este proveedor.' });
         return;
       }
 
-      if (!providerData.activeModel) {
+      if (!assignment?.modelId) {
         set({ error: 'No hay un modelo configurado para este proveedor.' });
         return;
       }
@@ -447,13 +750,45 @@ export const useAIStore = create<AIState>((set, get) => {
       }
 
       const turnId = generateTurnId();
+      const logContext: ChatLogContext = { conversationId: targetConvId, turnId, mode: mode ?? 'orchestrator', providerModelId: `${assignment.providerId}/${assignment.modelId}`, startedAt: Date.now() };
+      turnContexts.set(`${targetConvId}:${turnId}`, logContext);
+      chatLog('info', logContext, 'renderer.stream', 'turn.accepted', { promptBytes: prompt.length, contextBytes: contextText?.length ?? 0, historyCount: activeConv.messages.length });
       const newStreamState: ActiveStreamState = {
         conversationId: targetConvId,
         turnId,
         text: '',
+        parts: [],
         isGenerating: true,
         error: null,
       };
+
+      clearTerminalWatchdog(targetConvId);
+      terminalWatchdogs.set(targetConvId, window.setTimeout(() => {
+        const stream = get().activeStreams[targetConvId];
+        if (!stream || stream.turnId !== turnId) {
+          chatLog('warn', logContext, 'renderer.watchdog', 'watchdog.ignored_stale');
+          return;
+        }
+        chatLog('error', logContext, 'renderer.watchdog', 'watchdog.fired', { partCount: stream.parts?.length ?? 0, textBytes: stream.text.length });
+        flushPendingChunks();
+        set(state => {
+          const current = state.activeStreams[targetConvId];
+          if (!current || current.turnId !== turnId) return {};
+          const finalParts = (current.parts || []).map(part => ({ ...part, terminal: 'error' as const }));
+          const finalContent = current.text || finalParts.filter(part => part.kind === 'text').map(part => part.text).join('');
+          const conversations = state.conversations.map(conversation => conversation.id === targetConvId ? {
+            ...conversation,
+            messages: finalParts.length || finalContent ? [...conversation.messages, { id: `assistant-${targetConvId}-${turnId}`, role: 'assistant' as const, content: finalContent, parts: finalParts, timestamp: Date.now(), tools: current.tools, changeSet: current.changeSet }] : conversation.messages,
+          } : conversation);
+          const activeStreams = { ...state.activeStreams };
+          delete activeStreams[targetConvId];
+          const isActive = state.activeConversationId === targetConvId;
+          return { activeStreams, conversations, ...(isActive ? { messages: conversations.find(conversation => conversation.id === targetConvId)?.messages || state.messages, isGenerating: false, incomingStreamText: '', error: 'La generación no finalizó. Se conservó la respuesta parcial.' } : {}) };
+        });
+        clearTerminalWatchdog(targetConvId);
+        legacyFallbackTurns.delete(`${targetConvId}:${turnId}`);
+        turnContexts.delete(`${targetConvId}:${turnId}`);
+      }, 45_000));
 
       set((state) => ({
         conversations: updatedConvs,
@@ -474,19 +809,26 @@ export const useAIStore = create<AIState>((set, get) => {
       }
 
       try {
+        chatLog('info', logContext, 'renderer.ipc', 'provider.dispatch');
         await (window as any).api.ai.streamChat({
           conversationId: targetConvId,
           turnId,
           mode,
-          provider: activeProvider,
-          model: providerData.activeModel,
+          provider: assignment.providerId,
+          model: assignment.modelId,
+          effort: mode === 'orchestrator' ? getAssignmentEffort(assignment) : undefined,
           apiKey: providerData.key,
           prompt,
           contextText,
+          contextSource,
           history: activeConv.messages.slice(-11, -1),
           image,
         });
       } catch (err: any) {
+        chatLog('error', logContext, 'renderer.ipc', 'provider.dispatch_error');
+        clearTerminalWatchdog(targetConvId);
+        legacyFallbackTurns.delete(`${targetConvId}:${turnId}`);
+        turnContexts.delete(`${targetConvId}:${turnId}`);
         set((state) => {
           const updatedStreams = { ...state.activeStreams };
           delete updatedStreams[targetConvId];
@@ -503,6 +845,7 @@ export const useAIStore = create<AIState>((set, get) => {
       const targetId = conversationId || get().activeConversationId;
       if (!targetId) return;
 
+      flushPendingChunks();
       const stream = get().activeStreams[targetId];
       if ((window as any).api?.ai) {
         (window as any).api.ai.abortChat({
@@ -609,6 +952,7 @@ INSTRUCCIÓN CRÍTICA Y MANDATORIA:
 
     clearHistory: async () => {
       for (const [sId, stream] of Object.entries(get().activeStreams)) {
+        clearTerminalWatchdog(sId);
         if ((window as any).api?.ai) {
           (window as any).api.ai.abortChat({ conversationId: sId, turnId: stream.turnId });
         }
@@ -674,6 +1018,7 @@ INSTRUCCIÓN CRÍTICA Y MANDATORIA:
     },
 
     deleteConversation: (id: string) => {
+      clearTerminalWatchdog(id);
       const stream = get().activeStreams[id];
       if (stream && (window as any).api?.ai) {
         (window as any).api.ai.abortChat({

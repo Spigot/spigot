@@ -29,13 +29,15 @@ interface CompileResult {
   text: string;
   filesCompiled: string[];
   limitExceeded: boolean;
+  contextSource: 'default' | 'explicit';
 }
 
 export async function compileContext(
   workspacePath: string | null,
   fileTree: FileNode[],
   selectedPath: string | null,
-  mentionedPaths: string[] = []
+  mentionedPaths: string[] = [],
+  semanticQuery = ''
 ): Promise<CompileResult> {
   let pathsToRead: string[] = [];
   let selectionName = 'Raíz del proyecto';
@@ -50,7 +52,7 @@ export async function compileContext(
   }
 
   // 2. Add selected path / active tree node
-  if (selectedPath && workspacePath) {
+  if (pathsToRead.length === 0 && selectedPath && workspacePath) {
     const node = findNodeByPath(fileTree, selectedPath);
     if (node) {
       selectionName = node.name;
@@ -66,10 +68,6 @@ export async function compileContext(
         if (!pathsToRead.includes(f)) pathsToRead.push(f);
       }
     }
-  } else if (workspacePath) {
-    for (const f of fileTree.flatMap(collectFiles)) {
-      if (!pathsToRead.includes(f)) pathsToRead.push(f);
-    }
   }
 
   // Always look for PROJECT.md or README.md at the root
@@ -79,16 +77,29 @@ export async function compileContext(
     projectMdPath = projectMdNode.path;
   }
 
-  if (projectMdPath && !pathsToRead.includes(projectMdPath)) {
+  if (projectMdPath && pathsToRead.length === 0 && !pathsToRead.includes(projectMdPath)) {
     pathsToRead.push(projectMdPath);
+  }
+
+  let semanticText = '';
+  if (workspacePath && semanticQuery.trim() && mentionedPaths.length > 0 && (window as any).api?.semantic?.retrieve) {
+    try {
+      const semantic = await (window as any).api.semantic.retrieve({ workspacePath, query: semanticQuery, explicitPaths: mentionedPaths });
+      if (semantic.status === 'ok' || semantic.status === 'fallback_lexical') {
+        semanticText = semantic.snippets.map((snippet: { citation: string; text: string }) => `--- SEMANTIC SOURCE: ${snippet.citation} ---\n${snippet.text}`).join('\n');
+      }
+    } catch (err) {
+      console.warn('Semantic context unavailable:', err);
+    }
   }
 
   const filesCompiled: string[] = [];
   let text = '';
   let limitExceeded = false;
   let totalBytes = 0;
-  const MAX_FILES = 25;
-  const MAX_BYTES = 500 * 1024; // 500KB limit
+  const hasExplicitContext = mentionedPaths.length > 0 || Boolean(selectedPath);
+  const MAX_FILES = hasExplicitContext ? 25 : 2;
+  const MAX_BYTES = hasExplicitContext ? 500 * 1024 : 16 * 1024;
 
   for (const fPath of pathsToRead) {
     if (filesCompiled.length >= MAX_FILES || totalBytes >= MAX_BYTES) {
@@ -127,14 +138,12 @@ export async function compileContext(
   // Prepend summary
   let summary = `Contexto del Agente (Seleccionado: ${selectionName})\n`;
   summary += `Archivos analizados:\n` + filesCompiled.map(f => `- ${f}`).join('\n') + '\n';
-  if (limitExceeded) {
-    summary += `[ADVERTENCIA]: Se superó el límite de contexto. Algunos archivos se omitieron.\n`;
-  }
   summary += `=========================================\n`;
 
   return {
-    text: summary + text,
+    text: summary + text + (semanticText ? `\n${semanticText}\n` : ''),
     filesCompiled,
-    limitExceeded
+    limitExceeded,
+    contextSource: hasExplicitContext ? 'explicit' : 'default',
   };
 }

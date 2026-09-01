@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useLayoutStore } from '../../store/layoutStore';
 import { useTerminalStore } from '../../store/terminalStore';
+import { useSystemDialogStore } from '../../components/ui/systemDialogStore';
 import logoSpigotUrl from '../../assets/logoSpigot.png';
 import { 
   Minus, Square, X, Plus, Folder, Save, LogOut,
@@ -13,6 +14,8 @@ import {
 
 
 export const TitleBar: React.FC = () => {
+  const showAlert = useSystemDialogStore(state => state.alert);
+  const showPrompt = useSystemDialogStore(state => state.prompt);
   const { 
     activeTabPath, 
     selectWorkspace, 
@@ -110,11 +113,11 @@ export const TitleBar: React.FC = () => {
 
     const port = Number(sshDraft.port || '22');
     if (!sshDraft.host.trim() || !sshDraft.user.trim()) {
-      alert('Host y usuario SSH son obligatorios.');
+      await showAlert('Conexión SSH', 'Host y usuario SSH son obligatorios.');
       return;
     }
     if (!Number.isInteger(port) || port <= 0) {
-      alert('Puerto SSH inv?lido.');
+      await showAlert('Conexión SSH', 'Puerto SSH inválido.');
       return;
     }
 
@@ -133,7 +136,7 @@ export const TitleBar: React.FC = () => {
       await handleConnectSSH(newServer);
     } catch (err) {
       console.error('Error adding SSH server:', err);
-      alert('No se pudo guardar o abrir la conexión SSH.');
+      await showAlert('Conexión SSH', 'No se pudo guardar o abrir la conexión SSH.');
     }
   };
 
@@ -144,7 +147,7 @@ export const TitleBar: React.FC = () => {
       await createSshSession(100, 30, server);
     } catch (err) {
       console.error('Error connecting SSH server:', err);
-      alert('No se pudo abrir la conexión SSH. Revisá que OpenSSH esté instalado y que los datos sean correctos.');
+      await showAlert('Conexión SSH', 'No se pudo abrir la conexión SSH. Revisá que OpenSSH esté instalado y que los datos sean correctos.');
     }
   };
 
@@ -178,11 +181,11 @@ export const TitleBar: React.FC = () => {
 
   const handleNewFile = async () => {
     if (!workspacePath) {
-      alert('Por favor, abrí una carpeta o espacio de trabajo primero.');
+      await showAlert('Nuevo archivo', 'Por favor, abrí una carpeta o espacio de trabajo primero.');
       await selectWorkspace();
       return;
     }
-    const name = prompt('Ingresá el nombre del nuevo archivo (con extensión):', 'archivo.txt');
+    const name = await showPrompt('Nuevo archivo', 'Ingresá el nombre del nuevo archivo (con extensión):', 'archivo.txt');
     if (name && name.trim()) {
       await createItem(name.trim(), 'file');
     }
@@ -471,9 +474,9 @@ export const TitleBar: React.FC = () => {
                       </button>
                       
                       <button
-                        onClick={() => {
+                        onClick={async () => {
                           setActiveDropdown(null);
-                          alert('Spigot usa OpenSSH del sistema. Podés usar password interactivo, ssh-agent o indicar una clave privada al crear la conexión.');
+                          await showAlert('Claves y credenciales', 'Spigot usa OpenSSH del sistema. Podés usar password interactivo, ssh-agent o indicar una clave privada al crear la conexión.');
                         }}
                         className="w-full text-left px-3 py-2 hover:bg-editor-hover hover:text-editor-accent flex items-center gap-2 transition-colors font-medium text-[12.5px]"
                       >

@@ -11,8 +11,9 @@ import StatusBar from './features/status-bar/StatusBar';
 import AgentModeView from './features/agent-mode/AgentModeView';
 import SettingsModal from './features/settings/SettingsModal';
 import { UnsavedChangesModal } from './components/ui/UnsavedChangesModal';
+import { SystemDialog } from './components/ui/SystemDialog';
 import { useWorkspaceStore } from './store/workspaceStore';
-import { useLayoutStore } from './store/layoutStore';
+import { AI_PANEL_MAX_WIDTH, useLayoutStore } from './store/layoutStore';
 import { useGlobalShortcuts } from './features/keyboard/useGlobalShortcuts';
 import './index.css';
 
@@ -196,7 +197,7 @@ const App: React.FC = () => {
                   <VerticalSash
                     onResize={(delta) => {
                       const current = useLayoutStore.getState().aiPanelWidth;
-                      setAIPanelWidth(Math.max(260, Math.min(700, current - delta)));
+                      setAIPanelWidth(Math.min(AI_PANEL_MAX_WIDTH, current - delta));
                     }}
                   />
                   <AIPanel />
@@ -215,6 +216,7 @@ const App: React.FC = () => {
 
       {/* 5. Unsaved Changes Close Confirmation Modal */}
       <UnsavedChangesModal />
+      <SystemDialog />
     </div>
   );
 };

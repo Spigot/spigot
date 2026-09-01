@@ -8,8 +8,13 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useAIStore } from '../../store/aiStore';
 import { useLayoutStore } from '../../store/layoutStore';
 import { compileContext } from '../ai-panel/contextCompiler';
-import { parseMessageThinking } from '../chat/messageParser';
+import { SubagentExecutionCard } from '../chat/SubagentExecutionCard';
 import ConsolePanel from '../terminal/ConsolePanel';
+import { ChatAgentControls } from '../ai-panel/ChatAgentControls';
+import { ProgressiveMessageRenderer } from '../chat/ProgressiveMessageRenderer';
+import { useScrollFollow } from '../chat/useScrollFollow';
+import { MemoizedMessageRow } from '../chat/MemoizedMessageRow';
+import { useSystemDialogStore } from '../../components/ui/systemDialogStore';
 
 type DiffStats = {
   added: number;
@@ -118,9 +123,65 @@ const ThoughtBlock: React.FC<{
   }
 
   const renderThoughtLine = (line: string, index: number) => {
+    const isSubagentStart = line.includes('Delegando tarea al subagente') || (line.includes('Subagente') && line.includes('ejecutan'));
+    const isSubagentEnd = line.includes('Subagente') && (line.includes('completó') || line.includes('completada') || line.includes('finaliz'));
+    const isSubagentError = line.startsWith('[Error en Subagente') || (line.includes('Subagente') && line.includes('falló'));
+    const isSubagentResult = line.startsWith('[Resultado del Subagente');
     const isExecuting = line.includes('Ejecutando herramienta');
     const isCompleted = line.includes('Herramienta') && (line.includes('completada') || line.includes('finalizada'));
     const isWarning = line.includes('ADVERTENCIA') || line.includes('Advertencia') || line.includes('⚠️');
+
+    if (isSubagentStart) {
+      const roleMatch = line.match(/`([^`]+)`/);
+      const role = roleMatch ? roleMatch[1] : 'subagente';
+      return (
+        <SubagentExecutionCard
+          key={index}
+          role={role}
+          status="running"
+        />
+      );
+    }
+
+    if (isSubagentEnd) {
+      const roleMatch = line.match(/`([^`]+)`/);
+      const role = roleMatch ? roleMatch[1] : 'subagente';
+      return (
+        <SubagentExecutionCard
+          key={index}
+          role={role}
+          status="completed"
+        />
+      );
+    }
+
+    if (isSubagentError) {
+      const roleMatch = line.match(/Subagente\s+([a-zA-Z0-9_-]+)/i) || line.match(/`([^`]+)`/);
+      const role = roleMatch ? roleMatch[1] : 'subagente';
+      return (
+        <SubagentExecutionCard
+          key={index}
+          role={role}
+          status="error"
+          error={line}
+        />
+      );
+    }
+
+    if (isSubagentResult) {
+      const headerEnd = line.indexOf(']:');
+      const roleMatch = line.match(/\[Resultado del Subagente\s+([a-zA-Z0-9_-]+)\]/i);
+      const role = roleMatch ? roleMatch[1] : 'subagente';
+      const output = headerEnd !== -1 ? line.slice(headerEnd + 2).trim() : line;
+      return (
+        <SubagentExecutionCard
+          key={index}
+          role={role}
+          status="completed"
+          output={output}
+        />
+      );
+    }
 
     if (isExecuting) {
       const toolMatch = line.match(/`([^`]+)`/);
@@ -161,9 +222,11 @@ const ThoughtBlock: React.FC<{
   };
 
   const thoughtLines = thought.split('\n').filter(l => l.trim().length > 0);
+  void renderThoughtLine;
+  void thoughtLines;
 
   return (
-    <div className="mb-3 border border-editor-border/40 rounded-xl overflow-hidden bg-editor-hover/10 shadow-sm transition-all duration-300">
+    <div className="mb-3 border border-editor-border/40 rounded-xl overflow-hidden bg-editor-hover/10 shadow-sm">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="w-full flex items-center justify-between px-3 py-2 hover:bg-editor-hover/20 text-[10.5px] text-editor-textDark font-semibold transition-colors select-none"
@@ -183,20 +246,17 @@ const ThoughtBlock: React.FC<{
           <ChevronDown className={`w-3.5 h-3.5 text-editor-textDark/60 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
         </div>
       </button>
-      {isOpen && (
-        <div className="px-3 py-2 border-t border-editor-border/20 bg-editor-hover/5 flex flex-col gap-1">
-          {thoughtLines.map((line, idx) => renderThoughtLine(line, idx))}
-        </div>
-      )}
+       {isOpen && <div className="px-3 py-2 border-t border-editor-border/20 bg-editor-hover/5 text-zinc-400 text-[10.5px] leading-relaxed whitespace-pre-wrap select-text">{thought}</div>}
     </div>
   );
 };
 
 export const AgentModeView: React.FC = () => {
+  const confirmDialog = useSystemDialogStore(state => state.confirm);
   const { workspacePath, setWorkspacePath, fileTree, explorerSelectedPath } = useWorkspaceStore();
   const { 
     conversations, activeConversationId, selectConversation, createConversation,
-    messages, sendMessage, isGenerating, incomingStreamText, activeProvider,
+    messages, sendMessage, isGenerating, incomingStreamText,
     initializeStore, deleteConversation, abortChat
   } = useAIStore();
   const { setSettingsModalOpen } = useLayoutStore();
@@ -213,7 +273,7 @@ export const AgentModeView: React.FC = () => {
   const [isChangesPanelOpen, setIsChangesPanelOpen] = useState(false);
   const [changesPanelWidth, setChangesPanelWidth] = useState(720);
   
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const diffFiles = useMemo(() => parseUnifiedDiffFiles(diffText), [diffText]);
   const hasDiffChanges = diffStats.added > 0 || diffStats.deleted > 0;
@@ -225,10 +285,7 @@ export const AgentModeView: React.FC = () => {
     }
   }, [workspacePath, initializeStore]);
 
-  // Auto-scroll to bottom of conversation
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, incomingStreamText]);
+  useScrollFollow(messagesContainerRef, [messages, incomingStreamText]);
 
   const refreshDiffState = useCallback(async () => {
     if (!workspacePath) {
@@ -332,14 +389,16 @@ export const AgentModeView: React.FC = () => {
 
     // Compile active context with mentioned paths prioritized
     let contextText = null;
+    let contextSource: 'default' | 'explicit' = 'default';
     try {
-      const compiled = await compileContext(workspacePath, fileTree, explorerSelectedPath, mentionedPaths);
+      const compiled = await compileContext(workspacePath, fileTree, explorerSelectedPath, mentionedPaths, mentionMatches[0] || textToSend);
       contextText = compiled.text;
+      contextSource = compiled.contextSource;
     } catch (e) {
       console.error('Failed to compile context:', e);
     }
 
-    await sendMessage(textToSend.trim(), contextText, null, agentModeType);
+    await sendMessage(textToSend.trim(), contextText, null, agentModeType, contextSource);
   };
 
   const handleOpenExplorer = () => {
@@ -438,7 +497,7 @@ export const AgentModeView: React.FC = () => {
                 <button
                   onClick={async (e) => {
                     e.stopPropagation();
-                    if (confirm('¿Estás seguro de que querés eliminar esta conversación?')) {
+                    if (await confirmDialog('Eliminar conversación', '¿Estás seguro de que querés eliminar esta conversación?', true)) {
                       if (workspacePath === projPath) {
                         deleteConversation(conv.id);
                       } else {
@@ -555,28 +614,16 @@ export const AgentModeView: React.FC = () => {
     });
   };
 
-  const renderAssistantMessage = (content: string, id: string) => {
-    const { thought, response, isThinking } = parseMessageThinking(content);
-
-    return (
-      <div className="flex flex-col gap-2">
-        {thought.trim() && (
-          <ThoughtBlock thought={thought} isThinking={isThinking} />
-        )}
-        {response.trim() && (
-          <div className="flex flex-col gap-1">
-            {renderMessageContent(response, id)}
-          </div>
-        )}
-        {!response.trim() && isThinking && (
-          <div className="flex items-center gap-2 text-editor-textDark text-[12px] select-none">
-            <Loader2 className="w-4 h-4 animate-spin text-editor-accent" />
-            <span>Generando respuesta...</span>
-          </div>
-        )}
-      </div>
-    );
-  };
+  const renderAssistantMessage = (content: string, id: string, isStreaming = false, parts?: any[]) => <ProgressiveMessageRenderer
+    content={content}
+    parts={parts}
+    messageId={id}
+    isStreaming={isStreaming}
+    renderThought={(thought, isThinking) => <ThoughtBlock thought={thought} isThinking={isThinking} />}
+    renderCodeBlock={(code, language, codeId) => renderMessageContent(`\`\`\`${language}\n${code}\n\`\`\``, codeId)}
+    textClassName="text-[13px] leading-[1.55] whitespace-pre-wrap select-text selection:bg-zinc-800 break-words"
+    emptyState={<div className="flex items-center gap-2 text-editor-textDark text-[12px] select-none"><Loader2 className="w-4 h-4 animate-spin text-editor-accent" /><span>Generando respuesta...</span></div>}
+  />;
 
   return (
     <div className="flex-1 flex overflow-hidden w-full h-full bg-editor-bg text-editor-text font-sans relative">
@@ -717,8 +764,8 @@ export const AgentModeView: React.FC = () => {
                       disabled={isGenerating}
                     />
                     
-                    <div className="flex items-center justify-between p-3 pt-0">
-                      <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 p-3 pt-0">
+                      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
                         <button className="p-1.5 rounded hover:bg-white/10 text-editor-textDark hover:text-editor-text transition-colors">
                           <Plus className="w-4 h-4" />
                         </button>
@@ -727,66 +774,10 @@ export const AgentModeView: React.FC = () => {
                           <span>Permisos predeterminados</span>
                           <ChevronDown className="w-3 h-3" />
                         </button>
+                        <ChatAgentControls mode={agentModeType} onModeChange={setAgentModeType} />
                       </div>
                       
-                      <div className="flex items-center gap-2">
-                        {/* Mode Selector */}
-                        <div className="flex items-center bg-black/20 rounded-md border border-editor-border/60 p-0.5 text-[11px] font-medium gap-0.5">
-                          <button
-                            type="button"
-                            onClick={() => setAgentModeType('orchestrator')}
-                            className={`px-2 py-0.5 rounded transition-all flex items-center gap-1 ${
-                              agentModeType === 'orchestrator'
-                                ? 'bg-purple-500/20 text-purple-300 font-bold border border-purple-500/40'
-                                : 'text-editor-textDark hover:text-editor-text'
-                            }`}
-                            title="Modo Orchestrator (Gentle AI)"
-                          >
-                            <Brain className="w-3 h-3" />
-                            <span>Orchestrator</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setAgentModeType('build')}
-                            className={`px-2 py-0.5 rounded transition-all flex items-center gap-1 ${
-                              agentModeType === 'build'
-                                ? 'bg-sky-500/20 text-sky-300 font-bold border border-sky-500/40'
-                                : 'text-editor-textDark hover:text-editor-text'
-                            }`}
-                            title="Modo Build"
-                          >
-                            <span>Build</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setAgentModeType('plan')}
-                            className={`px-2 py-0.5 rounded transition-all flex items-center gap-1 ${
-                              agentModeType === 'plan'
-                                ? 'bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/40'
-                                : 'text-editor-textDark hover:text-editor-text'
-                            }`}
-                            title="Modo Plan"
-                          >
-                            <span>Plan</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setAgentModeType('review')}
-                            className={`px-2 py-0.5 rounded transition-all flex items-center gap-1 ${
-                              agentModeType === 'review'
-                                ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40'
-                                : 'text-editor-textDark hover:text-editor-text'
-                            }`}
-                            title="Modo Review"
-                          >
-                            <span>Review</span>
-                          </button>
-                        </div>
-
-                        <button className="flex items-center gap-1 px-2 py-1 rounded hover:bg-white/10 text-editor-textDark hover:text-editor-text text-[12px] transition-colors" title={`Proveedor activo: ${activeProvider}`}>
-                          <span>{activeProvider || 'Modelo'}</span>
-                          <ChevronDown className="w-3 h-3" />
-                        </button>
+                      <div className="ml-auto flex shrink-0 items-center gap-2">
                         <button className="p-1.5 rounded hover:bg-white/10 text-editor-textDark hover:text-editor-text transition-colors">
                           <Mic className="w-4 h-4" />
                         </button>
@@ -875,12 +866,14 @@ export const AgentModeView: React.FC = () => {
               <div className="flex-1 flex flex-col overflow-hidden relative">
                 {/* Scrollable Messages Area */}
                 <div
-                  className="absolute inset-0 overflow-y-auto custom-scrollbar-agent scroll-smooth pl-8 pt-6 pb-44"
+                  ref={messagesContainerRef}
+                  className="absolute inset-0 overflow-y-auto custom-scrollbar-agent pl-8 pt-6 pb-44"
                   style={{ paddingRight: isChangesPanelOpen ? '2rem' : '280px' }}
                 >
                   <div className="w-full max-w-3xl mx-auto flex flex-col gap-4 px-2 pb-4">
                     {messages.map((msg) => (
-                      <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      <MemoizedMessageRow key={msg.id} message={msg} renderVersion={copiedId?.startsWith(msg.id)}>
+                      <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                         <div 
                           className={`max-w-[85%] rounded-2xl px-4 py-3 ${
                             msg.role === 'user' 
@@ -894,24 +887,33 @@ export const AgentModeView: React.FC = () => {
                             </div>
                           ) : (
                             <div className="bg-transparent">
-                              {renderAssistantMessage(msg.content, msg.id)}
+                               {renderAssistantMessage(msg.content, msg.id, false, msg.parts)}
                             </div>
                           )}
                         </div>
                       </div>
+                      </MemoizedMessageRow>
                     ))}
                     
-                    {incomingStreamText && (
+                     {Boolean(incomingStreamText || useAIStore.getState().activeStreams[activeConversationId || '']?.parts?.length) && (
                       <div className="flex justify-start">
                         <div className="max-w-[85%] rounded-2xl">
                           <div className="bg-white/5 backdrop-blur-md border border-editor-border rounded-2xl px-4 py-3 shadow-sm">
-                            {renderAssistantMessage(incomingStreamText, 'stream')}
+                            {renderAssistantMessage(incomingStreamText, 'stream', true, useAIStore.getState().activeStreams[activeConversationId || '']?.parts)}
                           </div>
                         </div>
                       </div>
                     )}
+                    {(() => {
+                      const warning = useAIStore.getState().activeStreams[activeConversationId || '']?.contextWarning;
+                      return warning && (warning.omittedExplicitContext || warning.omittedHistory) ? (
+                        <div className="flex items-start gap-2 rounded-xl border border-amber-900/40 bg-amber-950/20 px-3 py-2 text-[11px] text-amber-200">
+                          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+                          <span>Se omitió parte del contexto seleccionado o del historial para mantener la solicitud dentro del presupuesto seguro.</span>
+                        </div>
+                      ) : null;
+                    })()}
                     
-                    <div ref={messagesEndRef} />
                   </div>
                 </div>
 
@@ -939,8 +941,8 @@ export const AgentModeView: React.FC = () => {
                       disabled={isGenerating}
                     />
                     
-                    <div className="flex items-center justify-between p-3 pt-0">
-                      <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 p-3 pt-0">
+                      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
                         <button className="p-1.5 rounded hover:bg-white/10 text-editor-textDark hover:text-editor-text transition-colors">
                           <Plus className="w-4 h-4" />
                         </button>
@@ -949,66 +951,10 @@ export const AgentModeView: React.FC = () => {
                           <span>Permisos predeterminados</span>
                           <ChevronDown className="w-3 h-3" />
                         </button>
+                        <ChatAgentControls mode={agentModeType} onModeChange={setAgentModeType} />
                       </div>
                       
-                      <div className="flex items-center gap-2">
-                        {/* Mode Selector */}
-                        <div className="flex items-center bg-black/20 rounded-md border border-editor-border/60 p-0.5 text-[11px] font-medium gap-0.5">
-                          <button
-                            type="button"
-                            onClick={() => setAgentModeType('orchestrator')}
-                            className={`px-2 py-0.5 rounded transition-all flex items-center gap-1 ${
-                              agentModeType === 'orchestrator'
-                                ? 'bg-purple-500/20 text-purple-300 font-bold border border-purple-500/40'
-                                : 'text-editor-textDark hover:text-editor-text'
-                            }`}
-                            title="Modo Orchestrator (Gentle AI)"
-                          >
-                            <Brain className="w-3 h-3" />
-                            <span>Orchestrator</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setAgentModeType('build')}
-                            className={`px-2 py-0.5 rounded transition-all flex items-center gap-1 ${
-                              agentModeType === 'build'
-                                ? 'bg-sky-500/20 text-sky-300 font-bold border border-sky-500/40'
-                                : 'text-editor-textDark hover:text-editor-text'
-                            }`}
-                            title="Modo Build"
-                          >
-                            <span>Build</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setAgentModeType('plan')}
-                            className={`px-2 py-0.5 rounded transition-all flex items-center gap-1 ${
-                              agentModeType === 'plan'
-                                ? 'bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/40'
-                                : 'text-editor-textDark hover:text-editor-text'
-                            }`}
-                            title="Modo Plan"
-                          >
-                            <span>Plan</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setAgentModeType('review')}
-                            className={`px-2 py-0.5 rounded transition-all flex items-center gap-1 ${
-                              agentModeType === 'review'
-                                ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40'
-                                : 'text-editor-textDark hover:text-editor-text'
-                            }`}
-                            title="Modo Review"
-                          >
-                            <span>Review</span>
-                          </button>
-                        </div>
-
-                        <button className="flex items-center gap-1 px-2 py-1 rounded hover:bg-white/10 text-editor-textDark hover:text-editor-text text-[12px] transition-colors" title={`Proveedor activo: ${activeProvider}`}>
-                          <span>{activeProvider || 'Modelo'}</span>
-                          <ChevronDown className="w-3 h-3" />
-                        </button>
+                      <div className="ml-auto flex shrink-0 items-center gap-2">
                         <button className="p-1.5 rounded hover:bg-white/10 text-editor-textDark hover:text-editor-text transition-colors">
                           <Mic className="w-4 h-4" />
                         </button>

@@ -2,22 +2,34 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { pathToFileURL } from 'url';
+import { getModelEffortCapability, type ModelAssignment, type ModelConfiguration, type ModelEffort, type GentleRoleId, GENTLE_ROLE_LABELS } from '../shared/modelConfiguration';
+import { STANDARD_TOOLS, getRolePrompt, getToolsForRole, isToolAllowedForRole } from './engine/rolePrompts';
+import { dispatchSubagentRole } from './engine/SubagentRoleRunner';
+import type { EngineEventListener } from './engine/types';
+import type { ProviderStreamPart } from './engine/providers/types';
+import { lspManager } from './lspManager';
+import { semanticCatalogService } from './SemanticCatalogService';
+import { estimateTokens, resolveContextBudget, type ContextBoundEvent } from '../shared/contextBudget';
+import type { WorkspaceChangeSetService } from './changes/WorkspaceChangeSetService';
+import { createChatLogger } from '../shared/chatLogger';
+import {
+  type ToolDefinition,
+  type ToolCall,
+  type ToolResult,
+  type UnifiedMessage,
+  providerRegistry,
+  recoverMessageHistory,
+} from './engine/providers';
+
+export type { ToolDefinition, ToolCall, ToolResult, UnifiedMessage };
 
 const execAsync = promisify(exec);
+const chatLog = createChatLogger();
 
 // ==========================================
 // 1. Tool Schemas & Unified Definitions
 // ==========================================
-
-export interface ToolDefinition {
-  name: string;
-  description: string;
-  parameters: {
-    type: 'object';
-    properties: Record<string, any>;
-    required?: string[];
-  };
-}
 
 const SYSTEM_PROMPT_ORCHESTRATOR = `You are Gentle AI Orchestrator, an elite Senior Software Architect and SDD Coordinator integrated directly into the Spigot code editor.
 You coordinate complex multi-step development, architectural exploration, task decomposition, and rigorous verification.
@@ -72,158 +84,7 @@ export function getSystemPrompt(mode: 'orchestrator' | 'build' | 'plan' | 'revie
   return SYSTEM_PROMPT_BUILD;
 }
 
-const TOOLS: ToolDefinition[] = [
-  {
-    name: 'edit_file',
-    description: 'Surgically edits a file by replacing an exact snippet of code (oldString) with new code (newString). Always inspect or read the file first with read_file to ensure oldString matches accurately.',
-    parameters: {
-      type: 'object',
-      properties: {
-        filePath: {
-          type: 'string',
-          description: 'Absolute or relative path to the file to edit in the workspace.'
-        },
-        oldString: {
-          type: 'string',
-          description: 'The exact snippet of code in the file to be replaced.'
-        },
-        newString: {
-          type: 'string',
-          description: 'The new code to replace oldString with.'
-        },
-        replaceAll: {
-          type: 'boolean',
-          description: 'If true, replaces all occurrences of oldString in the file. Defaults to false.'
-        }
-      },
-      required: ['filePath', 'oldString', 'newString']
-    }
-  },
-  {
-    name: 'glob_search',
-    description: 'Finds files in the workspace matching a glob pattern (e.g. "**/*.tsx", "src/components/*.ts"). Excludes node_modules, .git, and dist folders.',
-    parameters: {
-      type: 'object',
-      properties: {
-        pattern: {
-          type: 'string',
-          description: 'Glob pattern to search for (e.g. "**/*.ts", "*.json", "src/**").'
-        },
-        dirPath: {
-          type: 'string',
-          description: 'Optional directory path to search within. Defaults to workspace root.'
-        }
-      },
-      required: ['pattern']
-    }
-  },
-  {
-    name: 'list_dir',
-    description: 'Lists all files and directories in a given folder of the workspace. Useful for discovering project structure.',
-    parameters: {
-      type: 'object',
-      properties: {
-        dirPath: {
-          type: 'string',
-          description: 'Relative or absolute directory path to list. Defaults to the workspace root if not provided.'
-        }
-      }
-    }
-  },
-  {
-    name: 'read_file',
-    description: 'Reads the full or partial content of a text file in the workspace. Supports startLine and endLine for large files.',
-    parameters: {
-      type: 'object',
-      properties: {
-        filePath: {
-          type: 'string',
-          description: 'Absolute or relative path to the file to read.'
-        },
-        startLine: {
-          type: 'number',
-          description: '1-indexed line number to start reading from (inclusive).'
-        },
-        endLine: {
-          type: 'number',
-          description: '1-indexed line number to end reading at (inclusive).'
-        }
-      },
-      required: ['filePath']
-    }
-  },
-  {
-    name: 'write_file',
-    description: 'Creates a new file or overwrites an existing file in the workspace with new content.',
-    parameters: {
-      type: 'object',
-      properties: {
-        filePath: {
-          type: 'string',
-          description: 'Absolute or relative path to the file to write.'
-        },
-        content: {
-          type: 'string',
-          description: 'The full string content to write into the file.'
-        }
-      },
-      required: ['filePath', 'content']
-    }
-  },
-  {
-    name: 'run_command',
-    description: 'Executes a terminal/shell command inside the active workspace directory. Useful for builds, tests, or compiling.',
-    parameters: {
-      type: 'object',
-      properties: {
-        command: {
-          type: 'string',
-          description: 'The shell command line string to run (e.g. "npm test", "git log").'
-        }
-      },
-      required: ['command']
-    }
-  },
-  {
-    name: 'git_status',
-    description: 'Runs "git status" to show modified, untracked, or staged files in the workspace.',
-    parameters: {
-      type: 'object',
-      properties: {}
-    }
-  },
-  {
-    name: 'git_diff',
-    description: 'Runs "git diff" to inspect detailed code changes in the active workspace.',
-    parameters: {
-      type: 'object',
-      properties: {
-        filePath: {
-          type: 'string',
-          description: 'Optional file path to inspect specific changes.'
-        }
-      }
-    }
-  },
-  {
-    name: 'grep_search',
-    description: 'Performs a recursive textual search (regex or exact) inside files in the workspace, similar to grep/ripgrep.',
-    parameters: {
-      type: 'object',
-      properties: {
-        pattern: {
-          type: 'string',
-          description: 'The query string or regex pattern to search for.'
-        },
-        dirPath: {
-          type: 'string',
-          description: 'Optional directory path to search. Defaults to workspace root.'
-        }
-      },
-      required: ['pattern']
-    }
-  }
-];
+export const TOOLS: ToolDefinition[] = STANDARD_TOOLS;
 
 // ==========================================
 // 2. Mappers to API-specific formats & Mode Capabilities
@@ -235,51 +96,45 @@ const READ_ONLY_TOOLS = new Set([
   'glob_search',
   'grep_search',
   'git_status',
-  'git_diff'
+  'git_diff',
+  'lsp_error_diagnostics',
+  'lsp_document_symbols',
+  'lsp_workspace_symbols',
+  'lsp_definition',
+  'lsp_references',
+  'semantic_context',
 ]);
+
+const LSP_TOOL_RESULT_LIMIT = 12_000;
+const LSP_TOOL_MAX_RESULTS = 50;
+const LSP_TOOL_TIMEOUT_MS = 1_500;
 
 export function getToolsForMode(mode: 'orchestrator' | 'build' | 'plan' | 'review' = 'orchestrator'): ToolDefinition[] {
   if (mode === 'plan' || mode === 'review') {
     return TOOLS.filter(t => READ_ONLY_TOOLS.has(t.name));
   }
+  if (mode === 'build') {
+    return TOOLS.filter(t => t.name !== 'delegate_subagent');
+  }
   return TOOLS;
 }
 
-function getAnthropicTools(mode?: 'orchestrator' | 'build' | 'plan' | 'review') {
-  const tools = getToolsForMode(mode);
+export function getAnthropicTools(toolsOrMode?: ToolDefinition[] | 'orchestrator' | 'build' | 'plan' | 'review') {
+  const tools = Array.isArray(toolsOrMode) ? toolsOrMode : getToolsForMode(toolsOrMode);
   if (tools.length === 0) return undefined;
-  return tools.map(t => ({
-    name: t.name,
-    description: t.description,
-    input_schema: t.parameters
-  }));
+  return providerRegistry.getAdapter('anthropic').sanitizeTools?.(tools);
 }
 
-function getOpenAITools(mode?: 'orchestrator' | 'build' | 'plan' | 'review') {
-  const tools = getToolsForMode(mode);
+export function getOpenAITools(toolsOrMode?: ToolDefinition[] | 'orchestrator' | 'build' | 'plan' | 'review') {
+  const tools = Array.isArray(toolsOrMode) ? toolsOrMode : getToolsForMode(toolsOrMode);
   if (tools.length === 0) return undefined;
-  return tools.map(t => ({
-    type: 'function',
-    function: {
-      name: t.name,
-      description: t.description,
-      parameters: t.parameters
-    }
-  }));
+  return providerRegistry.getAdapter('openai').sanitizeTools?.(tools);
 }
 
-function getGeminiTools(mode?: 'orchestrator' | 'build' | 'plan' | 'review') {
-  const tools = getToolsForMode(mode);
+export function getGeminiTools(toolsOrMode?: ToolDefinition[] | 'orchestrator' | 'build' | 'plan' | 'review') {
+  const tools = Array.isArray(toolsOrMode) ? toolsOrMode : getToolsForMode(toolsOrMode);
   if (tools.length === 0) return undefined;
-  return [
-    {
-      functionDeclarations: tools.map(t => ({
-        name: t.name,
-        description: t.description,
-        parameters: t.parameters
-      }))
-    }
-  ];
+  return providerRegistry.getAdapter('gemini').sanitizeTools?.(tools);
 }
 
 // ==========================================
@@ -412,32 +267,108 @@ export function assertPathContained(targetPath: string, workspacePath: string): 
   return resolvedTarget;
 }
 
+export type ExecuteToolContext = {
+  role?: GentleRoleId;
+  modelConfig?: ModelConfiguration;
+  fallbackAssignment?: ModelAssignment;
+  providers?: Record<string, { apiKey: string; [key: string]: unknown }>;
+  apiKey?: string;
+  signal?: AbortSignal;
+  agentRunner?: (options: AgentRunOptions) => Promise<boolean>;
+  onEvent?: EngineEventListener;
+  turnId?: string;
+  sessionId?: string;
+  changeSetService?: WorkspaceChangeSetService;
+  changeSetId?: string;
+  toolCallId?: string;
+};
+
 export async function executeTool(
   name: string,
   args: any,
   workspacePath: string,
-  mode: 'orchestrator' | 'build' | 'plan' | 'review' = 'orchestrator'
+  mode: 'orchestrator' | 'build' | 'plan' | 'review' = 'orchestrator',
+  context?: ExecuteToolContext
 ): Promise<string> {
   try {
-    if ((mode === 'plan' || mode === 'review') && !READ_ONLY_TOOLS.has(name)) {
+    if (context?.role) {
+      if (!isToolAllowedForRole(context.role, name)) {
+        throw new Error(`Acceso denegado: El rol "${context.role}" no tiene permisos para ejecutar la herramienta "${name}".`);
+      }
+    } else if ((mode === 'plan' || mode === 'review') && !READ_ONLY_TOOLS.has(name)) {
       const modeLabel = mode === 'plan' ? 'Plan' : 'Review';
       throw new Error(`Acceso denegado: El modo ${modeLabel} solo permite herramientas de lectura y análisis (intento de ejecutar "${name}").`);
     }
 
     const resolvePath = (p: string) => assertPathContained(p, workspacePath);
+    const lspLanguageFor = (filePath: string) => {
+      const extension = path.extname(filePath).toLowerCase();
+      return extension === '.ts' ? 'typescript' : extension === '.tsx' ? 'typescriptreact' : extension === '.js' ? 'javascript' : extension === '.jsx' ? 'javascriptreact' : null;
+    };
+    const lspResult = (value: unknown) => {
+      const serialized = JSON.stringify(value);
+      return serialized.length <= LSP_TOOL_RESULT_LIMIT ? serialized : JSON.stringify({ status: 'result_too_large', items: [] });
+    };
+    const postWriteDiagnostics = async (file: string, content?: string) => {
+      const languageId = lspLanguageFor(file);
+      if (!languageId) return { status: 'unsupported', items: [] };
+      const text = content ?? await fs.readFile(file, 'utf-8');
+      return lspManager.synchronizeAndRefresh(workspacePath, languageId, file, text, LSP_TOOL_TIMEOUT_MS);
+    };
 
     switch (name) {
+      case 'delegate_subagent': {
+        const targetRole = args?.role as GentleRoleId;
+        const task = args?.task as string;
+        const subContext = args?.context as string | undefined;
+
+        if (!targetRole || !task) {
+          throw new Error('La herramienta delegate_subagent requiere los parámetros "role" y "task".');
+        }
+
+        const subResult = await dispatchSubagentRole({
+          role: targetRole,
+          input: task,
+          contextText: subContext,
+          workspaceRoot: workspacePath,
+          modelConfig: context?.modelConfig,
+          fallbackAssignment: context?.fallbackAssignment,
+          providers: context?.providers,
+          apiKey: context?.apiKey,
+          signal: context?.signal,
+          agentRunner: context?.agentRunner,
+          onEvent: context?.onEvent,
+          turnId: context?.turnId,
+          sessionId: context?.sessionId,
+        });
+
+        if (!subResult.success) {
+          return `[Error en Subagente ${targetRole}]: ${subResult.error || 'Fallo desconocido en la ejecución del subagente.'}`;
+        }
+        return `[Resultado del Subagente ${targetRole}]:\n${subResult.output}`;
+      }
+
       case 'edit_file': {
         const file = resolvePath(args.filePath);
-        const content = await fs.readFile(file, 'utf-8');
+        const relativePath = path.relative(workspacePath, file).replaceAll('\\', '/');
+        const stagedContent = context?.changeSetId ? await context.changeSetService?.overlay(context.changeSetId, relativePath) : undefined;
+        const content = stagedContent ?? await fs.readFile(file, 'utf-8');
+        if (content === null) throw new Error('Cannot edit a file staged for deletion.');
         const { updatedContent, count } = findAndReplaceContent(
           content,
           args.oldString,
           args.newString,
           Boolean(args.replaceAll)
         );
-        await fs.writeFile(file, updatedContent, 'utf-8');
-        return `Edición exitosa en ${path.relative(workspacePath, file) || file} (${count} reemplazo(s) aplicado(s)).`;
+        if (context?.changeSetId && context.changeSetService) {
+          await context.changeSetService.capture(context.changeSetId, { relativePath, proposedContent: updatedContent, source: { toolName: name, toolCallId: context.toolCallId || 'tool' }, handoff: { kind: 'disk' } });
+        } else {
+          await fs.writeFile(file, updatedContent, 'utf-8');
+          semanticCatalogService.invalidate(workspacePath, file);
+        }
+        const diagnostics = await postWriteDiagnostics(file, updatedContent);
+        context?.onEvent?.({ type: 'tool', turnId: context.turnId || 'turn-default', id: `lsp-post-write-${Date.now()}`, name: 'lsp_post_write_diagnostics', status: 'end', data: diagnostics });
+        return `Edición exitosa en ${path.relative(workspacePath, file) || file} (${count} reemplazo(s) aplicado(s)).\nLSP_POST_WRITE_DIAGNOSTICS:${lspResult(diagnostics)}`;
       }
 
       case 'glob_search': {
@@ -494,7 +425,10 @@ export async function executeTool(
 
       case 'read_file': {
         const file = resolvePath(args.filePath);
-        let content = await fs.readFile(file, 'utf-8');
+        const relativePath = path.relative(workspacePath, file).replaceAll('\\', '/');
+        const stagedContent = context?.changeSetId ? await context.changeSetService?.overlay(context.changeSetId, relativePath) : undefined;
+        let content = stagedContent ?? await fs.readFile(file, 'utf-8');
+        if (content === null) throw new Error('File is staged for deletion.');
         
         // Handle line slice if startLine or endLine are specified
         const start = args.startLine ? Number(args.startLine) : 1;
@@ -509,11 +443,70 @@ export async function executeTool(
         return content;
       }
 
+      case 'delete_file': {
+        const file = resolvePath(args.filePath);
+        const relativePath = path.relative(workspacePath, file).replaceAll('\\', '/');
+        if (!context?.changeSetId || !context.changeSetService) throw new Error('Text deletion requires a staged change-set.');
+        await context.changeSetService.capture(context.changeSetId, { relativePath, proposedContent: null, source: { toolName: name, toolCallId: context.toolCallId || 'tool' }, handoff: { kind: 'disk' } });
+        return `Deletion staged for ${relativePath}.`;
+      }
+
       case 'write_file': {
         const file = resolvePath(args.filePath);
-        await fs.mkdir(path.dirname(file), { recursive: true });
-        await fs.writeFile(file, args.content, 'utf-8');
-        return `Archivo creado/escrito exitosamente en: ${file}`;
+        const relativePath = path.relative(workspacePath, file).replaceAll('\\', '/');
+        if (context?.changeSetId && context.changeSetService) {
+          await context.changeSetService.capture(context.changeSetId, { relativePath, proposedContent: args.content, source: { toolName: name, toolCallId: context.toolCallId || 'tool' }, handoff: { kind: 'disk' } });
+        } else {
+          await fs.mkdir(path.dirname(file), { recursive: true });
+          await fs.writeFile(file, args.content, 'utf-8');
+          semanticCatalogService.invalidate(workspacePath, file);
+        }
+        const diagnostics = await postWriteDiagnostics(file, args.content);
+        context?.onEvent?.({ type: 'tool', turnId: context.turnId || 'turn-default', id: `lsp-post-write-${Date.now()}`, name: 'lsp_post_write_diagnostics', status: 'end', data: diagnostics });
+        return `Archivo creado/escrito exitosamente en: ${file}\nLSP_POST_WRITE_DIAGNOSTICS:${lspResult(diagnostics)}`;
+      }
+
+      case 'lsp_error_diagnostics': {
+        const file = resolvePath(args.filePath);
+        const languageId = lspLanguageFor(file);
+        if (!languageId) return lspResult({ status: 'unsupported', items: [] });
+        return lspResult(await lspManager.errorDiagnostics(workspacePath, languageId, { filePath: file, version: Number(args.documentVersion), timeoutMs: LSP_TOOL_TIMEOUT_MS, maxResults: Math.min(Number(args.maxResults) || LSP_TOOL_MAX_RESULTS, LSP_TOOL_MAX_RESULTS) }));
+      }
+
+      case 'lsp_document_symbols': {
+        const file = resolvePath(args.filePath);
+        const languageId = lspLanguageFor(file);
+        if (!languageId) return lspResult({ status: 'unsupported', items: [] });
+        return lspResult(await lspManager.documentSymbols(workspacePath, languageId, { filePath: file, timeoutMs: LSP_TOOL_TIMEOUT_MS, maxResults: Math.min(Number(args.maxResults) || LSP_TOOL_MAX_RESULTS, LSP_TOOL_MAX_RESULTS) }));
+      }
+
+      case 'lsp_workspace_symbols': {
+        const query = String(args.query || '').trim();
+        if (!query) return lspResult({ status: 'invalid_query', items: [] });
+        return lspResult(await lspManager.workspaceSymbols(workspacePath, 'typescript', { query, timeoutMs: LSP_TOOL_TIMEOUT_MS, maxResults: Math.min(Number(args.maxResults) || LSP_TOOL_MAX_RESULTS, LSP_TOOL_MAX_RESULTS) }));
+      }
+
+      case 'lsp_definition':
+      case 'lsp_references': {
+        const file = resolvePath(args.filePath);
+        const languageId = lspLanguageFor(file);
+        if (!languageId) return lspResult({ status: 'unsupported', items: [] });
+        const location = { uri: pathToFileURL(file).toString(), line: Math.max(0, Number(args.line)), character: Math.max(0, Number(args.character)), timeoutMs: LSP_TOOL_TIMEOUT_MS, maxResults: Math.min(Number(args.maxResults) || LSP_TOOL_MAX_RESULTS, LSP_TOOL_MAX_RESULTS) };
+        const result = name === 'lsp_definition'
+          ? await lspManager.definition(workspacePath, languageId, location)
+          : await lspManager.references(workspacePath, languageId, { ...location, includeDeclaration: Boolean(args.includeDeclaration) });
+        return lspResult(result);
+      }
+
+      case 'semantic_context': {
+        const query = String(args.query || '').trim();
+        if (!query) return lspResult({ status: 'invalid_query', symbols: [], snippets: [] });
+        return lspResult(await semanticCatalogService.retrieve({
+          workspacePath,
+          query,
+          explicitPaths: Array.isArray(args.filePaths) ? args.filePaths.map(resolvePath) : [],
+          signal: context?.signal,
+        }));
       }
 
       case 'run_command': {
@@ -589,90 +582,62 @@ export async function executeTool(
 }
 
 // ==========================================
-// Helper function to prune contextText and chat history based on provider constraints
-function pruneContextAndHistory(
-  context: string | null,
-  historyMessages: any[],
-  currentPrompt: string,
-  providerName: string,
-  modelName: string
-): { prunedContext: string | null; prunedHistory: any[] } {
-  const prov = (providerName || '').toLowerCase().trim();
-  const mdl = (modelName || '').toLowerCase().trim();
-  
-  // Set budget in characters.
-  // MiniMax has a strict limit around ~2000 tokens (approx 6000-8000 chars total request size) on its trial keys.
-  // However, its premium model MiniMax-M2.7 supports 204,800 tokens.
-  // To get the absolute best out of high-context models, we set the budget dynamically:
-  // - For MiniMax large context models (M2.7, M2.5, text-01), we set a massive budget of 600,000 characters (~150,000 tokens).
-  // - For standard MiniMax keys/models that might be trial/restricted, we use a 5,200 character fallback limit.
-  // - For all other standard providers, we use a generous safe threshold of 100,000 characters.
-  let budget = 100000;
-  
-  if (prov === 'minimax') {
-    if (mdl.includes('m2.7') || mdl.includes('m2.5') || mdl.includes('text-01')) {
-      budget = 600000; // ~150,000 tokens (leaving plenty of room for 204.8k limits)
-    } else {
-      budget = 5200; // Safe trial fallback
-    }
-  }
-  
-  const basicOverhead = currentPrompt.length + 800; // Account for tools, system template, prompt wrapper
-  let availableForContextAndHistory = budget - basicOverhead;
-  if (availableForContextAndHistory < 1000) {
-    availableForContextAndHistory = 1000; // Give a minimum floor if prompt itself is huge
-  }
+export function budgetRequestComponents(input: {
+  provider: string;
+  model: string;
+  systemPrompt: string;
+  tools: ToolDefinition[];
+  prompt: string;
+  context: string | null;
+  history: UnifiedMessage[];
+  contextSource: 'default' | 'explicit';
+}): { context: string | null; history: UnifiedMessage[]; warning?: ContextBoundEvent } {
+  const capability = resolveContextBudget(input.provider, input.model);
+  const inputBudget = capability.inputTokens - capability.responseReserveTokens;
+  const fixedTokens = estimateTokens(input.systemPrompt) + estimateTokens(input.tools) + estimateTokens(input.prompt);
+  let context = input.context;
+  let history = [...input.history];
+  let removedContext = 0;
+  let removedHistory = 0;
+  const contextParts = context?.split(/(?=--- ARCHIVO: |--- SEMANTIC SOURCE: )/) ?? [];
 
-  let prunedContext = context;
-  let prunedHistory = [...historyMessages];
-
-  // 1. Prune file contents in the context first if it exceeds budget
-  if (prunedContext && prunedContext.length > 0) {
-    if (prunedContext.length > availableForContextAndHistory * 0.7) {
-      const parts = prunedContext.split('--- ARCHIVO: ');
-      const header = parts[0];
-      const fileParts = parts.slice(1);
-      
-      const targetContextSize = Math.floor(availableForContextAndHistory * 0.6);
-      let accumulatedContext = header;
-      
-      const numFiles = fileParts.length;
-      if (numFiles > 0) {
-        // Distribute remaining characters fairly among files
-        const fairShare = Math.max(400, Math.floor((targetContextSize - header.length) / numFiles));
-        
-        for (const part of fileParts) {
-          const match = part.match(/(.*?) ---\n([\s\S]*)/);
-          if (match) {
-            const filePath = match[1];
-            const fileContent = match[2];
-            
-            if (fileContent.length > fairShare) {
-              const truncatedContent = fileContent.slice(0, fairShare) + 
-                `\n\n[... CONTENIDO TRUNCADO POR LÍMITE DE CONTEXTO DE ${prov === 'minimax' ? 'MINIMAX (2K)' : 'IA'} ...]`;
-              accumulatedContext += `--- ARCHIVO: ${filePath} ---\n${truncatedContent}\n`;
-            } else {
-              accumulatedContext += `--- ARCHIVO: ${filePath} ---\n${fileContent}\n`;
-            }
-          } else {
-            accumulatedContext += `--- ARCHIVO: ${part}`;
-          }
-        }
-      }
-      prunedContext = accumulatedContext;
+  // Remove lowest-priority context units first, then oldest history. The estimate is
+  // intentionally conservative and is recomputed before every provider request.
+  while (contextParts.length > 0 && fixedTokens + estimateTokens(contextParts.join('')) + estimateTokens(history) > inputBudget) {
+    contextParts.pop();
+    removedContext += 1;
+  }
+  context = contextParts.length > 0 ? contextParts.join('') : null;
+  while (history.length > 0 && fixedTokens + estimateTokens(context) + estimateTokens(history) > inputBudget) {
+    history.shift();
+    removedHistory += 1;
+  }
+  if (fixedTokens + estimateTokens(context) + estimateTokens(history) > inputBudget && history.length > 0) {
+    const last = history[history.length - 1];
+    if (last.tool_results?.length) {
+      history[history.length - 1] = {
+        ...last,
+        tool_results: last.tool_results.map(result => ({ ...result, content: result.content.slice(0, 3_000) })),
+      };
+      removedHistory += 1;
     }
   }
 
-  // 2. Prune history if total size still exceeds the available budget
-  const getHistorySize = (history: any[]) => history.reduce((sum, m) => sum + (m.content || '').length, 0);
-  const contextLength = prunedContext ? prunedContext.length : 0;
-
-  while (prunedHistory.length > 0 && (contextLength + getHistorySize(prunedHistory) > availableForContextAndHistory)) {
-    // Drop the oldest message from the history to keep total size safe
-    prunedHistory.shift();
-  }
-
-  return { prunedContext, prunedHistory };
+  const removedItems = removedContext + removedHistory;
+  return {
+    context,
+    history,
+    ...(removedItems > 0 ? {
+      warning: {
+        modelId: capability.modelId,
+        keptItems: contextParts.length + history.length,
+        removedItems,
+        reason: 'input_budget' as const,
+        omittedExplicitContext: removedContext > 0 && input.contextSource === 'explicit',
+        omittedHistory: removedHistory > 0,
+      },
+    } : {}),
+  };
 }
 
 // ==========================================
@@ -681,75 +646,110 @@ function pruneContextAndHistory(
 
 export type AgentRunOptions = {
   mode?: 'orchestrator' | 'build' | 'plan' | 'review';
+  role?: GentleRoleId;
   provider: string;
   model: string;
   apiKey: string;
+  effort?: ModelEffort;
   prompt: string;
   contextText: string | null;
+  contextSource?: 'default' | 'explicit';
   history: any[];
   image: string | null;
   workspacePath: string;
   sendChunk: (chunk: string) => void;
+  sendPart?: (part: ProviderStreamPart) => void;
   sendError: (err: string) => void;
   sendEnd: (aborted?: boolean) => void;
   signal: AbortSignal;
+  customTools?: ToolDefinition[];
+  customSystemPrompt?: string;
+  modelConfig?: ModelConfiguration;
+  providers?: Record<string, { apiKey: string; [key: string]: unknown }>;
+  onEvent?: EngineEventListener;
+  turnId?: string;
+  sessionId?: string;
+  changeSetService?: WorkspaceChangeSetService;
+  changeSetId?: string;
 };
+
+export function applyModelEffort(
+  body: Record<string, unknown>,
+  provider: string,
+  model: string,
+  effort: ModelEffort | undefined,
+): Record<string, unknown> {
+  const capability = getModelEffortCapability({ providerId: provider, modelId: model });
+  if (!effort || !capability?.levels.includes(effort)) return body;
+  if (capability.payload === 'openai' && provider === 'openai') {
+    return { ...body, reasoning_effort: effort };
+  }
+  if (capability.payload === 'anthropic' && provider === 'anthropic') {
+    return { ...body, output_config: { effort } };
+  }
+  return body;
+}
 
 export async function runAgentLoop({
   mode = 'orchestrator',
+  role,
   provider,
   model,
   apiKey,
+  effort,
   prompt,
   contextText,
+  contextSource = 'default',
   history,
   image: _image,
   workspacePath,
   sendChunk,
+  sendPart,
   sendError,
   sendEnd,
-  signal
+  signal,
+  customTools,
+  customSystemPrompt,
+  modelConfig,
+  providers,
+  onEvent,
+  turnId,
+  sessionId,
+  changeSetService,
+  changeSetId,
 }: AgentRunOptions): Promise<boolean> {
   let turn = 0;
+  const logContext = { conversationId: sessionId, turnId, mode, providerModelId: `${provider}/${model}`, startedAt: Date.now() };
+  let executingToolName: string | undefined;
   const maxTurns = 25;
   const executedWriteSignatures = new Set<string>();
   const executedToolCounts = new Map<string, number>();
 
   // Standardize historical conversation messages for tool execution context
-  const rawHistory = (history || []).map((msg: any) => {
+  const rawHistory: UnifiedMessage[] = (history || []).map((msg: any) => {
     return {
-      role: msg.role === 'assistant' ? 'assistant' : 'user',
+      role: msg.role === 'assistant' ? 'assistant' : msg.role === 'tool' ? 'tool' : 'user',
       content: msg.content,
       ...(msg.tool_calls && { tool_calls: msg.tool_calls }),
-      ...(msg.tool_results && { tool_results: msg.tool_results })
+      ...(msg.tool_results && { tool_results: msg.tool_results }),
+      ...(msg.tool_call_id && { tool_call_id: msg.tool_call_id }),
+      ...(msg.name && { name: msg.name }),
     };
   });
 
-  // Prune history and context text dynamically to satisfy strict token/context limits (especially for MiniMax)
-  const { prunedContext: activeContext, prunedHistory } = pruneContextAndHistory(
-    contextText,
-    rawHistory,
-    prompt,
-    provider,
-    model
-  );
+  let messages: UnifiedMessage[] = recoverMessageHistory(rawHistory);
 
-  let messages = prunedHistory;
-
-  const fullUserPrompt = activeContext
-    ? `=== CONTEXTO DEL PROYECTO ===\n${activeContext}\n\n=== FIN CONTEXTO ===\n\nPregunta / Instrucción del usuario:\n${prompt}`
-    : prompt;
-
-  messages.push({ role: 'user', content: fullUserPrompt });
-
-  // Inform the user inside thoughts if context was pruned
-  if (contextText && activeContext && activeContext.length < contextText.length) {
-    const isLargeContextModel = model.toLowerCase().includes('m2.7') || model.toLowerCase().includes('m2.5') || model.toLowerCase().includes('text-01');
-    const modelLimitMsg = provider === 'minimax'
-      ? (isLargeContextModel ? 'MiniMax 150K Limit' : 'MiniMax 2K Limit')
-      : 'Límite de seguridad';
-    sendChunk(`<think>\n[ADVERTENCIA] El contexto del proyecto fue optimizado y recortado para ajustarse al límite de tokens del proveedor (${modelLimitMsg}).\n</think>\n`);
-  }
+  let generatedPart = 0;
+  const sendReasoning = (text: string) => {
+    if (!sendPart) {
+      sendChunk(text);
+      return;
+    }
+    const partId = `agent-reasoning-${generatedPart++}`;
+    sendPart({ partId, kind: 'reasoning', lifecycle: 'start' });
+    sendPart({ partId, kind: 'reasoning', lifecycle: 'delta', text });
+    sendPart({ partId, kind: 'reasoning', lifecycle: 'end' });
+  };
 
   while (turn < maxTurns) {
     if (signal.aborted) {
@@ -760,198 +760,43 @@ export async function runAgentLoop({
     turn++;
 
     try {
-      let url = '';
-      let headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      let body: any = {};
-
       // Prepare Tool Schemas and System Prompt for API call
       const effectiveMode = mode || 'orchestrator';
-      const activeSystemPrompt = getSystemPrompt(effectiveMode);
-      const anthropicTools = getAnthropicTools(effectiveMode);
-      const openAITools = getOpenAITools(effectiveMode);
-      const geminiTools = getGeminiTools(effectiveMode);
+      const activeSystemPrompt = customSystemPrompt || (role ? getRolePrompt(role) : getSystemPrompt(effectiveMode));
+      const effectiveTools = customTools || (role ? getToolsForRole(role, TOOLS) : getToolsForMode(effectiveMode));
+      const budgeted = budgetRequestComponents({
+        provider, model, systemPrompt: activeSystemPrompt, tools: effectiveTools, prompt,
+        context: contextText, history: messages, contextSource,
+      });
+      if (budgeted.warning) onEvent?.({ type: 'context:bounded', turnId: turnId || 'turn-default', data: budgeted.warning });
+      const fullUserPrompt = budgeted.context
+        ? `=== CONTEXTO DEL PROYECTO ===\n${budgeted.context}\n\n=== FIN CONTEXTO ===\n\nPregunta / Instrucción del usuario:\n${prompt}`
+        : prompt;
+      const requestMessages = [...budgeted.history, { role: 'user' as const, content: fullUserPrompt }];
 
-      // Format messages based on API requirements
-      let formattedMessages = messages.map(m => {
-        // Simple mapping for LLMs
-        if (m.tool_results) {
-          // Anthropic and OpenAI support tool response representations
-          return m;
-        }
-        return {
-          role: m.role,
-          content: m.content
-        };
+      // Resolve modular provider adapter
+      const adapter = providerRegistry.get(provider);
+
+      // Validate & recover message history (injects synthetic tool result if prior turn was cancelled)
+      const sanitizedMessages = recoverMessageHistory(requestMessages);
+
+      const requestPayload = adapter.buildRequest({
+        provider,
+        model,
+        apiKey,
+        prompt: fullUserPrompt,
+        systemPrompt: activeSystemPrompt,
+        messages: sanitizedMessages,
+        tools: effectiveTools,
+        effort,
+        signal,
       });
 
-      const prov = (provider || '').toLowerCase().trim();
-
-      if (prov === 'openai' || prov === 'deepseek' || prov === 'qwen' || prov === 'kimi' || prov === 'openrouter' || prov === 'minimax') {
-        url = prov === 'deepseek' ? 'https://api.deepseek.com/chat/completions' :
-              prov === 'kimi' ? 'https://api.moonshot.cn/v1/chat/completions' :
-              prov === 'qwen' ? 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions' :
-              prov === 'openrouter' ? 'https://openrouter.ai/api/v1/chat/completions' :
-              prov === 'minimax' ? 'https://api.minimax.io/v1/chat/completions' :
-              'https://api.openai.com/v1/chat/completions';
-
-        headers['Authorization'] = `Bearer ${apiKey}`;
-        if (prov === 'openrouter') {
-          headers['HTTP-Referer'] = 'https://spigot.gentleman.com';
-          headers['X-Title'] = 'Spigot';
-        }
-
-        const openaiMessages: any[] = [
-          { role: 'system', content: activeSystemPrompt }
-        ];
-        for (const m of formattedMessages) {
-          if (m.tool_results) {
-            for (const r of m.tool_results) {
-              openaiMessages.push({
-                role: 'tool',
-                tool_call_id: r.tool_use_id,
-                name: r.name,
-                content: r.content
-              });
-            }
-          } else if (m.tool_calls) {
-            openaiMessages.push({
-              role: 'assistant',
-              content: m.content || null,
-              tool_calls: m.tool_calls.map((tc: any) => ({
-                id: tc.id,
-                type: 'function',
-                function: {
-                  name: tc.name,
-                  arguments: typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input)
-                }
-              }))
-            });
-          } else {
-            openaiMessages.push({
-              role: m.role,
-              content: m.content
-            });
-          }
-        }
-
-        body = {
-          model,
-          messages: openaiMessages,
-          ...(openAITools && openAITools.length > 0 ? { tools: openAITools, tool_choice: 'auto' } : {}),
-          stream: true
-        };
-      } else if (prov === 'anthropic') {
-        url = 'https://api.anthropic.com/v1/messages';
-        headers['x-api-key'] = apiKey;
-        headers['anthropic-version'] = '2023-06-01';
-        body = {
-          model,
-          system: activeSystemPrompt,
-          messages: formattedMessages.map(m => {
-            if (m.tool_results) {
-              return {
-                role: 'user',
-                content: m.tool_results.map((r: any) => ({
-                  type: 'tool_result',
-                  tool_use_id: r.tool_use_id,
-                  content: r.content
-                }))
-              };
-            }
-            if (m.tool_calls) {
-              return {
-                role: 'assistant',
-                content: [
-                  { type: 'text', text: m.content || '' },
-                  ...m.tool_calls.map((c: any) => ({
-                    type: 'tool_use',
-                    id: c.id,
-                    name: c.name,
-                    input: c.input
-                  }))
-                ]
-              };
-            }
-            return { role: m.role, content: m.content };
-          }),
-          ...(anthropicTools && anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
-          max_tokens: 4000,
-          stream: true
-        };
-      } else if (prov === 'gemini') {
-        url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`;
-        // Map history to gemini format
-        const contents = formattedMessages.map(m => {
-          if (m.tool_results) {
-            return {
-              role: 'user',
-              parts: m.tool_results.map((r: any) => ({
-                functionResponse: {
-                  name: r.name,
-                  response: { result: r.content }
-                }
-              }))
-            };
-          }
-          if (m.tool_calls) {
-            return {
-              role: 'model',
-              parts: [
-                { text: m.content || '' },
-                ...m.tool_calls.map((c: any) => ({
-                  functionCall: {
-                    name: c.name,
-                    args: c.input
-                  }
-                }))
-              ]
-            };
-          }
-          return {
-            role: m.role === 'assistant' ? 'model' : 'user',
-            parts: [{ text: m.content }]
-          };
-        });
-
-        body = {
-          systemInstruction: {
-            parts: [{ text: activeSystemPrompt }]
-          },
-          contents,
-          ...(geminiTools && geminiTools.length > 0 ? { tools: geminiTools } : {})
-        };
-      }
-
-      // Safe fallback if URL is empty due to unmapped provider
-      if (!url) {
-        url = 'https://api.openai.com/v1/chat/completions';
-        headers['Authorization'] = `Bearer ${apiKey}`;
-        body = {
-          model,
-          messages: [
-            { role: 'system', content: activeSystemPrompt },
-            ...formattedMessages.map(m => {
-              if (m.role === 'tool') return m;
-              if (m.tool_calls) {
-                return {
-                  role: 'assistant',
-                  content: m.content || null,
-                  tool_calls: m.tool_calls
-                };
-              }
-              return { role: m.role, content: m.content };
-            })
-          ],
-          ...(openAITools && openAITools.length > 0 ? { tools: openAITools, tool_choice: 'auto' } : {}),
-          stream: true
-        };
-      }
-
-      const response = await fetch(url, {
+      const response = await fetch(requestPayload.url, {
         method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal
+        headers: requestPayload.headers,
+        body: JSON.stringify(requestPayload.body),
+        signal,
       });
 
       if (!response.ok) {
@@ -959,175 +804,29 @@ export async function runAgentLoop({
         throw new Error(`API returned HTTP ${response.status}: ${errText}`);
       }
 
-      if (!response.body) {
-        throw new Error('Response body is empty');
+      const { textContent, reasoningContent, toolCalls } = await adapter.parseStream(response, {
+        sendChunk,
+        signal,
+        provider,
+        model,
+        onPart: part => sendPart?.({ ...part, partId: `provider-${turn}-${part.partId}` }),
+      });
+
+      if (!textContent && !reasoningContent && toolCalls.length === 0) {
+        const message = 'El proveedor terminó sin contenido de respuesta. Intente nuevamente.';
+        chatLog('warn', logContext, 'main.provider', 'stream.empty_response', { turn });
+        sendError(message);
+        return false;
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder('utf-8');
-      let buffer = '';
-
-      let textContent = '';
-      let toolCalls: any[] = [];
-      let currentToolCall: any = null;
-      let inReasoningBlock = false;
-
-      // Temporary variables for Anthropic/OpenAI parser
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-
-          if (provider === 'anthropic') {
-            if (trimmed.startsWith('data: ')) {
-              try {
-                const dataStr = trimmed.slice(6);
-                if (dataStr.trim() === '[DONE]') continue;
-                const parsed = JSON.parse(dataStr);
-                
-                if (parsed.type === 'content_block_start') {
-                  if (parsed.content_block?.type === 'tool_use') {
-                    currentToolCall = {
-                      id: parsed.content_block.id,
-                      name: parsed.content_block.name,
-                      input: ''
-                    };
-                  }
-                } else if (parsed.type === 'content_block_delta') {
-                  if (parsed.delta?.text) {
-                    textContent += parsed.delta.text;
-                    sendChunk(parsed.delta.text);
-                  } else if (parsed.delta?.partial_json) {
-                    if (currentToolCall) {
-                      currentToolCall.input += parsed.delta.partial_json;
-                    }
-                  }
-                } else if (parsed.type === 'content_block_stop') {
-                  if (currentToolCall) {
-                    try {
-                      currentToolCall.input = JSON.parse(currentToolCall.input);
-                    } catch (e) {}
-                    toolCalls.push(currentToolCall);
-                    currentToolCall = null;
-                  }
-                }
-              } catch (e) {}
-            }
-          } else if (provider === 'gemini') {
-            try {
-              const cleanLine = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed;
-              const parsed = JSON.parse(cleanLine);
-              const part = parsed.candidates?.[0]?.content?.parts?.[0];
-              if (part?.text) {
-                textContent += part.text;
-                sendChunk(part.text);
-              }
-              if (part?.functionCall) {
-                toolCalls.push({
-                  id: `gemini-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-                  name: part.functionCall.name,
-                  input: part.functionCall.args || {}
-                });
-              }
-            } catch (e) {}
-          } else {
-            // OpenAI, DeepSeek, Qwen compatible
-            if (trimmed.startsWith('data: ')) {
-              const dataStr = trimmed.slice(6);
-              if (dataStr.trim() === '[DONE]') continue;
-              try {
-                const parsed = JSON.parse(dataStr);
-                const choice = parsed.choices?.[0];
-                const delta = choice?.delta;
-                
-                const reasoning = delta?.reasoning_content || delta?.reasoning;
-                if (reasoning) {
-                  if (!inReasoningBlock) {
-                    textContent += '<think>\n';
-                    sendChunk('<think>\n');
-                    inReasoningBlock = true;
-                  }
-                  textContent += reasoning;
-                  sendChunk(reasoning);
-                }
-
-                if (delta?.content) {
-                  if (inReasoningBlock) {
-                    textContent += '\n</think>\n';
-                    sendChunk('\n</think>\n');
-                    inReasoningBlock = false;
-                  }
-                  textContent += delta.content;
-                  sendChunk(delta.content);
-                }
-
-                if (delta?.tool_calls) {
-                  if (inReasoningBlock) {
-                    textContent += '\n</think>\n';
-                    sendChunk('\n</think>\n');
-                    inReasoningBlock = false;
-                  }
-                  for (const tc of delta.tool_calls) {
-                    if (tc.id) {
-                      if (currentToolCall) {
-                        try { currentToolCall.input = JSON.parse(currentToolCall.input); } catch(e){}
-                        toolCalls.push(currentToolCall);
-                      }
-                      currentToolCall = {
-                        id: tc.id,
-                        name: tc.function.name,
-                        input: tc.function.arguments || ''
-                      };
-                    } else if (tc.function?.arguments) {
-                      if (currentToolCall) {
-                        currentToolCall.input += tc.function.arguments;
-                      }
-                    }
-                  }
-                }
-              } catch (e) {}
-            }
-          }
-        }
-      }
-
-      // Close reasoning block if still open
-      if (inReasoningBlock) {
-        textContent += '\n</think>\n';
-        sendChunk('\n</think>\n');
-        inReasoningBlock = false;
-      }
-
-      // Close the last tool call if OpenAI compatible
-      if (currentToolCall) {
-        try {
-          currentToolCall.input = JSON.parse(currentToolCall.input);
-        } catch (e) {}
-        toolCalls.push(currentToolCall);
-        currentToolCall = null;
-      }
-
-      // Save this turn's response to memory
-      const assistantMessage: any = {
+      // Save this turn's response to conversation state
+      const assistantMessage: UnifiedMessage = {
         role: 'assistant',
-        content: textContent
+        content: textContent,
       };
 
       if (toolCalls.length > 0) {
-        // Append tool calls representation
-        assistantMessage.tool_calls = toolCalls.map(tc => ({
-          id: tc.id,
-          name: tc.name,
-          input: tc.input
-        }));
+        assistantMessage.tool_calls = toolCalls;
       }
 
       messages.push(assistantMessage);
@@ -1136,10 +835,7 @@ export async function runAgentLoop({
       // 5. Tool Execution & Feed Back Loop
       // ==========================================
       if (toolCalls.length > 0) {
-        const results: any[] = [];
-        
-        // Show tool execution start in thinking tags inside chat
-        sendChunk(`\n<think>\n`);
+        const results: ToolResult[] = [];
         
         for (const tc of toolCalls) {
           if (signal.aborted) {
@@ -1151,32 +847,88 @@ export async function runAgentLoop({
           const currentCount = (executedToolCounts.get(sig) || 0) + 1;
           executedToolCounts.set(sig, currentCount);
 
-          if ((tc.name === 'write_file' || tc.name === 'edit_file') && executedWriteSignatures.has(sig)) {
-            sendChunk(`[Finalizado] La herramienta \`${tc.name}\` ya creó y aplicó los cambios correctamente en el archivo.\n</think>\n\nOperación completada exitosamente. El archivo ha sido creado en tu espacio de trabajo.`);
+          if ((tc.name === 'write_file' || tc.name === 'edit_file' || tc.name === 'delete_file') && executedWriteSignatures.has(sig)) {
+            sendReasoning(`[Finalizado] La herramienta \`${tc.name}\` ya creó y aplicó los cambios correctamente en el archivo.`);
+            sendChunk('\n\nOperación completada exitosamente. El archivo ha sido creado en tu espacio de trabajo.');
             sendEnd();
             return true;
           }
 
+          const currentTurnId = turnId || 'turn-default';
+          const toolCallId = tc.id || `tool-${Date.now()}`;
+
+          onEvent?.({
+            type: 'tool',
+            turnId: currentTurnId,
+            id: toolCallId,
+            name: tc.name,
+            status: 'start',
+            data: tc.input,
+          });
+          chatLog('info', logContext, 'main.tool', tc.name === 'delegate_subagent' ? 'subagent.started' : 'tool.started', { toolIdPresent: Boolean(toolCallId) });
+          executingToolName = tc.name;
+
           let resultStr: string;
           if (currentCount > 2 && (tc.name === 'list_dir' || tc.name === 'glob_search' || tc.name === 'read_file')) {
             resultStr = `[AVISO ANTI-LOOP] Ya consultaste '${tc.name}' con estos mismos parámetros anteriormente. NO repitas esta llamada. Procedé de inmediato a escribir el código o archivo solicitado con 'write_file' o 'edit_file', o respondé al usuario.`;
+          } else if (tc.name === 'delegate_subagent') {
+            const targetRole = (tc.input as any)?.role as GentleRoleId;
+            const roleLabel = GENTLE_ROLE_LABELS[targetRole] || targetRole || 'subagente';
+            sendReasoning(`Delegando tarea al subagente \`${roleLabel}\`...\n`);
+            resultStr = await executeTool(tc.name, tc.input, workspacePath, effectiveMode, {
+              role,
+              modelConfig,
+              providers,
+              apiKey,
+              signal,
+              onEvent,
+              turnId: currentTurnId,
+              sessionId,
+              changeSetService,
+              changeSetId,
+              toolCallId,
+            });
+            sendReasoning(`Subagente \`${roleLabel}\` completó su tarea.\n`);
           } else {
-            sendChunk(`Ejecutando herramienta \`${tc.name}\` en el workspace...\n`);
-            resultStr = await executeTool(tc.name, tc.input, workspacePath, effectiveMode);
-            if (tc.name === 'write_file' || tc.name === 'edit_file') {
+            sendReasoning(`Ejecutando herramienta \`${tc.name}\` en el workspace...\n`);
+            resultStr = await executeTool(tc.name, tc.input, workspacePath, effectiveMode, {
+              role,
+              modelConfig,
+              providers,
+              apiKey,
+              signal,
+              onEvent,
+              turnId: currentTurnId,
+              sessionId,
+              changeSetService,
+              changeSetId,
+              toolCallId,
+            });
+            if (tc.name === 'write_file' || tc.name === 'edit_file' || tc.name === 'delete_file') {
               executedWriteSignatures.add(sig);
             }
-            sendChunk(`Herramienta \`${tc.name}\` completada.\n`);
+            sendReasoning(`Herramienta \`${tc.name}\` completada.\n`);
           }
+
+          onEvent?.({
+            type: 'tool',
+            turnId: currentTurnId,
+            id: toolCallId,
+            name: tc.name,
+            status: 'end',
+            data: {
+              result: resultStr,
+            },
+          });
+          chatLog('info', logContext, 'main.tool', tc.name === 'delegate_subagent' ? 'subagent.completed' : 'tool.completed', { toolIdPresent: Boolean(toolCallId), resultBytes: resultStr.length });
+          executingToolName = undefined;
 
           results.push({
             tool_use_id: tc.id,
             name: tc.name,
-            content: resultStr
+            content: resultStr,
           });
         }
-
-        sendChunk(`</think>\n`);
 
         if (signal.aborted) {
           sendEnd(true);
@@ -1185,9 +937,9 @@ export async function runAgentLoop({
 
         // Append the tool results
         messages.push({
-          role: 'user', // In OpenAI, this is a separate 'tool' role, but we unify it
+          role: 'user',
           content: 'Resultados de las herramientas ejecutadas. Por favor, presenta tu confirmación final al usuario.',
-          tool_results: results
+          tool_results: results,
         });
 
         // Continue to the next turn in the loop!
@@ -1197,6 +949,7 @@ export async function runAgentLoop({
         return true;
       }
     } catch (err: any) {
+      if (executingToolName) chatLog('error', logContext, 'main.tool', executingToolName === 'delegate_subagent' ? 'subagent.error' : 'tool.error');
       console.error('Error in agent runner loop:', err);
       sendError(err.message || 'Error executing agent loop API call.');
       sendEnd();

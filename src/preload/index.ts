@@ -71,6 +71,8 @@ contextBridge.exposeInMainWorld('api', {
     setKey: (provider: string, key: string, authType?: 'api' | 'oauth') => ipcRenderer.invoke('store:set-key', provider, key, authType),
     getSelectedModels: () => ipcRenderer.invoke('store:get-selected-models'),
     setSelectedModel: (provider: string, model: string) => ipcRenderer.invoke('store:set-selected-model', provider, model),
+    getModelConfiguration: () => ipcRenderer.invoke('store:get-model-configuration'),
+    setModelConfiguration: (configuration: unknown) => ipcRenderer.invoke('store:set-model-configuration', configuration),
     getLastWorkspace: () => ipcRenderer.invoke('store:get-last-workspace'),
     setLastWorkspace: (workspacePath: string | null) => ipcRenderer.invoke('store:set-last-workspace', workspacePath),
     getRecentWorkspaces: () => ipcRenderer.invoke('store:get-recent-workspaces'),
@@ -85,11 +87,13 @@ contextBridge.exposeInMainWorld('api', {
       conversationId?: string;
       turnId?: string;
       mode?: 'orchestrator' | 'build' | 'plan' | 'review';
+      effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
       provider: string; 
       model: string; 
       apiKey: string; 
       prompt: string; 
       contextText: string | null; 
+      contextSource?: 'default' | 'explicit';
       history: any[]; 
       image?: string | null 
     }) => ipcRenderer.invoke('ai:stream-chat', args),
@@ -98,6 +102,11 @@ contextBridge.exposeInMainWorld('api', {
       const listener = (_event: any, payload: any) => callback(payload);
       ipcRenderer.on('ai:stream-chunk', listener);
       return () => ipcRenderer.removeListener('ai:stream-chunk', listener);
+    },
+    onPart: (callback: (payload: { conversationId: string; turnId: string; part: import('../main/engine/types').AssistantPart }) => void) => {
+      const listener = (_event: any, payload: any) => callback(payload);
+      ipcRenderer.on('ai:stream-part', listener);
+      return () => ipcRenderer.removeListener('ai:stream-part', listener);
     },
     onEnd: (callback: (payload: { conversationId: string; turnId: string; aborted?: boolean } | boolean) => void) => {
       const listener = (_event: any, payload: any) => callback(payload);
@@ -108,7 +117,31 @@ contextBridge.exposeInMainWorld('api', {
       const listener = (_event: any, payload: any) => callback(payload);
       ipcRenderer.on('ai:stream-error', listener);
       return () => ipcRenderer.removeListener('ai:stream-error', listener);
-    }
+    },
+    onTool: (callback: (payload: { conversationId: string; turnId: string; tool: { id: string; name: string; status: 'start' | 'progress' | 'end'; data?: any } }) => void) => {
+      const listener = (_event: any, payload: any) => callback(payload);
+      ipcRenderer.on('ai:stream-tool', listener);
+      return () => ipcRenderer.removeListener('ai:stream-tool', listener);
+    },
+    onContextBounded: (callback: (payload: { conversationId: string; turnId: string; warning: import('../shared/contextBudget').ContextBoundEvent }) => void) => {
+      const listener = (_event: any, payload: any) => callback(payload);
+      ipcRenderer.on('ai:context-bounded', listener);
+      return () => ipcRenderer.removeListener('ai:context-bounded', listener);
+    },
+    onChangeSetReady: (callback: (payload: { conversationId: string; turnId: string; changeSet: unknown }) => void) => {
+      const listener = (_event: any, payload: any) => callback(payload);
+      ipcRenderer.on('ai:changeset-ready', listener);
+      return () => ipcRenderer.removeListener('ai:changeset-ready', listener);
+    },
+  },
+  changes: {
+    summary: (changeSetId: string) => ipcRenderer.invoke('changes:summary', changeSetId),
+    entry: (args: { changeSetId: string; relativePath: string }) => ipcRenderer.invoke('changes:entry', args),
+    accept: (args: { changeSetId: string; dirtyPaths: string[] }) => ipcRenderer.invoke('changes:accept', args),
+    reject: (changeSetId: string) => ipcRenderer.invoke('changes:reject', changeSetId),
+    listRollbacks: (query?: { changeSetId?: string; turnId?: string; conversationId?: string }) => ipcRenderer.invoke('changes:list-rollbacks', query),
+    previewRollback: (checkpointId: string) => ipcRenderer.invoke('changes:preview-rollback', checkpointId),
+    rollback: (checkpointId: string) => ipcRenderer.invoke('changes:rollback', checkpointId),
   },
   git: {
     getStatus: (workspacePath: string) => ipcRenderer.invoke('git:status', workspacePath),
@@ -136,5 +169,8 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('lsp:diagnostics', listener);
       return () => ipcRenderer.removeListener('lsp:diagnostics', listener);
     },
+  },
+  semantic: {
+    retrieve: (args: { workspacePath: string; query: string; explicitPaths?: string[] }) => ipcRenderer.invoke('semantic:retrieve', args),
   }
 });

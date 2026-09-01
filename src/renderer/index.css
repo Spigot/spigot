@@ -24,6 +24,8 @@
     --editor-active: #27272a;
     --editor-tabActive: #121216;
     --editor-tabInactive: #050507;
+    --editor-success: #34d399;
+    --editor-error: #f87171;
   }
 
   body.theme-grayish {
@@ -47,6 +49,8 @@
     --editor-active: #2a2e40;
     --editor-tabActive: #1c1f2b;
     --editor-tabInactive: #0d0e14;
+    --editor-success: #5eead4;
+    --editor-error: #fb7185;
   }
 
   body.theme-solarized {
@@ -70,6 +74,8 @@
     --editor-active: #0c4854;
     --editor-tabActive: #002b36;
     --editor-tabInactive: #00171f;
+    --editor-success: #859900;
+    --editor-error: #dc322f;
   }
 
   body {

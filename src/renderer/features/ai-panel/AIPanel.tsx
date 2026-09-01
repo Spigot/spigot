@@ -4,9 +4,14 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useAIStore } from '../../store/aiStore';
 import { compileContext } from './contextCompiler';
 import { ApiKeyModal } from './ApiKeyModal';
-import { StyledSelect } from './StyledSelect';
+import { ChatAgentControls } from './ChatAgentControls';
 import { SLASH_COMMANDS, SlashCommand } from './slashCommands';
-import { parseMessageThinking } from '../chat/messageParser';
+import { SubagentExecutionCard } from '../chat/SubagentExecutionCard';
+import { ChangeSetReviewCard } from '../chat/ChangeSetReviewCard';
+import { ProgressiveMessageRenderer } from '../chat/ProgressiveMessageRenderer';
+import { useScrollFollow } from '../chat/useScrollFollow';
+import { MemoizedMessageRow } from '../chat/MemoizedMessageRow';
+import { useSystemDialogStore } from '../../components/ui/systemDialogStore';
 import { 
   Sparkles, Settings, 
   ShieldAlert, Folder, FileText, 
@@ -42,9 +47,65 @@ const ThoughtBlock: React.FC<{
   }
 
   const renderThoughtLine = (line: string, index: number) => {
+    const isSubagentStart = line.includes('Delegando tarea al subagente') || (line.includes('Subagente') && line.includes('ejecutan'));
+    const isSubagentEnd = line.includes('Subagente') && (line.includes('completó') || line.includes('completada') || line.includes('finaliz'));
+    const isSubagentError = line.startsWith('[Error en Subagente') || (line.includes('Subagente') && line.includes('falló'));
+    const isSubagentResult = line.startsWith('[Resultado del Subagente');
     const isExecuting = line.includes('Ejecutando herramienta');
     const isCompleted = line.includes('Herramienta') && (line.includes('completada') || line.includes('finalizada'));
     const isWarning = line.includes('ADVERTENCIA') || line.includes('Advertencia') || line.includes('⚠️');
+
+    if (isSubagentStart) {
+      const roleMatch = line.match(/`([^`]+)`/);
+      const role = roleMatch ? roleMatch[1] : 'subagente';
+      return (
+        <SubagentExecutionCard
+          key={index}
+          role={role}
+          status="running"
+        />
+      );
+    }
+
+    if (isSubagentEnd) {
+      const roleMatch = line.match(/`([^`]+)`/);
+      const role = roleMatch ? roleMatch[1] : 'subagente';
+      return (
+        <SubagentExecutionCard
+          key={index}
+          role={role}
+          status="completed"
+        />
+      );
+    }
+
+    if (isSubagentError) {
+      const roleMatch = line.match(/Subagente\s+([a-zA-Z0-9_-]+)/i) || line.match(/`([^`]+)`/);
+      const role = roleMatch ? roleMatch[1] : 'subagente';
+      return (
+        <SubagentExecutionCard
+          key={index}
+          role={role}
+          status="error"
+          error={line}
+        />
+      );
+    }
+
+    if (isSubagentResult) {
+      const headerEnd = line.indexOf(']:');
+      const roleMatch = line.match(/\[Resultado del Subagente\s+([a-zA-Z0-9_-]+)\]/i);
+      const role = roleMatch ? roleMatch[1] : 'subagente';
+      const output = headerEnd !== -1 ? line.slice(headerEnd + 2).trim() : line;
+      return (
+        <SubagentExecutionCard
+          key={index}
+          role={role}
+          status="completed"
+          output={output}
+        />
+      );
+    }
 
     if (isExecuting) {
       const toolMatch = line.match(/`([^`]+)`/);
@@ -85,9 +146,11 @@ const ThoughtBlock: React.FC<{
   };
 
   const thoughtLines = thought.split('\n').filter(l => l.trim().length > 0);
+  void renderThoughtLine;
+  void thoughtLines;
 
   return (
-    <div className="mb-3 border border-editor-border rounded-[4px] overflow-hidden bg-editor-bg transition-all">
+    <div className="mb-3 border border-editor-border rounded-[4px] overflow-hidden bg-editor-bg">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="w-full flex items-center justify-between px-2.5 py-1.5 hover:bg-editor-hover text-[11px] text-editor-textDark transition-colors select-none"
@@ -111,24 +174,22 @@ const ThoughtBlock: React.FC<{
           {thoughtLines.length} {thoughtLines.length === 1 ? 'paso' : 'pasos'}
         </span>
       </button>
-      {isOpen && (
-        <div className="px-2.5 py-2 border-t border-editor-border bg-editor-sidebar flex flex-col gap-1">
-          {thoughtLines.map((line, idx) => renderThoughtLine(line, idx))}
-        </div>
-      )}
+       {isOpen && <div className="px-2.5 py-2 border-t border-editor-border bg-editor-sidebar text-editor-textDark text-[11px] leading-relaxed whitespace-pre-wrap select-text">{thought}</div>}
     </div>
   );
 };
 
 export const AIPanel: React.FC = () => {
+  const confirmDialog = useSystemDialogStore(state => state.confirm);
   const { isAIPanelOpen, aiPanelWidth } = useLayoutStore();
   const { workspacePath, fileTree, explorerSelectedPath, activeTabPath, updateFileBuffer } = useWorkspaceStore();
   const { 
     messages, providers, activeProvider, isGenerating, incomingStreamText, error,
     conversations, activeConversationId,
-    initializeStore, setActiveProvider, selectModel, sendMessage, clearHistory, abortChat,
+    initializeStore, sendMessage, clearHistory, abortChat,
     createConversation, selectConversation, deleteConversation
   } = useAIStore();
+  const latestAssistantMessageId = [...messages].reverse().find(message => message.role === 'assistant')?.id;
 
   const [prompt, setPrompt] = useState('');
   const [agentModeType, setAgentModeType] = useState<'orchestrator' | 'build' | 'plan' | 'review'>('orchestrator');
@@ -142,7 +203,7 @@ export const AIPanel: React.FC = () => {
   const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; content?: string; image?: string }>>([]);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -174,10 +235,7 @@ export const AIPanel: React.FC = () => {
     initializeStore();
   }, [workspacePath]);
 
-  // Auto-scroll to bottom of conversation
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, incomingStreamText]);
+  useScrollFollow(messagesContainerRef, [messages, incomingStreamText]);
 
   // Adjust textarea height on typing
   useEffect(() => {
@@ -193,12 +251,6 @@ export const AIPanel: React.FC = () => {
   const activeKeysConfigured = Object.values(providers).some(p => p.key.trim().length > 0);
   const currentProviderData = providers[activeProvider];
   const hasActiveKey = currentProviderData?.key.trim().length > 0;
-  const configuredProviderOptions = Object.entries(providers)
-    .map(([id]) => ({ value: id, label: PROVIDER_LABELS[id] ?? id }));
-  const modelOptions = hasActiveKey
-    ? currentProviderData.availableModels.map((model) => ({ value: model, label: model }))
-    : [];
-  const hasConfiguredModel = hasActiveKey && currentProviderData.activeModel && modelOptions.length > 0;
 
   // Get active explorer path context names
   const getContextInfo = () => {
@@ -305,14 +357,16 @@ export const AIPanel: React.FC = () => {
 
     // Compile active context including explicit mentions
     let contextText = null;
+    let contextSource: 'default' | 'explicit' = 'default';
     try {
-      const compiled = await compileContext(workspacePath, fileTree, explorerSelectedPath, mentionedPaths);
+      const compiled = await compileContext(workspacePath, fileTree, explorerSelectedPath, mentionedPaths, mentionMatches[0] || rawText);
       contextText = compiled.text;
+      contextSource = compiled.contextSource;
     } catch (e) {
       console.error('Failed to compile context:', e);
     }
 
-    await sendMessage(finalPrompt, contextText, attachedImage, agentModeType);
+    await sendMessage(finalPrompt, contextText, attachedImage, agentModeType, contextSource);
   };
 
   const handleStop = () => {
@@ -493,26 +547,26 @@ export const AIPanel: React.FC = () => {
     });
   };
 
-  const renderAssistantMessage = (content: string, id: string) => {
-    const { thought, response, isThinking } = parseMessageThinking(content);
-
+  const renderAssistantMessage = (content: string, id: string, changeSet?: any, isStreaming = false, parts?: any[]) => {
     return (
-      <div className="flex flex-col gap-1.5">
-        {thought.trim() && (
-          <ThoughtBlock thought={thought} isThinking={isThinking} />
-        )}
-        {response.trim() && (
-          <div className="flex flex-col gap-1">
-            {renderMessageContent(response, id)}
-          </div>
-        )}
-        {!response.trim() && isThinking && (
-          <div className="flex items-center gap-2 text-editor-textDark text-[12px] select-none py-1">
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-editor-accent" />
-            <span>Generando respuesta...</span>
-          </div>
-        )}
-      </div>
+      <>
+        <ProgressiveMessageRenderer
+           content={content}
+           parts={parts}
+          messageId={id}
+          isStreaming={isStreaming}
+          renderThought={(thought, isThinking) => <ThoughtBlock thought={thought} isThinking={isThinking} />}
+          renderCodeBlock={(code, language, codeId) => renderMessageContent(`\`\`\`${language}\n${code}\n\`\`\``, codeId)}
+          textClassName="text-[13px] leading-[1.55] whitespace-pre-wrap select-text selection:bg-editor-active break-words text-editor-text"
+          emptyState={<div className="flex items-center gap-2 text-editor-textDark text-[12px] select-none py-1"><Loader2 className="w-3.5 h-3.5 animate-spin text-editor-accent" /><span>Generando respuesta...</span></div>}
+        />
+        {changeSet && <ChangeSetReviewCard review={changeSet} onStateChange={(state) => {
+          useAIStore.setState(current => ({
+            conversations: current.conversations.map(conversation => ({ ...conversation, messages: conversation.messages.map(message => message.id === id && message.changeSet ? { ...message, changeSet: { ...message.changeSet, state } } : message) })),
+            messages: current.messages.map(message => message.id === id && message.changeSet ? { ...message, changeSet: { ...message.changeSet, state } } : message),
+          }));
+        }} />}
+      </>
     );
   };
 
@@ -528,31 +582,6 @@ export const AIPanel: React.FC = () => {
             CHAT
           </span>
 
-          {activeKeysConfigured ? (
-            <div className="flex items-center gap-1.5 min-w-0">
-              <StyledSelect
-                value={activeProvider}
-                options={configuredProviderOptions}
-                onChange={setActiveProvider}
-                placeholder="Proveedor"
-                disabled={configuredProviderOptions.length <= 1}
-                className="w-auto shrink-0"
-                buttonClassName="border border-editor-border bg-editor-active hover:bg-editor-hover px-2 py-0.5 rounded text-[11px] font-medium text-editor-text h-6 flex items-center gap-1"
-              />
-
-              {hasConfiguredModel && (
-                <StyledSelect
-                  value={currentProviderData.activeModel}
-                  options={modelOptions}
-                  onChange={(model) => selectModel(activeProvider, model)}
-                  placeholder="Modelo"
-                  disabled={modelOptions.length <= 1}
-                  className="max-w-[140px] min-w-0 shrink"
-                  buttonClassName="border border-editor-border bg-editor-active hover:bg-editor-hover px-2 py-0.5 rounded text-[11px] font-medium text-editor-text h-6 flex items-center gap-1 truncate"
-                />
-              )}
-            </div>
-          ) : null}
         </div>
 
         {/* Header Action Buttons */}
@@ -581,8 +610,8 @@ export const AIPanel: React.FC = () => {
 
           {messages.length > 0 && (
             <button
-              onClick={() => {
-                if (window.confirm('¿Vaciar la conversación actual?')) {
+              onClick={async () => {
+                if (await confirmDialog('Vaciar conversación', '¿Vaciar la conversación actual?', true)) {
                   clearHistory();
                 }
               }}
@@ -654,9 +683,9 @@ export const AIPanel: React.FC = () => {
                       {conv.title}
                     </span>
                     <button
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation();
-                        if (window.confirm('¿Eliminar esta conversación?')) {
+                        if (await confirmDialog('Eliminar conversación', '¿Eliminar esta conversación?', true)) {
                           deleteConversation(conv.id);
                         }
                       }}
@@ -674,7 +703,7 @@ export const AIPanel: React.FC = () => {
       )}
 
       {/* 3. Conversation Area / History */}
-      <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-3">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-3">
         {!activeKeysConfigured ? (
           /* Welcome screen when no keys are configured */
           <div className="flex-1 flex flex-col items-center justify-center text-center p-6 select-none">
@@ -761,7 +790,8 @@ export const AIPanel: React.FC = () => {
             {messages.map((msg) => {
               const isUser = msg.role === 'user';
               return (
-                <div key={msg.id} className="flex flex-col gap-1.5">
+                <MemoizedMessageRow key={msg.id} message={msg} renderVersion={copiedId?.startsWith(msg.id) || appliedId?.startsWith(msg.id)}>
+                <div className="flex flex-col gap-1.5">
                   {/* Message Header */}
                   <div className="flex items-center justify-between text-[11px] text-editor-textDark select-none px-1">
                     <div className="flex items-center gap-1.5 font-medium">
@@ -792,6 +822,7 @@ export const AIPanel: React.FC = () => {
 
                   {/* Message Body Container */}
                   <div 
+                    data-testid={msg.id === latestAssistantMessageId ? 'ai-panel-latest-assistant-response' : undefined}
                     className={`rounded-[6px] p-2.5 text-[13px] leading-[1.55] ${
                       isUser 
                         ? 'bg-editor-active border border-editor-border text-editor-text' 
@@ -810,15 +841,16 @@ export const AIPanel: React.FC = () => {
                         </span>
                       </div>
                     ) : (
-                      renderAssistantMessage(msg.content, msg.id)
+                       renderAssistantMessage(msg.content, msg.id, msg.changeSet, false, msg.parts)
                     )}
                   </div>
                 </div>
+                </MemoizedMessageRow>
               );
             })}
 
             {/* Dynamic Real-time Incoming SSE Stream */}
-            {isGenerating && incomingStreamText && (
+            {isGenerating && Boolean(incomingStreamText || useAIStore.getState().activeStreams[activeConversationId || '']?.parts?.length) && (
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-1.5 text-[11px] text-editor-accent select-none px-1 font-medium">
                   <div className="w-4 h-4 rounded-full bg-editor-active border border-editor-border text-editor-accent flex items-center justify-center">
@@ -827,13 +859,13 @@ export const AIPanel: React.FC = () => {
                   <span>Spigot Copilot</span>
                 </div>
                 <div className="rounded-[6px] p-2.5 text-[13px] leading-[1.55] bg-editor-bg border border-editor-border text-editor-text">
-                  {renderAssistantMessage(incomingStreamText, 'streaming')}
+                  {renderAssistantMessage(incomingStreamText, 'streaming', undefined, true, useAIStore.getState().activeStreams[activeConversationId || '']?.parts)}
                 </div>
               </div>
             )}
 
             {/* Loader indicator while waiting for the first chunk */}
-            {isGenerating && !incomingStreamText && (
+            {isGenerating && !incomingStreamText && !Boolean(useAIStore.getState().activeStreams[activeConversationId || '']?.parts?.length) && (
               <div className="flex items-center gap-2 text-editor-textDark text-[12px] bg-editor-bg px-3 py-2 rounded-[6px] border border-editor-border select-none w-fit">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-editor-accent" />
                 <span>Analizando contexto y generando...</span>
@@ -841,6 +873,15 @@ export const AIPanel: React.FC = () => {
             )}
 
             {/* Error notifications */}
+            {(() => {
+              const warning = useAIStore.getState().activeStreams[activeConversationId || '']?.contextWarning;
+              return warning && (warning.omittedExplicitContext || warning.omittedHistory) ? (
+                <div className="flex items-start gap-2 px-2.5 py-2 rounded-[5px] bg-amber-950/20 border border-amber-900/40 text-amber-200 text-[11px]">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                  <span>Se omitió parte del contexto seleccionado o del historial para mantener la solicitud dentro del presupuesto seguro.</span>
+                </div>
+              ) : null;
+            })()}
             {error && (
               <div className="flex items-start gap-2 p-2.5 rounded-[5px] bg-red-950/20 border border-red-900/40 text-red-400 text-[12px] select-text">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -851,7 +892,6 @@ export const AIPanel: React.FC = () => {
               </div>
             )}
             
-            <div ref={messagesEndRef} />
           </>
         )}
       </div>
@@ -983,58 +1023,6 @@ export const AIPanel: React.FC = () => {
               ))}
             </div>
 
-            {/* Mode Pills: Orchestrator | Build | Plan | Review */}
-            <div className="flex items-center bg-editor-sidebar rounded-md border border-editor-border p-0.5 text-[10px] font-medium gap-0.5">
-              <button
-                type="button"
-                onClick={() => setAgentModeType('orchestrator')}
-                className={`px-1.5 py-0.5 rounded transition-all flex items-center gap-1 ${
-                  agentModeType === 'orchestrator'
-                    ? 'bg-purple-500/20 text-purple-300 font-bold border border-purple-500/40 shadow-xs'
-                    : 'text-editor-textDark hover:text-editor-text'
-                }`}
-                title="Modo Orchestrator (Gentle AI): coordinación autónoma, descomposición arquitectónica y verificación"
-              >
-                <Brain className="w-2.5 h-2.5" />
-                <span>Orchestrator</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setAgentModeType('build')}
-                className={`px-1.5 py-0.5 rounded transition-all flex items-center gap-1 ${
-                  agentModeType === 'build'
-                    ? 'bg-sky-500/20 text-sky-300 font-bold border border-sky-500/40 shadow-xs'
-                    : 'text-editor-textDark hover:text-editor-text'
-                }`}
-                title="Modo Build: ejecución autónoma y edición directa de archivos"
-              >
-                <span>Build</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setAgentModeType('plan')}
-                className={`px-1.5 py-0.5 rounded transition-all flex items-center gap-1 ${
-                  agentModeType === 'plan'
-                    ? 'bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/40 shadow-xs'
-                    : 'text-editor-textDark hover:text-editor-text'
-                }`}
-                title="Modo Plan: planificación arquitectónica y diseño sin mutaciones"
-              >
-                <span>Plan</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setAgentModeType('review')}
-                className={`px-1.5 py-0.5 rounded transition-all flex items-center gap-1 ${
-                  agentModeType === 'review'
-                    ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40 shadow-xs'
-                    : 'text-editor-textDark hover:text-editor-text'
-                }`}
-                title="Modo Review: auditoría arquitectónica y calidad"
-              >
-                <span>Review</span>
-              </button>
-            </div>
           </div>
 
           {/* Text Input */}
@@ -1109,15 +1097,15 @@ export const AIPanel: React.FC = () => {
                 handleSend();
               }
             }}
-            placeholder="Preguntale a Spigot (@archivo para contexto, / para comandos)..."
+            placeholder="Describe lo que quieres crear"
             disabled={!hasActiveKey}
             rows={1}
             className="w-full bg-transparent border-0 outline-none text-[13px] text-editor-text placeholder:text-editor-textDark resize-none leading-relaxed min-h-[38px] max-h-[160px] p-0 font-sans"
           />
 
           {/* Bottom Action Row inside Input Box */}
-          <div className="flex items-center justify-between pt-1 border-t border-editor-border/40">
-            <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center justify-between gap-1 pt-1 border-t border-editor-border/40">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -1141,9 +1129,11 @@ export const AIPanel: React.FC = () => {
               >
                 /
               </button>
+
+              <ChatAgentControls mode={agentModeType} onModeChange={setAgentModeType} />
             </div>
 
-            <div className="flex items-center gap-1.5">
+            <div className="ml-auto flex shrink-0 items-center gap-1.5">
               {isGenerating ? (
                 <button
                   type="button"

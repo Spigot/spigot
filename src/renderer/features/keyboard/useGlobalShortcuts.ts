@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useLayoutStore } from '../../store/layoutStore';
+import { useSystemDialogStore } from '../../components/ui/systemDialogStore';
 
 const isEditableTarget = (target: EventTarget | null) => {
   if (!(target instanceof HTMLElement)) return false;
@@ -77,7 +78,7 @@ export const useGlobalShortcuts = () => {
           return;
         }
 
-        const name = window.prompt('New file name:', 'untitled.txt')?.trim();
+        const name = (await useSystemDialogStore.getState().prompt('Nuevo archivo', 'Ingresá el nombre del nuevo archivo:', 'untitled.txt'))?.trim();
         if (name) {
           await workspace.createItem(name, 'file');
         }

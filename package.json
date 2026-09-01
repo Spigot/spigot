@@ -18,7 +18,8 @@
     "rebuild": "corepack pnpm run rebuild:native",
     "test": "vitest run",
     "engine:check": "tsc -p tsconfig.engine.json",
-    "test:e2e": "playwright test",
+    "test:e2e": "corepack pnpm build && playwright test",
+    "test:e2e:typed-stream": "corepack pnpm build && playwright test tests-e2e/typed-stream.spec.ts",
     "security:audit": "corepack pnpm audit --prod",
     "security:signatures": "npm audit signatures",
     "release:win": "node scripts/copy-monaco.cjs && tsc && vite build && electron-builder --win --publish always"

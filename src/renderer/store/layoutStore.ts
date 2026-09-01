@@ -1,5 +1,9 @@
 import { create } from 'zustand';
 
+// The composer toolbar needs room for attachment, command, agent, model, and send controls.
+export const AI_PANEL_MIN_WIDTH = 400;
+export const AI_PANEL_MAX_WIDTH = 700;
+
 export type SidebarTab = 'explorer' | 'search' | 'source-control' | 'pull-request';
 
 interface LayoutState {
@@ -38,7 +42,7 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   sidebarWidth: 280,
   consoleHeight: 250,
   isAIPanelOpen: true,
-  aiPanelWidth: 320,
+  aiPanelWidth: AI_PANEL_MIN_WIDTH,
   isAgentModeOpen: false,
   isSettingsModalOpen: false,
 
@@ -66,7 +70,9 @@ export const useLayoutStore = create<LayoutState>((set) => ({
 
   setAIPanelOpen: (open) => set({ isAIPanelOpen: open }),
 
-  setAIPanelWidth: (width) => set({ aiPanelWidth: width }),
+  setAIPanelWidth: (width) => set({
+    aiPanelWidth: Math.max(AI_PANEL_MIN_WIDTH, Math.min(AI_PANEL_MAX_WIDTH, width)),
+  }),
 
   toggleAgentMode: () => set((state) => ({ isAgentModeOpen: !state.isAgentModeOpen })),
 
