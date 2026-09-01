@@ -52,4 +52,45 @@ describe('StyledSelect', () => {
     fireEvent.keyDown(search, { key: 'Enter' });
     expect(onChange).toHaveBeenCalledWith('anthropic:0');
   });
+
+  it('opens upwards when positioned near the bottom of the viewport', () => {
+    render(
+      <StyledSelect
+        value="orchestrator"
+        options={[
+          { value: 'orchestrator', label: 'Orchestrator' },
+          { value: 'build', label: 'Build' },
+        ]}
+        onChange={vi.fn()}
+        placeholder="Agent"
+        ariaLabel="Select chat agent"
+      />
+    );
+
+    const button = screen.getByRole('button', { name: 'Select chat agent' });
+    vi.spyOn(button, 'getBoundingClientRect').mockReturnValue({
+      top: 850,
+      bottom: 880,
+      left: 20,
+      right: 130,
+      width: 110,
+      height: 30,
+      x: 20,
+      y: 850,
+      toJSON: () => ({}),
+    });
+
+    Object.defineProperty(window, 'innerHeight', { value: 900, writable: true, configurable: true });
+    Object.defineProperty(window, 'innerWidth', { value: 1200, writable: true, configurable: true });
+
+    fireEvent.click(button);
+
+    const listbox = screen.getByRole('listbox');
+    const menu = listbox.closest('.fixed') as HTMLElement;
+    expect(menu).not.toBeNull();
+    // In upward opening mode, bottom style should be set and top should not be set
+    expect(menu.style.bottom).toBeTruthy();
+    expect(menu.style.top).toBeFalsy();
+    expect(menu.style.left).toBe('20px');
+  });
 });

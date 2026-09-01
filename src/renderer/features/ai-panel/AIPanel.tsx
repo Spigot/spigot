@@ -185,7 +185,7 @@ export const AIPanel: React.FC = () => {
   const { workspacePath, fileTree, explorerSelectedPath, activeTabPath, updateFileBuffer } = useWorkspaceStore();
   const { 
     messages, providers, activeProvider, isGenerating, incomingStreamText, error,
-    conversations, activeConversationId,
+    conversations, activeConversationId, activeStreams,
     initializeStore, sendMessage, clearHistory, abortChat,
     createConversation, selectConversation, deleteConversation
   } = useAIStore();
@@ -235,7 +235,15 @@ export const AIPanel: React.FC = () => {
     initializeStore();
   }, [workspacePath]);
 
-  useScrollFollow(messagesContainerRef, [messages, incomingStreamText]);
+  const activeStream = activeStreams[activeConversationId || ''];
+  const { scrollToBottom } = useScrollFollow(messagesContainerRef, [
+    messages,
+    incomingStreamText,
+    activeStream?.parts,
+    activeStream?.toolEvents,
+    activeStream?.subagents,
+    isGenerating,
+  ]);
 
   // Adjust textarea height on typing
   useEffect(() => {
@@ -298,6 +306,7 @@ export const AIPanel: React.FC = () => {
     setPrompt('');
     setShowCommands(false);
     setMentionQuery(null);
+    scrollToBottom(true);
 
     let rawText = textToSend.trim();
 

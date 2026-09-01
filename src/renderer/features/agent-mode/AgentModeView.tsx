@@ -256,7 +256,7 @@ export const AgentModeView: React.FC = () => {
   const { workspacePath, setWorkspacePath, fileTree, explorerSelectedPath } = useWorkspaceStore();
   const { 
     conversations, activeConversationId, selectConversation, createConversation,
-    messages, sendMessage, isGenerating, incomingStreamText,
+    messages, sendMessage, isGenerating, incomingStreamText, activeStreams,
     initializeStore, deleteConversation, abortChat
   } = useAIStore();
   const { setSettingsModalOpen } = useLayoutStore();
@@ -285,7 +285,15 @@ export const AgentModeView: React.FC = () => {
     }
   }, [workspacePath, initializeStore]);
 
-  useScrollFollow(messagesContainerRef, [messages, incomingStreamText]);
+  const activeStream = activeStreams[activeConversationId || ''];
+  const { scrollToBottom } = useScrollFollow(messagesContainerRef, [
+    messages,
+    incomingStreamText,
+    activeStream?.parts,
+    activeStream?.toolEvents,
+    activeStream?.subagents,
+    isGenerating,
+  ]);
 
   const refreshDiffState = useCallback(async () => {
     if (!workspacePath) {
@@ -370,6 +378,7 @@ export const AgentModeView: React.FC = () => {
     if (!prompt.trim() || isGenerating) return;
     const textToSend = prompt;
     setPrompt('');
+    scrollToBottom(true);
 
     // Extract @ file mentions
     const mentionMatches = Array.from(textToSend.matchAll(/@([a-zA-Z0-9_\-\.\/]+)/g)).map(m => m[1]);

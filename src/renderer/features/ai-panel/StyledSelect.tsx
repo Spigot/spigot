@@ -18,6 +18,8 @@ interface StyledSelectProps {
   optionClassName?: string;
   disabled?: boolean;
   searchable?: boolean;
+  placement?: 'auto' | 'top' | 'bottom';
+  align?: 'auto' | 'left' | 'right';
   ariaLabel?: string;
 }
 
@@ -31,6 +33,8 @@ export const StyledSelect: React.FC<StyledSelectProps> = ({
   optionClassName = '',
   disabled = false,
   searchable = false,
+  placement = 'auto',
+  align = 'auto',
   ariaLabel,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -40,7 +44,8 @@ export const StyledSelect: React.FC<StyledSelectProps> = ({
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const [menuPosition, setMenuPosition] = useState({ top: 0, right: 0, minWidth: 0 });
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({ minWidth: 0 });
+  const [listboxMaxHeight, setListboxMaxHeight] = useState<number>(288);
   const selectedOption = options.find((option) => option.value === value);
   const isDisabled = disabled || options.length === 0;
   const filteredOptions = searchable
@@ -56,11 +61,35 @@ export const StyledSelect: React.FC<StyledSelectProps> = ({
   const open = () => {
     const rect = buttonRef.current?.getBoundingClientRect();
     if (rect) {
-      setMenuPosition({
-        top: rect.bottom + 4,
-        right: Math.max(8, window.innerWidth - rect.right),
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const shouldOpenTop =
+        placement === 'top' || (placement !== 'bottom' && spaceBelow < 220 && spaceAbove > spaceBelow);
+
+      const style: React.CSSProperties = {
         minWidth: rect.width,
-      });
+      };
+
+      if (shouldOpenTop) {
+        style.bottom = Math.max(8, window.innerHeight - rect.top + 4);
+        const maxAvailable = Math.max(100, rect.top - 16);
+        setListboxMaxHeight(Math.min(288, maxAvailable - (searchable ? 48 : 0)));
+      } else {
+        style.top = Math.max(8, rect.bottom + 4);
+        const maxAvailable = Math.max(100, spaceBelow - 16);
+        setListboxMaxHeight(Math.min(288, maxAvailable - (searchable ? 48 : 0)));
+      }
+
+      const shouldAlignRight =
+        align === 'right' || (align !== 'left' && rect.left + rect.width > window.innerWidth / 2 && window.innerWidth - rect.right >= 8);
+
+      if (shouldAlignRight) {
+        style.right = Math.max(8, window.innerWidth - rect.right);
+      } else {
+        style.left = Math.max(8, rect.left);
+      }
+
+      setMenuStyle(style);
     }
     setIsOpen(true);
   };
@@ -137,11 +166,11 @@ export const StyledSelect: React.FC<StyledSelectProps> = ({
       {isOpen && !isDisabled && createPortal(
         <div
           ref={menuRef}
-          style={menuPosition}
-          className="fixed z-[100] w-max max-w-[calc(100vw-16px)] overflow-hidden rounded-lg border border-editor-border bg-editor-bg shadow-2xl"
+          style={menuStyle}
+          className="fixed z-[100] flex flex-col w-max max-w-[calc(100vw-16px)] overflow-hidden rounded-lg border border-editor-border bg-editor-bg shadow-2xl"
         >
           {searchable && (
-            <div className="border-b border-editor-border p-2">
+            <div className="shrink-0 border-b border-editor-border p-2">
               <input
                 ref={searchRef}
                 type="text"
@@ -171,7 +200,12 @@ export const StyledSelect: React.FC<StyledSelectProps> = ({
               />
             </div>
           )}
-          <div role="listbox" aria-label={ariaLabel ?? placeholder} className="max-h-72 overflow-y-auto">
+          <div
+            role="listbox"
+            aria-label={ariaLabel ?? placeholder}
+            className="overflow-y-auto"
+            style={{ maxHeight: listboxMaxHeight }}
+          >
           {filteredOptions.length === 0 ? (
             <div className="px-3 py-2 text-xs text-editor-textDark">No results</div>
           ) : filteredOptions.map((option, index) => {
