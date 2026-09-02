@@ -21,6 +21,7 @@ import {
 import { useAIStore } from '../../store/aiStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { FileIcon } from './FileIcon';
+import { pathsEqual, recordPath } from '../../pathIdentity';
 
 type GitRepo = {
   name: string;
@@ -338,7 +339,8 @@ export const SourceControlView: React.FC = () => {
 
     try {
       const original = await (window as any).api.git.showOriginal(workspacePath, absoluteFilePath);
-      const modified = fileBuffers[absoluteFilePath] ?? await (window as any).api.fs.readFile(absoluteFilePath);
+      const modified = fileBuffers[recordPath(fileBuffers, absoluteFilePath) ?? absoluteFilePath]
+        ?? await (window as any).api.fs.readFile(absoluteFilePath);
 
       setDiffFile({
         filePath: absoluteFilePath,
@@ -378,7 +380,7 @@ export const SourceControlView: React.FC = () => {
     const relativeDir = resource.filePath.split('/').slice(0, -1).join('/');
     const status = getStatusLabel(resource.status);
     const absolutePath = workspacePath ? `${workspacePath}/${resource.filePath}`.replace(/\/+/g, '/') : resource.filePath;
-    const isActive = activeDiffFile?.filePath === absolutePath;
+    const isActive = activeDiffFile !== null && pathsEqual(activeDiffFile.filePath, absolutePath);
 
     return (
       <div

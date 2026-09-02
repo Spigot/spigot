@@ -16,7 +16,7 @@ export function ChangeSetReviewCard({ review, onStateChange }: { review: ChangeS
   const [error, setError] = useState<string | null>(null);
   const [rollback, setRollback] = useState<{ checkpointId: string; entries: Array<{ relativePath: string }>; conflicts: string[]; eligible: boolean } | null>(null);
   const [rollbackLoading, setRollbackLoading] = useState(false);
-  const { dirtyFiles, refreshWorkspace, theme } = useWorkspaceStore();
+  const { dirtyFiles, refreshWorkspace, theme, workspacePath } = useWorkspaceStore();
   const actionable = review.state === 'ready';
 
   useEffect(() => {
@@ -32,6 +32,12 @@ export function ChangeSetReviewCard({ review, onStateChange }: { review: ChangeS
       await (window as any).api.changes.accept({ changeSetId: review.id, dirtyPaths: dirtyFiles });
       onStateChange('applied');
       await refreshWorkspace();
+      // Open the files the agent just wrote to disk, like VS Code agent mode.
+      const base = (workspacePath || '').replace(/[\\/]+$/, '');
+      for (const item of review.entries.filter(e => e.operation !== 'delete')) {
+        const absolutePath = base ? `${base}/${item.relativePath.replaceAll('\\', '/')}` : item.relativePath;
+        useWorkspaceStore.getState().openFile(absolutePath).catch(() => {});
+      }
     } catch (reason: any) {
       setError(reason?.message || 'The staged changes could not be applied.');
     }

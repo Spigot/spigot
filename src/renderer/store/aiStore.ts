@@ -270,15 +270,64 @@ export const useAIStore = create<AIState>((set, get) => {
   let boundApiAi: any = null;
   const pendingChunks = new Map<string, { turnId?: string; chunks: string[]; parts: AssistantPart[]; sawTypedParts: boolean }>();
   let pendingFrame: number | null = null;
-  const terminalWatchdogs = new Map<string, number>();
+  // The watchdog is idle-based: it re-arms on every stream activity, so long
+  // reasoning turns are never killed while the provider keeps sending data.
+  const TERMINAL_WATCHDOG_MS = 120_000;
+  type TerminalWatchdog = { timer: number; turnId: string; logContext: ChatLogContext };
+  const terminalWatchdogs = new Map<string, TerminalWatchdog>();
   const turnContexts = new Map<string, ChatLogContext>();
   const legacyFallbackTurns = new Set<string>();
   const contextFor = (conversationId: string, turnId?: string): ChatLogContext => turnContexts.get(`${conversationId}:${turnId}`) ?? { conversationId, turnId };
 
   const clearTerminalWatchdog = (conversationId: string) => {
-    const timer = terminalWatchdogs.get(conversationId);
-    if (timer !== undefined) window.clearTimeout(timer);
+    const watchdog = terminalWatchdogs.get(conversationId);
+    if (watchdog !== undefined) window.clearTimeout(watchdog.timer);
     terminalWatchdogs.delete(conversationId);
+  };
+
+  const fireTerminalWatchdog = (conversationId: string, turnId: string, logContext: ChatLogContext) => {
+    const stream = get().activeStreams[conversationId];
+    if (!stream || stream.turnId !== turnId) {
+      chatLog('warn', logContext, 'renderer.watchdog', 'watchdog.ignored_stale');
+      return;
+    }
+    chatLog('error', logContext, 'renderer.watchdog', 'watchdog.fired', { partCount: stream.parts?.length ?? 0, textBytes: stream.text.length });
+    flushPendingChunks();
+    set(state => {
+      const current = state.activeStreams[conversationId];
+      if (!current || current.turnId !== turnId) return {};
+      const finalParts = (current.parts || []).map(part => ({ ...part, terminal: 'error' as const }));
+      const finalContent = current.text || finalParts.filter(part => part.kind === 'text').map(part => part.text).join('');
+      const conversations = state.conversations.map(conversation => conversation.id === conversationId ? {
+        ...conversation,
+        messages: finalParts.length || finalContent ? [...conversation.messages, { id: `assistant-${conversationId}-${turnId}`, role: 'assistant' as const, content: finalContent, parts: finalParts, timestamp: Date.now(), tools: current.tools, changeSet: current.changeSet }] : conversation.messages,
+      } : conversation);
+      const activeStreams = { ...state.activeStreams };
+      delete activeStreams[conversationId];
+      const isActive = state.activeConversationId === conversationId;
+      return { activeStreams, conversations, ...(isActive ? { messages: conversations.find(conversation => conversation.id === conversationId)?.messages || state.messages, isGenerating: false, incomingStreamText: '', error: 'La generación no finalizó. Se conservó la respuesta parcial.' } : {}) };
+    });
+    clearTerminalWatchdog(conversationId);
+    legacyFallbackTurns.delete(`${conversationId}:${turnId}`);
+    turnContexts.delete(`${conversationId}:${turnId}`);
+  };
+
+  const armTerminalWatchdog = (conversationId: string, turnId: string, logContext: ChatLogContext) => {
+    clearTerminalWatchdog(conversationId);
+    const timer = window.setTimeout(() => {
+      const watchdog = terminalWatchdogs.get(conversationId);
+      if (!watchdog || watchdog.turnId !== turnId) return;
+      fireTerminalWatchdog(conversationId, watchdog.turnId, watchdog.logContext);
+    }, TERMINAL_WATCHDOG_MS);
+    terminalWatchdogs.set(conversationId, { timer, turnId, logContext });
+  };
+
+  const touchTerminalWatchdog = (conversationId: string) => {
+    const watchdog = terminalWatchdogs.get(conversationId);
+    if (!watchdog) return;
+    const stream = get().activeStreams[conversationId];
+    if (!stream || stream.turnId !== watchdog.turnId) return;
+    armTerminalWatchdog(conversationId, watchdog.turnId, watchdog.logContext);
   };
 
   const isValidTypedPart = (payload: any, existing: ActiveStreamState): payload is { conversationId: string; turnId: string; part: AssistantPart } => {
@@ -372,6 +421,7 @@ export const useAIStore = create<AIState>((set, get) => {
         chatLog('warn', contextFor(conversationId, turnId), 'renderer.ipc', 'chunk.ignored_stale');
         return;
       }
+      touchTerminalWatchdog(conversationId);
       const pending = pendingChunks.get(conversationId);
       if (existing.sawTypedParts || (pending && (pending.turnId !== turnId || pending.sawTypedParts))) {
         chatLog('info', contextFor(conversationId, turnId), 'renderer.stream', 'legacy_fallback.rejected_typed_authoritative');
@@ -398,6 +448,7 @@ export const useAIStore = create<AIState>((set, get) => {
         chatLog('warn', contextFor(conversationId, turnId), 'renderer.ipc', 'part.rejected', { hasActiveStream: Boolean(existing) });
         return;
       }
+      touchTerminalWatchdog(conversationId);
       const part = payload.part;
       if (part.lifecycle !== 'delta') chatLog('info', contextFor(conversationId, turnId), 'renderer.stream', `part.${part.lifecycle}`, { ordinal: part.ordinal, textBytes: part.text?.length ?? 0 });
       const pending = pendingChunks.get(conversationId);
@@ -411,6 +462,7 @@ export const useAIStore = create<AIState>((set, get) => {
 
     (window as any).api.ai.onChangeSetReady?.((payload: any) => {
       if (!payload?.conversationId || !payload?.turnId || !payload?.changeSet) return;
+      if (get().activeStreams[payload.conversationId]?.turnId === payload.turnId) touchTerminalWatchdog(payload.conversationId);
       set((state: AIState) => {
         const stream = state.activeStreams[payload.conversationId];
         if (stream?.turnId === payload.turnId) {
@@ -434,6 +486,7 @@ export const useAIStore = create<AIState>((set, get) => {
         const toolData = isObject ? payload.tool : payload;
 
         if (!conversationId || !toolData) return;
+        if (turnId && get().activeStreams[conversationId]?.turnId === turnId) touchTerminalWatchdog(conversationId);
 
         set((state: AIState) => {
           const existing = state.activeStreams[conversationId];
@@ -1044,32 +1097,7 @@ export const useAIStore = create<AIState>((set, get) => {
       };
 
       clearTerminalWatchdog(targetConvId);
-      terminalWatchdogs.set(targetConvId, window.setTimeout(() => {
-        const stream = get().activeStreams[targetConvId];
-        if (!stream || stream.turnId !== turnId) {
-          chatLog('warn', logContext, 'renderer.watchdog', 'watchdog.ignored_stale');
-          return;
-        }
-        chatLog('error', logContext, 'renderer.watchdog', 'watchdog.fired', { partCount: stream.parts?.length ?? 0, textBytes: stream.text.length });
-        flushPendingChunks();
-        set(state => {
-          const current = state.activeStreams[targetConvId];
-          if (!current || current.turnId !== turnId) return {};
-          const finalParts = (current.parts || []).map(part => ({ ...part, terminal: 'error' as const }));
-          const finalContent = current.text || finalParts.filter(part => part.kind === 'text').map(part => part.text).join('');
-          const conversations = state.conversations.map(conversation => conversation.id === targetConvId ? {
-            ...conversation,
-            messages: finalParts.length || finalContent ? [...conversation.messages, { id: `assistant-${targetConvId}-${turnId}`, role: 'assistant' as const, content: finalContent, parts: finalParts, timestamp: Date.now(), tools: current.tools, changeSet: current.changeSet }] : conversation.messages,
-          } : conversation);
-          const activeStreams = { ...state.activeStreams };
-          delete activeStreams[targetConvId];
-          const isActive = state.activeConversationId === targetConvId;
-          return { activeStreams, conversations, ...(isActive ? { messages: conversations.find(conversation => conversation.id === targetConvId)?.messages || state.messages, isGenerating: false, incomingStreamText: '', error: 'La generación no finalizó. Se conservó la respuesta parcial.' } : {}) };
-        });
-        clearTerminalWatchdog(targetConvId);
-        legacyFallbackTurns.delete(`${targetConvId}:${turnId}`);
-        turnContexts.delete(`${targetConvId}:${turnId}`);
-      }, 45_000));
+      armTerminalWatchdog(targetConvId, turnId, logContext);
 
       set((state) => ({
         conversations: updatedConvs,

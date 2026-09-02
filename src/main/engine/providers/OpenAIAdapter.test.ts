@@ -300,6 +300,28 @@ describe('OpenAIAdapter', () => {
     expect(parts.some(part => part.text?.includes('<think>') || part.text?.includes('</think>'))).toBe(false);
   });
 
+  it('retains MiniMax think-tag content for provider continuation while sanitizing UI text', async () => {
+    const streamData = [
+      'data: {"choices":[{"delta":{"content":"<think>inspect"}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":" workspace</think>Calling tool."}}]}\n\n',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"minimax-call-7","function":{"name":"list_dir","arguments":"{\\"dirPath\\":\\".\\"}"}}]}}]}\n\n',
+      'data: [DONE]\n\n',
+    ].join('');
+    const response = new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(streamData));
+        controller.close();
+      },
+    }));
+
+    const result = await adapter.parseStream(response, { sendChunk: vi.fn() });
+
+    expect(result.originalContent).toBe('<think>inspect workspace</think>Calling tool.');
+    expect(result.textContent).toBe('Calling tool.');
+    expect(result.reasoningContent).toBe('inspect workspace');
+    expect(result.toolCalls).toEqual([{ id: 'minimax-call-7', name: 'list_dir', input: { dirPath: '.' } }]);
+  });
+
   it('accepts tool-only streams and logs metadata without frame contents', async () => {
     const streamData = [
       'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"read_file","arguments":"{\\"filePath\\":\\"private.txt\\"}"}}]}}]}\n\n',

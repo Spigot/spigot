@@ -600,8 +600,20 @@ export const STANDARD_TOOLS: ToolDefinition[] = [
     }
   },
   {
+    name: 'move_file',
+    description: 'Moves or renames a file within the workspace (e.g. rename a module or reorganize folders). Fails if the destination already exists.',
+    parameters: {
+      type: 'object',
+      properties: {
+        sourcePath: { type: 'string', description: 'Current path of the file inside the workspace.' },
+        targetPath: { type: 'string', description: 'New path inside the workspace (new name and/or directory; missing parent directories are created).' }
+      },
+      required: ['sourcePath', 'targetPath']
+    }
+  },
+  {
     name: 'run_command',
-    description: 'Executes a terminal/shell command inside the active workspace directory. Useful for builds, tests, or compiling.',
+    description: 'Executes a shell command inside the active workspace directory, visible in the integrated "Agente" terminal. Useful for builds, tests, dev servers, or compiling.',
     parameters: {
       type: 'object',
       properties: {

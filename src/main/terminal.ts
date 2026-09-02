@@ -13,6 +13,45 @@ export interface SshSessionConfig {
 class TerminalManager {
   private sessions = new Map<string, pty.IPty>();
   private outputBuffers = new Map<string, string[]>();
+  private mainWindow: BrowserWindow | null = null;
+  private agentSessions = new Map<string, BrowserWindow>();
+
+  /** Call once with the main window so agent-command sessions can stream to the UI. */
+  setMainWindow(window: BrowserWindow): void {
+    this.mainWindow = window;
+  }
+
+  /**
+   * Registers a read-only terminal session that mirrors the commands the AI
+   * agent runs, like VS Code's "tool terminal". Idempotent per conversation.
+   */
+  ensureAgentSession(conversationId: string, cwd: string): string {
+    const sessionId = `agent-${conversationId}`;
+    if (this.agentSessions.has(sessionId)) return sessionId;
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return sessionId;
+
+    this.agentSessions.set(sessionId, this.mainWindow);
+    this.outputBuffers.set(sessionId, []);
+    this.mainWindow.webContents.send('terminal:agent-session', {
+      id: sessionId,
+      name: 'Agente',
+      cwd,
+    });
+    return sessionId;
+  }
+
+  emitAgentData(conversationId: string, text: string): void {
+    const sessionId = `agent-${conversationId}`;
+    const window = this.agentSessions.get(sessionId);
+    if (!window || window.isDestroyed()) return;
+
+    const buf = this.outputBuffers.get(sessionId);
+    if (buf) {
+      buf.push(text);
+      if (buf.length > 500) buf.shift();
+    }
+    window.webContents.send(`terminal:data:${sessionId}`, text);
+  }
 
   createSession(mainWindow: BrowserWindow, cols: number, rows: number, cwd: string): string {
     // Choose shell based on OS platform
@@ -110,6 +149,11 @@ class TerminalManager {
   }
 
   closeSession(sessionId: string): void {
+    if (this.agentSessions.has(sessionId)) {
+      this.agentSessions.delete(sessionId);
+      this.outputBuffers.delete(sessionId);
+      return;
+    }
     const ptyProcess = this.sessions.get(sessionId);
     if (ptyProcess) {
       try {
@@ -128,6 +172,7 @@ class TerminalManager {
       } catch (e) {}
     }
     this.sessions.clear();
+    this.agentSessions.clear();
   }
 }
 

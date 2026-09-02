@@ -3,7 +3,7 @@ import { create } from 'zustand';
 export interface TerminalSession {
   id: string;
   name: string;
-  kind?: 'local' | 'ssh';
+  kind?: 'local' | 'ssh' | 'agent';
 }
 
 export interface SshServer {
@@ -22,6 +22,7 @@ interface TerminalState {
 
   createSession: (cols: number, rows: number, cwd: string) => Promise<string | null>;
   createSshSession: (cols: number, rows: number, server: SshServer) => Promise<string | null>;
+  ensureAgentSession: (session: { id: string; name: string; cwd: string }) => void;
   closeSession: (id: string) => void;
   setActiveSession: (id: string) => void;
 }
@@ -79,6 +80,16 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
       set({ isCreating: false });
     }
     return null;
+  },
+
+  // Read-only session mirroring the commands the AI agent runs (VS Code-style
+  // tool terminal). It exists in the renderer only; output arrives via IPC.
+  ensureAgentSession: (session) => {
+    if (get().sessions.some((s) => s.id === session.id)) return;
+    set((state) => ({
+      sessions: [...state.sessions, { id: session.id, name: session.name, kind: 'agent' as const }],
+      activeSessionId: session.id,
+    }));
   },
 
   closeSession: (id: string) => {

@@ -27,6 +27,8 @@ import { startOpenAIOAuthFlow } from './oauth/openaiOAuth';
 import { startCopilotOAuthFlow } from './oauth/copilotOAuth';
 import { startOpenCodeConsoleOAuthFlow } from './oauth/opencodeConsoleOAuth';
 import { modelsCatalogService } from './engine/modelsCatalog';
+import { WorkspaceFileService } from './WorkspaceFileService';
+import { ActiveWorkspace } from './ActiveWorkspace';
 
 // Set App User Model ID for Windows Taskbar icon grouping and display
 if (process.platform === 'win32') {
@@ -137,6 +139,8 @@ function createWindow() {
     mainWindow.setIcon(windowIcon);
   }
 
+  terminalManager.setMainWindow(mainWindow);
+
   (mainWindow.webContents as unknown as { on(event: 'console-message', listener: (details: { level: 'debug' | 'info' | 'warning' | 'error'; message: string; lineNumber: number; sourceId: string }) => void): void }).on('console-message', (details) => {
     if (typeof details.message !== 'string' || !details.message.startsWith('[chat]')) return;
     const level = details.level === 'warning' ? 'warn' : details.level;
@@ -169,6 +173,9 @@ function createWindow() {
 app.whenReady().then(() => {
   createWindow();
   startUpdateService();
+
+  // Warm the OpenCode catalog cache so per-turn provider routing never fetches.
+  modelsCatalogService.getCatalog().catch(() => {});
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -266,7 +273,20 @@ ipcMain.handle('fs:select-workspace', async () => {
   if (result.canceled || result.filePaths.length === 0) {
     return null;
   }
-  return result.filePaths[0];
+  const workspacePath = result.filePaths[0];
+  await activeWorkspace.set(workspacePath);
+  return workspacePath;
+});
+
+// Bind a renderer-selected path to the main-process mutation boundary before
+// the renderer treats it as the current workspace.
+ipcMain.handle('fs:activate-workspace', async (_event, workspacePath: unknown) => {
+  if (typeof workspacePath !== 'string' || !workspacePath.trim()) {
+    throw new Error('A workspace path is required.');
+  }
+
+  await activeWorkspace.set(workspacePath);
+  return activeWorkspace.get()!.path;
 });
 
 // Create new project folder and initialize it IPC
@@ -282,7 +302,7 @@ ipcMain.handle('fs:create-project', async (_event, parentPath: string, name: str
       `# ${name}\n\nProyecto creado exitosamente en **Spigot Editor**.\n`,
       'utf-8'
     );
-    
+    await activeWorkspace.set(projectPath);
     return projectPath;
   } catch (err: any) {
     console.error('Error creating new project:', err);
@@ -301,6 +321,8 @@ interface FileNode {
 // Memory cache for the workspace file tree to prevent redundant high-overhead recursive FS walking
 let cachedTree: FileNode[] | null = null;
 let cachedWorkspacePath: string | null = null;
+const activeWorkspace = new ActiveWorkspace();
+const workspaceFileService = new WorkspaceFileService(() => activeWorkspace.get());
 
 // Read Workspace Tree recursively with exclude lists
 ipcMain.handle('fs:read-dir', async (_event, dirPath: string): Promise<FileNode[]> => {
@@ -379,8 +401,8 @@ ipcMain.handle('fs:read-binary-file', async (_event, filePath: string) => {
 
 ipcMain.handle('fs:write-file', async (_event, filePath: string, content: string) => {
   try {
+    await workspaceFileService.writeFile(filePath, content);
     cachedTree = null; // Invalidate cached tree on write
-    await fsPromises.writeFile(filePath, content, 'utf-8');
     if (cachedWorkspacePath) semanticCatalogService.invalidate(cachedWorkspacePath, filePath);
     return true;
   } catch (err: any) {
@@ -391,13 +413,9 @@ ipcMain.handle('fs:write-file', async (_event, filePath: string, content: string
 
 ipcMain.handle('fs:create-item', async (_event, itemPath: string, type: 'file' | 'directory') => {
   try {
+    await workspaceFileService.create(itemPath, type);
     cachedTree = null; // Invalidate cached tree on create
-    if (type === 'directory') {
-      await fsPromises.mkdir(itemPath, { recursive: true });
-    } else {
-      await fsPromises.writeFile(itemPath, '', 'utf-8');
-      if (cachedWorkspacePath) semanticCatalogService.invalidate(cachedWorkspacePath, itemPath);
-    }
+    if (type === 'file' && cachedWorkspacePath) semanticCatalogService.invalidate(cachedWorkspacePath, itemPath);
     return true;
   } catch (err: any) {
     console.error(`Error creating ${type} at ${itemPath}:`, err);
@@ -407,18 +425,43 @@ ipcMain.handle('fs:create-item', async (_event, itemPath: string, type: 'file' |
 
 ipcMain.handle('fs:delete-item', async (_event, itemPath: string) => {
   try {
-    cachedTree = null; // Invalidate cached tree on delete
-    const stats = await fsPromises.stat(itemPath);
-    if (stats.isDirectory()) {
-      await fsPromises.rm(itemPath, { recursive: true, force: true });
-    } else {
-      await fsPromises.unlink(itemPath);
-      if (cachedWorkspacePath) semanticCatalogService.invalidate(cachedWorkspacePath, itemPath);
-    }
+    await workspaceFileService.delete(itemPath);
+    cachedTree = null;
+    if (cachedWorkspacePath) semanticCatalogService.invalidate(cachedWorkspacePath, itemPath);
     return true;
   } catch (err: any) {
     console.error(`Error deleting item ${itemPath}:`, err);
     throw new Error(`Failed to delete item: ${err.message}`);
+  }
+});
+
+ipcMain.handle('fs:rename-item', async (_event, itemPath: string, newName: string) => {
+  try {
+    const newPath = await workspaceFileService.rename(itemPath, newName);
+    cachedTree = null;
+    if (cachedWorkspacePath) {
+      semanticCatalogService.invalidate(cachedWorkspacePath, itemPath);
+      semanticCatalogService.invalidate(cachedWorkspacePath, newPath);
+    }
+    return newPath;
+  } catch (err: any) {
+    console.error(`Error renaming item ${itemPath}:`, err);
+    throw new Error(`Failed to rename item: ${err.message}`);
+  }
+});
+
+ipcMain.handle('fs:move-item', async (_event, itemPath: string, destinationDirectory: string) => {
+  try {
+    const newPath = await workspaceFileService.moveToDirectory(itemPath, destinationDirectory);
+    cachedTree = null;
+    if (cachedWorkspacePath) {
+      semanticCatalogService.invalidate(cachedWorkspacePath, itemPath);
+      semanticCatalogService.invalidate(cachedWorkspacePath, newPath);
+    }
+    return newPath;
+  } catch (err: any) {
+    console.error(`Error moving item ${itemPath}:`, err);
+    throw new Error(`Failed to move item: ${err.message}`);
   }
 });
 
@@ -649,8 +692,8 @@ ipcMain.handle('store:get-last-workspace', async () => {
   }
 
   try {
-    const stats = await fsPromises.stat(lastWorkspacePath);
-    return stats.isDirectory() ? lastWorkspacePath : null;
+    await activeWorkspace.set(lastWorkspacePath);
+    return lastWorkspacePath;
   } catch (err) {
     return null;
   }
@@ -1004,6 +1047,16 @@ ipcMain.handle('ai:fetch-models', async (_event, provider: string, apiKey?: stri
   }
 
   return Array.from(results);
+});
+
+// Full OpenCode catalog provider list for dynamic provider selection in the UI.
+ipcMain.handle('ai:fetch-catalog-providers', async () => {
+  if (process.env.SPIGOT_E2E_TYPED_STREAM === '1') return [];
+  try {
+    return await modelsCatalogService.getProviders();
+  } catch {
+    return [];
+  }
 });
 
 // 3. Unified Stream Chat SSE Handler

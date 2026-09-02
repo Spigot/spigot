@@ -4,6 +4,7 @@ import MonacoEditor, { DiffEditor, loader } from '@monaco-editor/react';
 import logoSpigotUrl from '../../assets/logoSpigot.png';
 import { RotateCw, Home, ExternalLink, Globe } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { pathsEqual, recordPath } from '../../pathIdentity';
 import {
   changeLspDocument,
   initializeLspDiagnosticsBridge,
@@ -308,7 +309,7 @@ export const EditorContainer: React.FC = () => {
     registerLspCompletionProvider(monaco, getLanguage(activeTabPath), workspacePath);
 
     if (activeTabPath) {
-      openLspDocument(workspacePath, activeTabPath, getLanguage(activeTabPath), fileBuffers[activeTabPath] ?? '');
+      openLspDocument(workspacePath, activeTabPath, getLanguage(activeTabPath), fileBuffers[recordPath(fileBuffers, activeTabPath) ?? activeTabPath] ?? '');
     }
 
     // Register Ctrl+S shortcut inside Monaco editor instance
@@ -319,7 +320,7 @@ export const EditorContainer: React.FC = () => {
           state.workspacePath,
           state.activeTabPath,
           getLanguage(state.activeTabPath),
-          state.fileBuffers[state.activeTabPath] ?? '',
+          state.fileBuffers[recordPath(state.fileBuffers, state.activeTabPath) ?? state.activeTabPath] ?? '',
         );
       }
       state.saveActiveFile();
@@ -397,7 +398,7 @@ export const EditorContainer: React.FC = () => {
 
   // Listen for pending selection events (e.g. from Sidebar search matches)
   useEffect(() => {
-    if (editorRef.current && pendingSelection && pendingSelection.filePath === activeTabPath) {
+    if (editorRef.current && pendingSelection && activeTabPath && pathsEqual(pendingSelection.filePath, activeTabPath)) {
       const editor = editorRef.current;
       editor.revealLineInCenter(pendingSelection.line);
       editor.setSelection({
@@ -420,7 +421,7 @@ export const EditorContainer: React.FC = () => {
     }
   };
 
-  const activeContent = activeTabPath ? fileBuffers[activeTabPath] ?? '' : '';
+  const activeContent = activeTabPath ? fileBuffers[recordPath(fileBuffers, activeTabPath) ?? activeTabPath] ?? '' : '';
   const language = getLanguage(activeTabPath);
   const isImageActive = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i.test(activeTabPath ?? '');
   const getImageMimeType = (path: string) => {
@@ -516,7 +517,7 @@ export const EditorContainer: React.FC = () => {
     return <BrowserTab url={activeTabPath} />;
   }
 
-  const isDiffActive = activeDiffFile !== null && activeDiffFile.filePath === activeTabPath;
+  const isDiffActive = activeDiffFile !== null && activeTabPath !== null && pathsEqual(activeDiffFile.filePath, activeTabPath);
   const diffOriginalModelPath = activeDiffFile
     ? `spigot-diff-original://${encodeURIComponent(activeDiffFile.filePath)}`
     : undefined;

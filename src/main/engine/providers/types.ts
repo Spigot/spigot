@@ -101,6 +101,8 @@ export function emitStreamPart(context: StreamTransformContext, part: ProviderSt
 }
 
 export interface StreamParseResult {
+  /** Provider-wire assistant text, retained for continuation history when UI text is normalized. */
+  originalContent?: string;
   textContent: string;
   reasoningContent?: string;
   toolCalls: ToolCall[];

@@ -148,6 +148,18 @@ export const ConsolePanel: React.FC = () => {
     }
   }, [sessions, activeSessionId, setActiveSession]);
 
+  // Surface the AI agent's tool terminal when it starts running commands,
+  // like VS Code's agent-mode terminal: open the console and focus it.
+  useEffect(() => {
+    const dispose = (window as any).api?.terminal?.onAgentSession?.((session: { id: string; name: string; cwd: string }) => {
+      useTerminalStore.getState().ensureAgentSession(session);
+      useTerminalStore.getState().setActiveSession(session.id);
+      useLayoutStore.getState().setConsoleOpen(true);
+      setActivePanelTab('terminal');
+    });
+    return dispose;
+  }, [setActivePanelTab]);
+
   // Ensure terminal session exists and active instance fits/focuses whenever console opens or tab changes
   useEffect(() => {
     if (isConsoleOpen && activePanelTab === 'terminal') {
@@ -257,6 +269,7 @@ export const ConsolePanel: React.FC = () => {
       el.addEventListener('contextmenu', handleContextMenu);
 
       const onDataDisposable = term.onData((data) => {
+        if (sess.kind === 'agent') return;
         (window as any).api.terminal.write(sessionId, data);
       });
 

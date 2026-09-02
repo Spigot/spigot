@@ -97,6 +97,107 @@ describe('agentRunner - code editing tools', () => {
       expect(reasoningTurn.parts).toContainEqual(expect.objectContaining({ kind: 'reasoning', lifecycle: 'delta', text: 'Reasoning only' }));
       expect(reasoningTurn.ends).toEqual([false]);
     });
+
+    it('continues MiniMax tool calls with the original assistant content and one user prompt', async () => {
+      const requests: any[] = [];
+      const responses = [
+        responseFrom([
+          'data: {"choices":[{"delta":{"content":"<think>inspect</think>Calling tool."}}]}\n\n',
+          'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"minimax-call-7","function":{"name":"list_dir","arguments":"{\\"dirPath\\":\\".\\"}"}}]}}]}\n\n',
+          'data: [DONE]\n\n',
+        ].join('')),
+        responseFrom('data: {"choices":[{"delta":{"content":"Complete."},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'),
+      ];
+      vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+        requests.push(JSON.parse(String(init?.body)));
+        return responses.shift()!;
+      }));
+
+      const result = await runAgentLoop({
+        provider: 'minimax', model: 'MiniMax-M2.7', apiKey: 'test-key', prompt: 'Create the project', contextText: null, history: [], image: null,
+        workspacePath: process.cwd(), signal: new AbortController().signal, sendChunk: vi.fn(),
+        sendError: vi.fn(), sendEnd: vi.fn(), customTools: [{ name: 'list_dir', description: 'List files', parameters: { type: 'object', properties: {} } }],
+      });
+
+      expect(result).toBe(true);
+      expect(requests).toHaveLength(2);
+      const continuation = requests[1].messages;
+      expect(continuation.filter((message: any) => message.role === 'user')).toEqual([
+        { role: 'user', content: 'Create the project' },
+      ]);
+      expect(continuation).toContainEqual({
+        role: 'assistant',
+        content: '<think>inspect</think>Calling tool.',
+        tool_calls: [{
+          id: 'minimax-call-7',
+          type: 'function',
+          function: { name: 'list_dir', arguments: '{"dirPath":"."}' },
+        }],
+      });
+      expect(continuation).toContainEqual(expect.objectContaining({
+        role: 'tool',
+        tool_call_id: 'minimax-call-7',
+        name: 'list_dir',
+      }));
+    });
+
+    it('retries transient capacity errors and keeps the turn successful', async () => {
+      const capacityResponse = () => new Response(JSON.stringify({
+        error: {
+          code: 503,
+          message: 'No capacity available for model gemini-2.5-pro on the server',
+          status: 'UNAVAILABLE',
+          details: [{ reason: 'MODEL_CAPACITY_EXHAUSTED', domain: 'cloudcode-pa.googleapis.com' }],
+        },
+      }), { status: 503 });
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(capacityResponse())
+        .mockResolvedValueOnce(responseFrom('data: {"choices":[{"delta":{"content":"Recovered"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'));
+      vi.stubGlobal('fetch', fetchMock);
+
+      const result = await runAgentLoop({
+        provider: 'openai', model: 'gpt-4o', apiKey: 'test-key', prompt: 'Hello', contextText: null, history: [], image: null,
+        workspacePath: process.cwd(), signal: new AbortController().signal, sendChunk: vi.fn(), sendPart: vi.fn(),
+        sendError: vi.fn(), sendEnd: vi.fn(), customTools: [],
+      });
+
+      expect(result).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('fails with an actionable message when capacity errors persist after retries', async () => {
+      const capacityBody = JSON.stringify({
+        error: {
+          code: 503,
+          message: 'No capacity available for model gemini-2.5-pro on the server',
+          status: 'UNAVAILABLE',
+          details: [{ reason: 'MODEL_CAPACITY_EXHAUSTED', domain: 'cloudcode-pa.googleapis.com' }],
+        },
+      });
+      const errors: string[] = [];
+      const fetchMock = vi.fn(async () => new Response(capacityBody, { status: 503 }));
+      vi.stubGlobal('fetch', fetchMock);
+      vi.useFakeTimers();
+      try {
+        const result = runAgentLoop({
+          provider: 'openai', model: 'gpt-4o', apiKey: 'test-key', prompt: 'Hello', contextText: null, history: [], image: null,
+          workspacePath: process.cwd(), signal: new AbortController().signal, sendChunk: vi.fn(), sendPart: vi.fn(),
+          sendError: message => errors.push(message), sendEnd: vi.fn(), customTools: [],
+        });
+
+        await vi.runAllTimersAsync();
+        await expect(result).resolves.toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toContain('HTTP 503');
+      expect(errors[0]).toContain('MODEL_CAPACITY_EXHAUSTED');
+      expect(errors[0]).toContain('capacidad');
+      expect(errors[0]).not.toContain('type.googleapis');
+    });
   });
 
   describe('normalizeQuotes', () => {

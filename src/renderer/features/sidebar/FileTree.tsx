@@ -1,12 +1,13 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { 
   ChevronRight, ChevronDown, Plus, FolderPlus, 
-  RotateCw, ChevronsUp, Trash2, FolderClosed
+  RotateCw, ChevronsUp, Trash2, FolderClosed, Pencil, MoveRight
 } from 'lucide-react';
 import { useWorkspaceStore, FileNode } from '../../store/workspaceStore';
 import { useDiagnosticsStore } from '../../store/diagnosticsStore';
 import { FileIcon } from './FileIcon';
 import { useSystemDialogStore } from '../../components/ui/systemDialogStore';
+import { isPathAtOrWithin, normalizedPath, pathsEqual } from '../../pathIdentity';
 
 interface FileTreeItemProps {
   node: FileNode;
@@ -22,6 +23,13 @@ interface FileTreeItemProps {
   setCreationName: (name: string) => void;
   handleCreateSubmit: (e: React.FormEvent) => void;
   cancelCreation: () => void;
+  onContextMenu: (node: FileNode, x: number, y: number) => void;
+  draggedPath: string | null;
+  dropTargetPath: string | null;
+  onDragStart: (path: string) => void;
+  onDragEnd: () => void;
+  onDragOver: (node: FileNode) => boolean;
+  onDrop: (node: FileNode) => void;
 }
 
 const FileTreeItem: React.FC<FileTreeItemProps> = ({
@@ -37,26 +45,32 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
   creationName,
   setCreationName,
   handleCreateSubmit,
-  cancelCreation
+  cancelCreation,
+  onContextMenu,
+  draggedPath,
+  dropTargetPath,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
 }) => {
   const isExpanded = expandedPaths.has(node.path);
-  const isSelected = selectedPath === node.path;
-  const isActiveTab = activeTabPath === node.path;
+  const isSelected = selectedPath !== null && pathsEqual(selectedPath, node.path);
+  const isActiveTab = activeTabPath !== null && pathsEqual(activeTabPath, node.path);
   const errorStatus = useDiagnosticsStore.getState().getFileErrorStatus(node.path);
 
-  const normalize = (p: string) => p.replace(/\\/g, '/').replace(/\/+/g, '/');
-  const normalizedPath = normalize(node.path);
+  const gitPath = normalizedPath(node.path);
 
   // Check if ignored by git or known ignore patterns
   const isIgnored = useMemo(() => {
-    if (gitStatusMap[normalizedPath] === 'I') return true;
+    if (gitStatusMap[gitPath] === 'I') return true;
     for (const [path, status] of Object.entries(gitStatusMap)) {
-      if (status === 'I' && normalizedPath.startsWith(`${path}/`)) {
+      if (status === 'I' && gitPath.startsWith(`${path}/`)) {
         return true;
       }
     }
     return false;
-  }, [gitStatusMap, normalizedPath]);
+  }, [gitStatusMap, gitPath]);
 
   // Determine Git status and color
   const { labelColor, statusBadge } = useMemo(() => {
@@ -78,7 +92,7 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
       let hasUntracked = false;
 
       for (const [path, status] of Object.entries(gitStatusMap)) {
-        if (path.startsWith(`${normalizedPath}/`)) {
+        if (path.startsWith(`${gitPath}/`)) {
           if (status === 'M' || status === 'D') hasModified = true;
           else if (status === 'U') hasUntracked = true;
         }
@@ -104,7 +118,7 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
     }
 
     // Single file
-    const fileStatus = gitStatusMap[normalizedPath];
+    const fileStatus = gitStatusMap[gitPath];
     if (fileStatus === 'M') {
       return {
         labelColor: 'text-[#e2c08d]',
@@ -128,10 +142,10 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
       labelColor: isIgnored ? 'text-editor-textDark/60 opacity-60' : 'text-editor-text',
       statusBadge: null
     };
-  }, [errorStatus, node.isDirectory, normalizedPath, gitStatusMap, isIgnored]);
+  }, [errorStatus, node.isDirectory, gitPath, gitStatusMap, isIgnored]);
 
   // Children creation row active in this folder
-  const isCreatingInThisFolder = activeCreation && activeCreation.path === node.path && isExpanded;
+  const isCreatingInThisFolder = activeCreation && pathsEqual(activeCreation.path, node.path) && isExpanded;
 
   return (
     <div className="flex flex-col select-none text-[13px]">
@@ -143,11 +157,35 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
             toggleExpand(node.path);
           }
         }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onContextMenu(node, e.clientX, e.clientY);
+        }}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', node.path);
+          onDragStart(node.path);
+        }}
+        onDragEnd={onDragEnd}
+        onDragOver={(e) => {
+          if (!onDragOver(node)) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+        }}
+        onDrop={(e) => {
+          if (!onDragOver(node)) return;
+          e.preventDefault();
+          onDrop(node);
+        }}
         className={`h-[22px] min-h-[22px] flex items-center justify-between cursor-pointer transition-colors group relative ${
           isSelected 
             ? 'bg-editor-active text-white' 
             : isActiveTab 
             ? 'bg-editor-hover/80 text-white' 
+            : dropTargetPath !== null && pathsEqual(dropTargetPath, node.path)
+            ? 'bg-editor-accent/30 ring-1 ring-inset ring-editor-accent text-editor-text'
             : 'hover:bg-editor-hover text-editor-text'
         }`}
         style={{ paddingLeft: `${depth * 12 + 6}px` }}
@@ -241,6 +279,13 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
               setCreationName={setCreationName}
               handleCreateSubmit={handleCreateSubmit}
               cancelCreation={cancelCreation}
+              onContextMenu={onContextMenu}
+              draggedPath={draggedPath}
+              dropTargetPath={dropTargetPath}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
+              onDragOver={onDragOver}
+              onDrop={onDrop}
             />
           ))}
         </div>
@@ -251,6 +296,8 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
 
 export const FileTree: React.FC = () => {
   const confirmDialog = useSystemDialogStore(state => state.confirm);
+  const promptDialog = useSystemDialogStore(state => state.prompt);
+  const alertDialog = useSystemDialogStore(state => state.alert);
   const {
     workspacePath,
     fileTree,
@@ -260,6 +307,8 @@ export const FileTree: React.FC = () => {
     activeTabPath,
     createItem,
     deleteItem,
+    renameItem,
+    moveItem,
     explorerSelectedPath,
     setExplorerSelectedPath,
     gitStatusMap,
@@ -270,8 +319,11 @@ export const FileTree: React.FC = () => {
   const [isOutlineExpanded, setIsOutlineExpanded] = useState(false);
   const [isTimelineExpanded, setIsTimelineExpanded] = useState(false);
 
-  const [activeCreation, setActiveCreation] = useState<{ path: string; type: 'file' | 'directory' } | null>(null);
+  const [activeCreation, setActiveCreation] = useState<{ path: string; root: string; type: 'file' | 'directory' } | null>(null);
   const [creationName, setCreationName] = useState('');
+  const [contextMenu, setContextMenu] = useState<{ node: FileNode; x: number; y: number } | null>(null);
+  const [draggedPath, setDraggedPath] = useState<string | null>(null);
+  const [dropTargetPath, setDropTargetPath] = useState<string | null>(null);
 
   // Find workspace root name
   const workspaceRootName = useMemo(() => {
@@ -285,6 +337,11 @@ export const FileTree: React.FC = () => {
     if (workspacePath) {
       setExpandedPaths(new Set());
     }
+  }, [workspacePath]);
+
+  useEffect(() => {
+    setActiveCreation(null);
+    setCreationName('');
   }, [workspacePath]);
 
   const toggleExpand = (path: string) => {
@@ -310,7 +367,7 @@ export const FileTree: React.FC = () => {
     if (explorerSelectedPath) {
       const findNode = (nodes: FileNode[]): FileNode | null => {
         for (const n of nodes) {
-          if (n.path === explorerSelectedPath) return n;
+          if (pathsEqual(n.path, explorerSelectedPath)) return n;
           if (n.children) {
             const found = findNode(n.children);
             if (found) return found;
@@ -332,27 +389,75 @@ export const FileTree: React.FC = () => {
       }
     }
 
-    setActiveCreation({ path: targetPath, type });
+    setActiveCreation({ path: targetPath, root: workspacePath, type });
     setCreationName('');
   };
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!creationName.trim() || !activeCreation) return;
+    if (!creationName.trim() || !activeCreation || !workspacePath || !pathsEqual(activeCreation.root, workspacePath)) return;
 
     await createItem(creationName.trim(), activeCreation.type, activeCreation.path);
     setActiveCreation(null);
     setCreationName('');
   };
 
-  const handleDeleteSelected = async () => {
-    if (!explorerSelectedPath) return;
-    const parts = explorerSelectedPath.split(/[/\\]/);
+  const handleDelete = async (itemPath: string) => {
+    const parts = itemPath.split(/[/\\]/);
     const itemName = parts[parts.length - 1];
     if (await confirmDialog('Eliminar elemento', `¿Estás seguro de que deseas eliminar "${itemName}"?`, true)) {
-      await deleteItem(explorerSelectedPath);
-      setExplorerSelectedPath(null);
+      try {
+        await deleteItem(itemPath);
+      } catch (error: any) {
+        await alertDialog('No se pudo eliminar', error?.message ?? 'No se pudo eliminar el elemento.');
+      }
     }
+  };
+
+  const findNode = (nodes: FileNode[], path: string): FileNode | null => {
+    for (const node of nodes) {
+      if (pathsEqual(node.path, path)) return node;
+      const child = node.children && findNode(node.children, path);
+      if (child) return child;
+    }
+    return null;
+  };
+
+  const isValidDrop = (targetPath: string) => {
+    if (!draggedPath) return false;
+    const source = findNode(fileTree, draggedPath);
+    if (!source) return false;
+    const sourcePath = normalizedPath(source.path);
+    const sourceParent = sourcePath.slice(0, sourcePath.lastIndexOf('/'));
+    return !pathsEqual(source.path, targetPath)
+      && !pathsEqual(sourceParent, targetPath)
+      && (!source.isDirectory || !isPathAtOrWithin(targetPath, source.path));
+  };
+
+  const handleDrop = async (targetPath: string) => {
+    if (!draggedPath || !isValidDrop(targetPath)) return;
+    try {
+      await moveItem(draggedPath, targetPath);
+    } catch (error: any) {
+      await alertDialog('No se pudo mover', error?.message ?? 'No se pudo mover el elemento.');
+    } finally {
+      setDraggedPath(null);
+      setDropTargetPath(null);
+    }
+  };
+
+  const handleRename = async (node: FileNode) => {
+    const name = await promptDialog('Renombrar', 'Ingresá el nuevo nombre:', node.name);
+    if (!name?.trim() || name.trim() === node.name) return;
+    try {
+      await renameItem(node.path, name.trim());
+    } catch (error: any) {
+      await alertDialog('No se pudo renombrar', error?.message ?? 'No se pudo renombrar el elemento.');
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (explorerSelectedPath) await handleDelete(explorerSelectedPath);
   };
 
   if (!workspacePath) {
@@ -372,16 +477,36 @@ export const FileTree: React.FC = () => {
     );
   }
 
-  const isCreatingInRoot = activeCreation && activeCreation.path === workspacePath;
+  const isCreatingInRoot = activeCreation && pathsEqual(activeCreation.path, workspacePath);
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-editor-sidebar select-none text-[13px]">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-editor-sidebar select-none text-[13px]" onClick={() => setContextMenu(null)}>
       {/* 1. Main Workspace Root Collapsible Item (VS Code Style) */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar">
         {/* Workspace Root Row */}
         <div 
           onClick={() => setIsRootExpanded(!isRootExpanded)}
-          className="h-[22px] min-h-[22px] px-2 flex items-center justify-between font-bold text-[11px] text-editor-text tracking-wider uppercase hover:bg-editor-hover cursor-pointer group"
+          onDragOver={(e) => {
+            if (!isValidDrop(workspacePath)) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            setDropTargetPath(workspacePath);
+          }}
+          onDragLeave={() => {
+            if (dropTargetPath !== null && pathsEqual(dropTargetPath, workspacePath)) {
+              setDropTargetPath(null);
+            }
+          }}
+          onDrop={(e) => {
+            if (!isValidDrop(workspacePath)) return;
+            e.preventDefault();
+            void handleDrop(workspacePath);
+          }}
+          className={`h-[22px] min-h-[22px] px-2 flex items-center justify-between font-bold text-[11px] text-editor-text tracking-wider uppercase cursor-pointer group ${
+            dropTargetPath !== null && pathsEqual(dropTargetPath, workspacePath)
+              ? 'bg-editor-accent/30 ring-1 ring-inset ring-editor-accent'
+              : 'hover:bg-editor-hover'
+          }`}
         >
           <div className="flex items-center gap-1 truncate">
             {isRootExpanded ? (
@@ -486,11 +611,48 @@ export const FileTree: React.FC = () => {
                 setCreationName={setCreationName}
                 handleCreateSubmit={handleCreateSubmit}
                 cancelCreation={() => setActiveCreation(null)}
+                onContextMenu={(node, x, y) => {
+                  setExplorerSelectedPath(node.path);
+                  setContextMenu({ node, x, y });
+                }}
+                draggedPath={draggedPath}
+                dropTargetPath={dropTargetPath}
+                onDragStart={setDraggedPath}
+                onDragEnd={() => {
+                  setDraggedPath(null);
+                  setDropTargetPath(null);
+                }}
+                onDragOver={(node) => {
+                  const valid = node.isDirectory && isValidDrop(node.path);
+                  setDropTargetPath(valid ? node.path : null);
+                  return valid;
+                }}
+                onDrop={(node) => { void handleDrop(node.path); }}
               />
             ))}
           </div>
         )}
       </div>
+
+      {contextMenu && (
+        <div
+          role="menu"
+          className="fixed z-[110] min-w-[132px] py-1 rounded border border-editor-border bg-editor-bg shadow-xl text-[12px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button role="menuitem" className="w-full px-3 py-1.5 flex items-center gap-2 text-left hover:bg-editor-hover" onClick={() => { setContextMenu(null); void handleRename(contextMenu.node); }}>
+            <Pencil className="w-3 h-3" /> Renombrar
+          </button>
+          <button role="menuitem" className="w-full px-3 py-1.5 flex items-center gap-2 text-left text-editor-textDark cursor-default" title="Arrastrá el elemento a una carpeta para moverlo">
+            <MoveRight className="w-3 h-3" /> Mover
+          </button>
+          <div className="my-1 border-t border-editor-border" />
+          <button role="menuitem" className="w-full px-3 py-1.5 flex items-center gap-2 text-left text-red-400 hover:bg-editor-hover" onClick={() => { setContextMenu(null); void handleDelete(contextMenu.node.path); }}>
+            <Trash2 className="w-3 h-3" /> Eliminar
+          </button>
+        </div>
+      )}
 
       {/* 2. Collapsible Bottom Sections (VS Code Style) */}
       <div className="border-t border-editor-border shrink-0">

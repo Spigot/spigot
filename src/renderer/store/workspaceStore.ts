@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { useSystemDialogStore } from '../components/ui/systemDialogStore';
+import { findPath, isPathAtOrWithin, normalizedPath, pathsEqual, recordPath, replacePathPrefix } from '../pathIdentity';
 
 export interface FileNode {
   name: string;
@@ -42,6 +43,8 @@ export interface WorkspaceState {
   saveActiveFile: () => Promise<void>;
   createItem: (name: string, type: 'file' | 'directory', parentPath?: string) => Promise<void>;
   deleteItem: (itemPath: string) => Promise<void>;
+  renameItem: (itemPath: string, newName: string) => Promise<string>;
+  moveItem: (itemPath: string, destinationDirectory: string) => Promise<string>;
   setPendingSelection: (selection: { filePath: string; line: number; column: number; length: number } | null) => void;
   setExplorerSelectedPath: (path: string | null) => void;
   restoreLastWorkspace: () => Promise<void>;
@@ -79,6 +82,7 @@ const initialTheme = getInitialTheme();
 applyThemeClass(initialTheme);
 
 const RECOVERY_STORAGE_KEY = 'spigot_dirty_recovery_buffers';
+let workspaceGeneration = 0;
 
 function getRecoveryBuffers(): Record<string, string> {
   if (typeof window === 'undefined') return {};
@@ -94,7 +98,7 @@ function saveRecoveryBuffer(filePath: string, content: string) {
   if (typeof window === 'undefined') return;
   try {
     const buffers = getRecoveryBuffers();
-    buffers[filePath] = content;
+    buffers[recordPath(buffers, filePath) ?? filePath] = content;
     window.localStorage?.setItem(RECOVERY_STORAGE_KEY, JSON.stringify(buffers));
   } catch {}
 }
@@ -103,9 +107,48 @@ function removeRecoveryBuffer(filePath: string) {
   if (typeof window === 'undefined') return;
   try {
     const buffers = getRecoveryBuffers();
-    delete buffers[filePath];
+    const matchingPath = recordPath(buffers, filePath);
+    if (matchingPath) delete buffers[matchingPath];
     window.localStorage?.setItem(RECOVERY_STORAGE_KEY, JSON.stringify(buffers));
   } catch {}
+}
+
+function remapRecord<T>(record: Record<string, T>, from: string, to: string) {
+  return Object.fromEntries(Object.entries(record).map(([path, value]) => [replacePathPrefix(path, from, to), value]));
+}
+
+function remapRecoveryBuffers(from: string, to: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    const remapped = remapRecord(getRecoveryBuffers(), from, to);
+    window.localStorage?.setItem(RECOVERY_STORAGE_KEY, JSON.stringify(remapped));
+  } catch {}
+}
+
+function removeRecoveryBuffersAtOrWithin(itemPath: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    const remaining = Object.fromEntries(
+      Object.entries(getRecoveryBuffers()).filter(([path]) => !isPathAtOrWithin(path, itemPath)),
+    );
+    window.localStorage?.setItem(RECOVERY_STORAGE_KEY, JSON.stringify(remaining));
+  } catch {}
+}
+
+function moveWorkspacePaths(state: WorkspaceState, from: string, to: string) {
+  const remap = (path: string | null) => path && isPathAtOrWithin(path, from) ? replacePathPrefix(path, from, to) : path;
+  return {
+    openTabs: state.openTabs.map((path) => remap(path) ?? path),
+    activeTabPath: remap(state.activeTabPath),
+    fileBuffers: remapRecord(state.fileBuffers, from, to),
+    imageBuffers: remapRecord(state.imageBuffers, from, to),
+    dirtyFiles: state.dirtyFiles.map((path) => remap(path) ?? path),
+    pendingCloseFile: remap(state.pendingCloseFile),
+    explorerSelectedPath: remap(state.explorerSelectedPath) ?? to,
+    activeDiffFile: state.activeDiffFile && isPathAtOrWithin(state.activeDiffFile.filePath, from)
+      ? { ...state.activeDiffFile, filePath: replacePathPrefix(state.activeDiffFile.filePath, from, to) }
+      : state.activeDiffFile,
+  };
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
@@ -182,27 +225,45 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   setWorkspacePath: async (path: string) => {
-    set({ workspacePath: path, openTabs: [], activeTabPath: null, fileBuffers: {}, imageBuffers: {}, dirtyFiles: [] });
+    const generation = ++workspaceGeneration;
+    const workspacePath = await (window as any).api.fs.activateWorkspace(path);
+    if (generation !== workspaceGeneration) return;
+    set({
+      workspacePath,
+      fileTree: [],
+      openTabs: [],
+      activeTabPath: null,
+      fileBuffers: {},
+      imageBuffers: {},
+      dirtyFiles: [],
+      gitChangedFiles: [],
+      gitStatusMap: {},
+    });
     await get().refreshWorkspace();
-    await (window as any).api?.store?.setLastWorkspace?.(path);
+    if (generation !== workspaceGeneration) return;
+    await (window as any).api?.store?.setLastWorkspace?.(workspacePath);
   },
 
   refreshWorkspace: async () => {
     const { workspacePath } = get();
     if (!workspacePath) return;
+    const generation = workspaceGeneration;
+    const isCurrentWorkspace = () => generation === workspaceGeneration && pathsEqual(get().workspacePath ?? '', workspacePath);
     try {
       const tree = await (window as any).api.fs.readDir(workspacePath);
+      if (!isCurrentWorkspace()) return;
       set({ fileTree: tree });
       
       // Update changed files from Git
       try {
         const changed = await (window as any).api.git.getStatus(workspacePath);
+        if (!isCurrentWorkspace()) return;
         if (changed) {
           const absPaths: string[] = [];
           const statusMap: Record<string, 'M' | 'U' | 'D' | 'I'> = {};
           changed.forEach((f: any) => {
             const normRel = f.filePath.replace(/\\/g, '/').replace(/\/+/g, '/');
-            const abs = `${workspacePath}/${normRel}`.replace(/\\/g, '/').replace(/\/+/g, '/');
+            const abs = normalizedPath(`${workspacePath}/${normRel}`);
             const trimmed = f.status.trim();
             let code: 'M' | 'U' | 'D' | 'I' = 'M';
             if (trimmed === '!!') {
@@ -232,8 +293,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   openFile: async (filePath: string) => {
     if (filePath.startsWith('browser://')) {
       set((state) => ({
-        openTabs: state.openTabs.includes(filePath) ? state.openTabs : [...state.openTabs, filePath],
-        activeTabPath: filePath,
+        openTabs: findPath(state.openTabs, filePath) ? state.openTabs : [...state.openTabs, filePath],
+        activeTabPath: findPath(state.openTabs, filePath) ?? filePath,
       }));
       return;
     }
@@ -241,7 +302,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const isImageFile = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i.test(filePath);
 
     if (isImageFile) {
-      let nextImageBuffer = get().imageBuffers[filePath];
+      const imageBufferPath = recordPath(get().imageBuffers, filePath) ?? filePath;
+      let nextImageBuffer = get().imageBuffers[imageBufferPath];
       if (nextImageBuffer === undefined) {
         try {
           nextImageBuffer = await (window as any).api.fs.readBinaryFile(filePath);
@@ -252,15 +314,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       }
 
       set((state) => ({
-        openTabs: state.openTabs.includes(filePath) ? state.openTabs : [...state.openTabs, filePath],
-        activeTabPath: filePath,
-        imageBuffers: { ...state.imageBuffers, [filePath]: nextImageBuffer },
+        openTabs: findPath(state.openTabs, filePath) ? state.openTabs : [...state.openTabs, filePath],
+        activeTabPath: findPath(state.openTabs, filePath) ?? filePath,
+        imageBuffers: { ...state.imageBuffers, [recordPath(state.imageBuffers, filePath) ?? filePath]: nextImageBuffer },
       }));
       return;
     }
 
-    let nextContent = get().fileBuffers[filePath];
-    const recoveryContent = getRecoveryBuffers()[filePath];
+    const bufferPath = recordPath(get().fileBuffers, filePath) ?? filePath;
+    let nextContent = get().fileBuffers[bufferPath];
+    const recoveryBuffers = getRecoveryBuffers();
+    const recoveryContent = recoveryBuffers[recordPath(recoveryBuffers, filePath) ?? filePath];
     let isRecovered = false;
 
     if (recoveryContent !== undefined) {
@@ -276,21 +340,21 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
 
     set((state) => ({
-      openTabs: state.openTabs.includes(filePath) ? state.openTabs : [...state.openTabs, filePath],
-      activeTabPath: filePath,
-      fileBuffers: { ...state.fileBuffers, [filePath]: nextContent },
-      dirtyFiles: isRecovered && !state.dirtyFiles.includes(filePath) ? [...state.dirtyFiles, filePath] : state.dirtyFiles,
+      openTabs: findPath(state.openTabs, filePath) ? state.openTabs : [...state.openTabs, filePath],
+      activeTabPath: findPath(state.openTabs, filePath) ?? filePath,
+      fileBuffers: { ...state.fileBuffers, [recordPath(state.fileBuffers, filePath) ?? filePath]: nextContent },
+      dirtyFiles: isRecovered && !findPath(state.dirtyFiles, filePath) ? [...state.dirtyFiles, filePath] : state.dirtyFiles,
     }));
   },
 
   closeFile: (filePath: string) => {
     const { openTabs, activeTabPath, dirtyFiles } = get();
-    const filteredTabs = openTabs.filter((t) => t !== filePath);
+    const filteredTabs = openTabs.filter((tabPath) => !pathsEqual(tabPath, filePath));
     
     let nextActive = activeTabPath;
-    if (activeTabPath === filePath) {
+    if (activeTabPath && pathsEqual(activeTabPath, filePath)) {
       // Focus previous tab or next tab
-      const index = openTabs.indexOf(filePath);
+      const index = openTabs.findIndex((tabPath) => pathsEqual(tabPath, filePath));
       if (filteredTabs.length > 0) {
         nextActive = filteredTabs[Math.max(0, index - 1)];
       } else {
@@ -301,13 +365,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({
       openTabs: filteredTabs,
       activeTabPath: nextActive,
-      dirtyFiles: dirtyFiles.filter((f) => f !== filePath),
+      dirtyFiles: dirtyFiles.filter((dirtyFile) => !pathsEqual(dirtyFile, filePath)),
     });
   },
 
   requestCloseFile: (filePath: string) => {
     const { dirtyFiles } = get();
-    if (dirtyFiles.includes(filePath)) {
+    if (findPath(dirtyFiles, filePath)) {
       set({ pendingCloseFile: filePath });
     } else {
       get().closeFile(filePath);
@@ -320,12 +384,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   saveFile: async (filePath: string) => {
     const { fileBuffers, dirtyFiles } = get();
-    const content = fileBuffers[filePath] ?? '';
+    const content = fileBuffers[recordPath(fileBuffers, filePath) ?? filePath] ?? '';
     try {
       await (window as any).api.fs.writeFile(filePath, content);
       removeRecoveryBuffer(filePath);
       set({
-        dirtyFiles: dirtyFiles.filter((f) => f !== filePath),
+        dirtyFiles: dirtyFiles.filter((dirtyFile) => !pathsEqual(dirtyFile, filePath)),
       });
       await get().refreshWorkspace();
     } catch (err) {
@@ -348,7 +412,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const { fileBuffers } = get();
     removeRecoveryBuffer(filePath);
     const updatedBuffers = { ...fileBuffers };
-    delete updatedBuffers[filePath];
+    const matchingPath = recordPath(updatedBuffers, filePath);
+    if (matchingPath) delete updatedBuffers[matchingPath];
     get().closeFile(filePath);
     set({
       fileBuffers: updatedBuffers,
@@ -364,13 +429,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const { dirtyFiles, fileBuffers, gitChangedFiles } = get();
     
     // Quick optimization: only trigger state update if content actually changed
-    if (fileBuffers[filePath] === content) return;
+    const bufferPath = recordPath(fileBuffers, filePath) ?? filePath;
+    if (fileBuffers[bufferPath] === content) return;
 
     saveRecoveryBuffer(filePath, content);
 
-    const newBuffers = { ...fileBuffers, [filePath]: content };
-    const newDirty = dirtyFiles.includes(filePath) ? dirtyFiles : [...dirtyFiles, filePath];
-    const newGitChangedFiles = gitChangedFiles.includes(filePath) ? gitChangedFiles : [...gitChangedFiles, filePath];
+    const newBuffers = { ...fileBuffers, [bufferPath]: content };
+    const newDirty = findPath(dirtyFiles, filePath) ? dirtyFiles : [...dirtyFiles, filePath];
+    const newGitChangedFiles = findPath(gitChangedFiles, filePath) ? gitChangedFiles : [...gitChangedFiles, filePath];
 
     set({
       fileBuffers: newBuffers,
@@ -388,11 +454,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   createItem: async (name: string, type: 'file' | 'directory', parentPath?: string) => {
     const { workspacePath } = get();
     const base = parentPath || workspacePath;
-    if (!base) return;
+    if (!base || !workspacePath || !isPathAtOrWithin(base, workspacePath)) return;
 
     const targetPath = `${base}/${name}`.replace(/\/+/g, '/'); // Standardize slashes
     try {
-      await (window as any).api.apiPath; // just a safeguard placeholder
       await (window as any).api.fs.createItem(targetPath, type);
       await get().refreshWorkspace();
       
@@ -406,18 +471,39 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   deleteItem: async (itemPath: string) => {
-    try {
-      await (window as any).api.fs.deleteItem(itemPath);
-      
-      // If deleted file is currently open, close its tab
-      const { openTabs } = get();
-      if (openTabs.includes(itemPath)) {
-        get().closeFile(itemPath);
-      }
-      
-      await get().refreshWorkspace();
-    } catch (err) {
-      console.error(`Error deleting item ${itemPath}:`, err);
-    }
+    await (window as any).api.fs.deleteItem(itemPath);
+    const state = get();
+    const openTabs = state.openTabs.filter((path) => !isPathAtOrWithin(path, itemPath));
+    const activeTabPath = state.activeTabPath && isPathAtOrWithin(state.activeTabPath, itemPath)
+      ? openTabs[Math.max(0, state.openTabs.indexOf(state.activeTabPath) - 1)] ?? null
+      : state.activeTabPath;
+
+    removeRecoveryBuffersAtOrWithin(itemPath);
+    set({
+      openTabs,
+      activeTabPath,
+      fileBuffers: Object.fromEntries(Object.entries(state.fileBuffers).filter(([path]) => !isPathAtOrWithin(path, itemPath))),
+      imageBuffers: Object.fromEntries(Object.entries(state.imageBuffers).filter(([path]) => !isPathAtOrWithin(path, itemPath))),
+      dirtyFiles: state.dirtyFiles.filter((path) => !isPathAtOrWithin(path, itemPath)),
+      pendingCloseFile: state.pendingCloseFile && isPathAtOrWithin(state.pendingCloseFile, itemPath) ? null : state.pendingCloseFile,
+      explorerSelectedPath: state.explorerSelectedPath && isPathAtOrWithin(state.explorerSelectedPath, itemPath) ? null : state.explorerSelectedPath,
+    });
+    await get().refreshWorkspace();
+  },
+
+  renameItem: async (itemPath: string, newName: string) => {
+    const newPath = await (window as any).api.fs.renameItem(itemPath, newName) as string;
+    set((state) => moveWorkspacePaths(state, itemPath, newPath));
+    remapRecoveryBuffers(itemPath, newPath);
+    await get().refreshWorkspace();
+    return newPath;
+  },
+
+  moveItem: async (itemPath: string, destinationDirectory: string) => {
+    const newPath = await (window as any).api.fs.moveItem(itemPath, destinationDirectory) as string;
+    set((state) => moveWorkspacePaths(state, itemPath, newPath));
+    remapRecoveryBuffers(itemPath, newPath);
+    await get().refreshWorkspace();
+    return newPath;
   }
 }));

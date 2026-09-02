@@ -26,12 +26,15 @@ const PROVIDERS = [
   { id: 'xai', name: 'xAI' },
   { id: 'togetherai', name: 'Together AI' },
   { id: 'perplexity', name: 'Perplexity' },
+  { id: 'zhipu', name: 'GLM (Zhipu)' },
 ];
 
 const PROVIDER_OPTIONS = PROVIDERS.map((provider) => ({
   value: provider.id,
   label: provider.name,
 }));
+
+type CatalogProviderSummary = { id: string; name: string; modelCount: number };
 
 export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => {
   const {
@@ -48,6 +51,33 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
   const [showKey, setShowKey] = useState(false);
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
+  const [catalogProviders, setCatalogProviders] = useState<CatalogProviderSummary[]>([]);
+
+  // Every OpenCode catalog provider becomes selectable; requests are routed by
+  // the catalog protocol/base URL, so a plain API key is enough to use them.
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    (window as any).api?.ai?.fetchCatalogProviders?.()
+      .then((list: CatalogProviderSummary[]) => {
+        if (!cancelled && Array.isArray(list)) setCatalogProviders(list);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isOpen]);
+
+  const curatedIds = new Set(PROVIDERS.map(provider => provider.id));
+  const dynamicProviderOptions = catalogProviders
+    .filter(provider => provider.id && !curatedIds.has(provider.id))
+    .map(provider => ({
+      value: provider.id,
+      label: `${provider.name} (${provider.modelCount} modelos · OpenCode)`,
+    }));
+  const providerOptions = [...PROVIDER_OPTIONS, ...dynamicProviderOptions];
+  const providerName = (id: string): string =>
+    PROVIDERS.find(p => p.id === id)?.name
+    || catalogProviders.find(p => p.id === id)?.name
+    || id;
 
   const isOAuthSupported = OAUTH_SUPPORTED_PROVIDERS.includes(selectedProvider);
 
@@ -155,7 +185,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
             </label>
             <StyledSelect
               value={selectedProvider}
-              options={PROVIDER_OPTIONS}
+              options={providerOptions}
               onChange={setSelectedProvider}
               placeholder="Seleccionar proveedor"
               buttonClassName="px-3 py-2 text-xs"
@@ -229,7 +259,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
                 <span>
                   {selectedProvider === 'gemini' && oauthAccounts.length > 0
                     ? 'Conectar otra cuenta'
-                    : `Conectar con ${PROVIDERS.find((p) => p.id === selectedProvider)?.name}`}
+                    : `Conectar con ${providerName(selectedProvider)}`}
                 </span>
               </button>
             </div>
@@ -287,7 +317,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
                   type={showKey ? 'text' : 'password'}
                   value={apiKey}
                   onChange={(e) => setApiKeyInput(e.target.value)}
-                  placeholder={`Ingresá tu clave de API de ${PROVIDERS.find(p => p.id === selectedProvider)?.name}`}
+                  placeholder={`Ingresá tu clave de API de ${providerName(selectedProvider)}`}
                   className="w-full bg-editor-bg border border-editor-border text-xs rounded-lg pl-3 pr-10 py-2 text-editor-text placeholder:text-editor-textDark outline-none focus:border-editor-accent transition-all-custom font-mono"
                 />
                 <button
@@ -414,7 +444,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
 
                   {/* API Key Providers */}
                   {otherConfigured.map(([id]) => {
-                    const provInfo = PROVIDERS.find((p) => p.id === id);
+                    const provInfo = { id, name: providerName(id) };
                     const isCurrent = id === selectedProvider;
                     return (
                       <div

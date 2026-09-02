@@ -257,6 +257,7 @@ export class OpenAIAdapter implements AIProviderAdapter {
     let buffer = '';
 
     let textContent = '';
+    let originalContent = '';
     let reasoningContent = '';
     let reasoningPartId: string | undefined;
     let textPartId: string | undefined;
@@ -383,6 +384,7 @@ export class OpenAIAdapter implements AIProviderAdapter {
             }
           } else if ((parsed.type === 'response.output_text.delta' || parsed.type === 'response.text.delta')
             && typeof parsed.delta === 'string') {
+            originalContent += parsed.delta;
             normalizeThinkContent(parsed.delta);
           } else if ((parsed.type === 'response.reasoning_text.delta' || parsed.type === 'response.reasoning.delta')
             && typeof parsed.delta === 'string') {
@@ -414,6 +416,7 @@ export class OpenAIAdapter implements AIProviderAdapter {
           }
 
           if (delta?.content) {
+            originalContent += delta.content;
             normalizeThinkContent(delta.content);
           }
 
@@ -473,6 +476,7 @@ export class OpenAIAdapter implements AIProviderAdapter {
     chatLog('info', {}, 'provider.stream', 'sse.parsed', diagnostics);
 
     return {
+      originalContent: originalContent || undefined,
       textContent,
       reasoningContent: reasoningContent || undefined,
       toolCalls,

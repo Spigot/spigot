@@ -3,6 +3,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useLayoutStore } from '../../store/layoutStore';
 import { useTerminalStore } from '../../store/terminalStore';
 import { X, Globe, Play } from 'lucide-react';
+import { findPath, isPathAtOrWithin, normalizedPath, pathsEqual } from '../../pathIdentity';
 
 export const EditorTabs: React.FC = () => {
   const { openTabs, activeTabPath, setActiveTab, requestCloseFile, dirtyFiles, activeDiffFile, workspacePath } = useWorkspaceStore();
@@ -15,8 +16,8 @@ export const EditorTabs: React.FC = () => {
     if (!filePath || filePath.startsWith('browser://')) return null;
     
     let targetPath = filePath;
-    if (workspacePath && filePath.startsWith(workspacePath)) {
-      const rel = filePath.slice(workspacePath.length).replace(/^[/\\]+/, '').replace(/\\/g, '/');
+    if (workspacePath && isPathAtOrWithin(filePath, workspacePath)) {
+      const rel = normalizedPath(filePath).slice(normalizedPath(workspacePath).length).replace(/^\/+/, '');
       targetPath = `./${rel}`;
     }
 
@@ -63,9 +64,9 @@ export const EditorTabs: React.FC = () => {
         {openTabs.map((path) => {
           const isBrowser = path.startsWith('browser://');
           const fileName = isBrowser ? 'Navegador Web' : (path.split(/[/\\]/).pop() || '');
-          const isActive = activeTabPath === path;
-          const isDirty = dirtyFiles.includes(path);
-          const isDiffActive = activeDiffFile !== null && activeDiffFile.filePath === path;
+          const isActive = activeTabPath !== null && pathsEqual(activeTabPath, path);
+          const isDirty = findPath(dirtyFiles, path) !== undefined;
+          const isDiffActive = activeDiffFile !== null && pathsEqual(activeDiffFile.filePath, path);
 
           return (
             <div

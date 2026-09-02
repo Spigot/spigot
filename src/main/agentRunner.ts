@@ -1,6 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import { pathToFileURL } from 'url';
 import { getModelEffortCapability, type ModelAssignment, type ModelConfiguration, type ModelEffort, type GentleRoleId, GENTLE_ROLE_LABELS } from '../shared/modelConfiguration';
@@ -23,11 +23,125 @@ import {
 } from './engine/providers';
 import { getValidAccessToken } from './oauth/antigravityOAuth';
 import { getGlobalOAuthAccountPool } from './oauth/accountPool';
+import { modelsCatalogService } from './engine/modelsCatalog';
+import { terminalManager } from './terminal';
 
 export type { ToolDefinition, ToolCall, ToolResult, UnifiedMessage };
 
 const execAsync = promisify(exec);
 const chatLog = createChatLogger();
+
+// Transient provider failures worth retrying before surfacing an error.
+const RETRYABLE_HTTP_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+const MAX_PROVIDER_RETRIES = 3;
+const MAX_RETRY_BACKOFF_MS = 8_000;
+const MAX_RAW_ERROR_CHARS = 400;
+
+const PROVIDER_ERROR_HINTS: Record<string, string> = {
+  MODEL_CAPACITY_EXHAUSTED: 'El proveedor no tiene capacidad para este modelo en este momento. Reintentá en unos minutos o elegí otro modelo.',
+  RESOURCE_EXHAUSTED: 'Se alcanzó la cuota o el límite de uso de tu cuenta para este modelo.',
+  UNAVAILABLE: 'El proveedor no está disponible temporalmente. Reintentá más tarde.',
+};
+
+function extractProviderErrorCode(errText: string): string | undefined {
+  try {
+    const parsed = JSON.parse(errText);
+    const details = parsed?.error?.details;
+    if (Array.isArray(details)) {
+      for (const detail of details) {
+        if (detail && typeof detail.reason === 'string') return detail.reason;
+      }
+    }
+    if (parsed?.error?.status && typeof parsed.error.status === 'string') return parsed.error.status;
+    if (parsed?.error?.message && typeof parsed.error.message === 'string') return parsed.error.message.slice(0, 120);
+  } catch {
+    // Not JSON; the raw text is the only signal.
+  }
+  return undefined;
+}
+
+function describeProviderHttpError(status: number, errText: string): string {
+  const reason = extractProviderErrorCode(errText);
+  const hint = reason ? PROVIDER_ERROR_HINTS[reason] : undefined;
+  const summary = `El proveedor respondió HTTP ${status}${reason ? ` (${reason})` : ''}`;
+  if (hint) return `${summary}. ${hint}`;
+  return `${summary}: ${errText.slice(0, MAX_RAW_ERROR_CHARS)}`;
+}
+
+function isQuotaError(status: number, errText: string): boolean {
+  if (status === 429) return true;
+  const reason = extractProviderErrorCode(errText);
+  return reason === 'RESOURCE_EXHAUSTED' || reason === 'QUOTA_EXHAUSTED' || /quota/i.test(errText);
+}
+
+// ==========================================
+// Streaming workspace command execution
+// ==========================================
+const COMMAND_TIMEOUT_MS = 60_000;
+const COMMAND_OUTPUT_CAP_CHARS = 120_000;
+
+/**
+ * Runs a shell command streaming its output both to the model result and to the
+ * "Agente" terminal session, like VS Code's tool terminal. Unlike exec, output
+ * arrives live, the process is killed on timeout/abort, and the exit code is
+ * reported to the model.
+ */
+function executeStreamedCommand(
+  workspacePath: string,
+  command: string,
+  signal: AbortSignal | undefined,
+  onOutput: (chunk: string) => void,
+): Promise<string> {
+  return new Promise((resolve) => {
+    const child = spawn(command, {
+      cwd: workspacePath,
+      shell: true,
+      env: process.env,
+      windowsHide: true,
+    });
+
+    let captured = '';
+    let timedOut = false;
+    let settled = false;
+    const append = (data: Buffer | string) => {
+      const text = data.toString();
+      onOutput(text);
+      if (captured.length < COMMAND_OUTPUT_CAP_CHARS) {
+        captured += text.slice(0, COMMAND_OUTPUT_CAP_CHARS - captured.length);
+      }
+    };
+    child.stdout?.on('data', append);
+    child.stderr?.on('data', append);
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try { child.kill(); } catch {}
+    }, COMMAND_TIMEOUT_MS);
+
+    const onAbort = () => { try { child.kill(); } catch {} };
+    if (signal?.aborted) onAbort();
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    const settle = (code: number | null, error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      if (error) return resolve(`ERROR al iniciar el comando: ${error.message}`);
+      const trimmed = captured.trim();
+      const body = trimmed
+        ? (captured.length >= COMMAND_OUTPUT_CAP_CHARS ? `${trimmed}\n…[salida truncada]` : trimmed)
+        : '(sin salida)';
+      const status = timedOut
+        ? `TIMEOUT: el comando superó los ${COMMAND_TIMEOUT_MS / 1000} segundos y fue detenido.`
+        : `EXIT CODE: ${code ?? 'desconocido'}`;
+      resolve(`${body}\n\n${status}`);
+    };
+
+    child.on('close', code => settle(code));
+    child.on('error', error => settle(null, error));
+  });
+}
 
 // ==========================================
 // 1. Tool Schemas & Unified Definitions
@@ -454,6 +568,31 @@ export async function executeTool(
         return `Deletion staged for ${relativePath}.`;
       }
 
+      case 'move_file': {
+        const sourcePath = resolvePath(args.sourcePath);
+        const targetPath = resolvePath(args.targetPath);
+        if (sourcePath === targetPath) return `Sin cambios: origen y destino son el mismo archivo (${targetPath}).`;
+        await fs.access(sourcePath).catch(() => {
+          throw new Error(`El archivo origen no existe: ${sourcePath}`);
+        });
+        const targetExists = await fs.stat(targetPath).then(() => true).catch(() => false);
+        if (targetExists) throw new Error(`El destino ya existe: ${targetPath}. Elegí otra ruta o eliminá el archivo primero.`);
+        await fs.mkdir(path.dirname(targetPath), { recursive: true });
+        try {
+          await fs.rename(sourcePath, targetPath);
+        } catch (err: any) {
+          // Cross-device moves cannot rename; copy + delete keeps the tool usable.
+          if (err?.code === 'EXDEV') {
+            await fs.copyFile(sourcePath, targetPath);
+            await fs.unlink(sourcePath);
+          } else {
+            throw err;
+          }
+        }
+        const relativeTarget = path.relative(workspacePath, targetPath).replaceAll('\\', '/');
+        return `Archivo movido a ${relativeTarget}.`;
+      }
+
       case 'write_file': {
         const file = resolvePath(args.filePath);
         const relativePath = path.relative(workspacePath, file).replaceAll('\\', '/');
@@ -513,11 +652,16 @@ export async function executeTool(
       }
 
       case 'run_command': {
-        const { stdout, stderr } = await execAsync(args.command, {
-          cwd: workspacePath,
-          timeout: 45000 // 45 seconds timeout
-        });
-        return `STDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`;
+        if (context?.sessionId) {
+          terminalManager.ensureAgentSession(context.sessionId, workspacePath);
+          terminalManager.emitAgentData(context.sessionId, `$ ${args.command}\n`);
+        }
+        return await executeStreamedCommand(
+          workspacePath,
+          String(args.command ?? ''),
+          context?.signal,
+          chunk => { if (context?.sessionId) terminalManager.emitAgentData(context.sessionId, chunk); },
+        );
       }
 
       case 'git_status': {
@@ -777,10 +921,15 @@ export async function runAgentLoop({
       const fullUserPrompt = budgeted.context
         ? `=== CONTEXTO DEL PROYECTO ===\n${budgeted.context}\n\n=== FIN CONTEXTO ===\n\nPregunta / Instrucción del usuario:\n${prompt}`
         : prompt;
-      const requestMessages = [...budgeted.history, { role: 'user' as const, content: fullUserPrompt }];
+      const requestMessages = turn === 1
+        ? [...budgeted.history, { role: 'user' as const, content: fullUserPrompt }]
+        : budgeted.history;
 
-      // Resolve modular provider adapter
-      const adapter = providerRegistry.get(provider);
+      // Resolve modular provider adapter, guided by the OpenCode catalog so any
+      // catalog provider (protocol + base URL) is reachable, not just built-ins.
+      // Cache-only: the catalog is warmed at startup, never fetched per turn.
+      const routing = modelsCatalogService.resolveCachedProviderRouting(provider);
+      const { adapter, baseUrl } = providerRegistry.resolveForProvider(provider, routing);
 
       // Validate & recover message history (injects synthetic tool result if prior turn was cancelled)
       const sanitizedMessages = recoverMessageHistory(requestMessages);
@@ -831,21 +980,37 @@ export async function runAgentLoop({
         tools: effectiveTools,
         effort,
         signal,
+        baseUrl,
       });
 
-      const response = await fetch(requestPayload.url, {
-        method: 'POST',
-        headers: requestPayload.headers,
-        body: JSON.stringify(requestPayload.body),
-        signal,
-      });
+      let response: Response | undefined;
+      for (let attempt = 0; ; attempt++) {
+        response = await fetch(requestPayload.url, {
+          method: 'POST',
+          headers: requestPayload.headers,
+          body: JSON.stringify(requestPayload.body),
+          signal,
+        });
+        if (response.ok || signal.aborted || attempt >= MAX_PROVIDER_RETRIES || !RETRYABLE_HTTP_STATUSES.has(response.status)) {
+          break;
+        }
+        const retryAfterHeader = Number(response.headers.get('retry-after'));
+        const backoffMs = Number.isFinite(retryAfterHeader) && retryAfterHeader > 0
+          ? Math.min(retryAfterHeader * 1000, MAX_RETRY_BACKOFF_MS * 4)
+          : Math.min(1_000 * 2 ** attempt, MAX_RETRY_BACKOFF_MS);
+        const retryText = await response.text().catch(() => '');
+        chatLog('warn', logContext, 'main.provider', 'dispatch.retry', { turn, attempt: attempt + 1, status: response.status, reason: extractProviderErrorCode(retryText), backoffMs });
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+      }
 
       if (!response.ok) {
-        const errText = await response.text();
-        if (usedOAuthAccountId && (response.status === 429 || response.status === 503 || errText.includes('RESOURCE_EXHAUSTED') || errText.includes('quota'))) {
+        const errText = await response.text().catch(() => '');
+        // Capacity/unavailability is the provider's problem; only quota errors
+        // should cool down an OAuth account for future turns.
+        if (usedOAuthAccountId && isQuotaError(response.status, errText)) {
           getGlobalOAuthAccountPool().markAccountCooldown(usedOAuthAccountId, 'QUOTA_EXHAUSTED');
         }
-        throw new Error(`API returned HTTP ${response.status}: ${errText}`);
+        throw new Error(describeProviderHttpError(response.status, errText));
       }
 
       let turnEmittedText = false;
@@ -874,7 +1039,7 @@ export async function runAgentLoop({
         }
       } : undefined;
 
-      const { textContent, reasoningContent, toolCalls } = await adapter.parseStream(response, {
+      const { originalContent, textContent, reasoningContent, toolCalls } = await adapter.parseStream(response, {
         sendChunk: wrappedSendChunk,
         signal,
         provider,
@@ -890,9 +1055,12 @@ export async function runAgentLoop({
       }
 
       // Save this turn's response to conversation state
+      if (turn === 1) {
+        messages.push({ role: 'user', content: fullUserPrompt });
+      }
       const assistantMessage: UnifiedMessage = {
         role: 'assistant',
-        content: textContent,
+        content: originalContent ?? textContent,
       };
 
       if (toolCalls.length > 0) {
@@ -917,7 +1085,7 @@ export async function runAgentLoop({
           const currentCount = (executedToolCounts.get(sig) || 0) + 1;
           executedToolCounts.set(sig, currentCount);
 
-          if ((tc.name === 'write_file' || tc.name === 'edit_file' || tc.name === 'delete_file') && executedWriteSignatures.has(sig)) {
+          if ((tc.name === 'write_file' || tc.name === 'edit_file' || tc.name === 'delete_file' || tc.name === 'move_file') && executedWriteSignatures.has(sig)) {
             sendReasoning(`[Finalizado] La herramienta \`${tc.name}\` ya creó y aplicó los cambios correctamente en el archivo.`);
             sendChunk('\n\nOperación completada exitosamente. El archivo ha sido creado en tu espacio de trabajo.');
             sendEnd();
@@ -974,11 +1142,17 @@ export async function runAgentLoop({
               changeSetId,
               toolCallId,
             });
-            if (tc.name === 'write_file' || tc.name === 'edit_file' || tc.name === 'delete_file') {
+            if (tc.name === 'write_file' || tc.name === 'edit_file' || tc.name === 'delete_file' || tc.name === 'move_file') {
               executedWriteSignatures.add(sig);
             }
             sendReasoning(`Herramienta \`${tc.name}\` completada.\n`);
           }
+
+          const toolAffectedPath = tc.name === 'move_file'
+            ? String((tc.input as any)?.targetPath ?? '')
+            : ['write_file', 'edit_file', 'delete_file'].includes(tc.name)
+              ? String((tc.input as any)?.filePath ?? '')
+              : undefined;
 
           onEvent?.({
             type: 'tool',
@@ -988,6 +1162,7 @@ export async function runAgentLoop({
             status: 'end',
             data: {
               result: resultStr,
+              ...(toolAffectedPath ? { path: toolAffectedPath } : {}),
             },
           });
           chatLog('info', logContext, 'main.tool', tc.name === 'delegate_subagent' ? 'subagent.completed' : 'tool.completed', { toolIdPresent: Boolean(toolCallId), resultBytes: resultStr.length });

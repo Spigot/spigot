@@ -6,6 +6,7 @@ import { SourceControlView } from './SourceControlView';
 import { GitPullRequest, Loader2, Search, Replace, FileCode, Check, Folder, RefreshCw } from 'lucide-react';
 import { buildSearchRegex, collectSearchableFilePaths, MAX_SEARCH_FILE_BYTES, MAX_SEARCH_RESULTS, searchInContent } from './searchEngine';
 import type { SearchMatch } from './searchEngine';
+import { findPath, pathsEqual, recordPath } from '../../pathIdentity';
 
 export const Sidebar: React.FC = () => {
   const { activeSidebarTab, isSidebarOpen, sidebarWidth } = useLayoutStore();
@@ -59,7 +60,7 @@ export const Sidebar: React.FC = () => {
 
     if (searchScope === 'active') {
       if (activeTabPath) {
-        const content = fileBuffers[activeTabPath] || '';
+        const content = fileBuffers[recordPath(fileBuffers, activeTabPath) ?? activeTabPath] || '';
         addMatches(activeTabPath, content);
       }
     } else {
@@ -69,7 +70,7 @@ export const Sidebar: React.FC = () => {
         if (runId !== searchRunIdRef.current || matchedItems.length >= MAX_SEARCH_RESULTS) return;
 
         const fPath = allFilePaths[index];
-        let content = fileBuffers[fPath];
+        let content = fileBuffers[recordPath(fileBuffers, fPath) ?? fPath];
         if (content === undefined) {
           try {
             content = await (window as any).api.fs.readFile(fPath);
@@ -124,7 +125,7 @@ export const Sidebar: React.FC = () => {
 
   // Replace single occurrence
   const handleReplaceSingle = async (match: SearchMatch) => {
-    let content = fileBuffers[match.filePath];
+    let content = fileBuffers[recordPath(fileBuffers, match.filePath) ?? match.filePath];
     if (content === undefined) {
       try {
         content = await (window as any).api.fs.readFile(match.filePath);
@@ -145,14 +146,14 @@ export const Sidebar: React.FC = () => {
     
     updateFileBuffer(match.filePath, newContent);
     
-    if (!openTabs.includes(match.filePath)) {
+    if (!findPath(openTabs, match.filePath)) {
       await openFile(match.filePath);
     }
   };
 
   // Replace all in a single file
   const handleReplaceInFile = async (filePath: string) => {
-    let content = fileBuffers[filePath];
+    let content = fileBuffers[recordPath(fileBuffers, filePath) ?? filePath];
     if (content === undefined) {
       try {
         content = await (window as any).api.fs.readFile(filePath);
@@ -173,7 +174,7 @@ export const Sidebar: React.FC = () => {
     const newContent = content.replace(regex, replaceQuery);
     updateFileBuffer(filePath, newContent);
     
-    if (!openTabs.includes(filePath)) {
+    if (!findPath(openTabs, filePath)) {
       await openFile(filePath);
     }
   };
@@ -181,7 +182,9 @@ export const Sidebar: React.FC = () => {
   // Replace all occurrences in results globally
   const handleReplaceAll = async () => {
     if (!searchQuery) return;
-    const uniquePaths = Array.from(new Set(results.map(r => r.filePath)));
+    const uniquePaths = results.reduce<string[]>((paths, result) => (
+      findPath(paths, result.filePath) ? paths : [...paths, result.filePath]
+    ), []);
     for (const filePath of uniquePaths) {
       await handleReplaceInFile(filePath);
     }
@@ -214,10 +217,11 @@ export const Sidebar: React.FC = () => {
 
   // Group search results by file path
   const groupedResults = results.reduce<Record<string, SearchMatch[]>>((acc, match) => {
-    if (!acc[match.filePath]) {
-      acc[match.filePath] = [];
+    const path = recordPath(acc, match.filePath) ?? match.filePath;
+    if (!acc[path]) {
+      acc[path] = [];
     }
-    acc[match.filePath].push(match);
+    acc[path].push(match);
     return acc;
   }, {});
 
@@ -430,7 +434,7 @@ export const Sidebar: React.FC = () => {
           <div className="flex-1 overflow-y-auto mt-2 pr-1 select-text flex flex-col gap-3 min-h-0">
             {Object.entries(groupedResults).map(([filePath, fileMatches]) => {
               const fileName = filePath.split('/').pop() || filePath;
-              const isFileActive = activeTabPath === filePath;
+              const isFileActive = activeTabPath !== null && pathsEqual(activeTabPath, filePath);
               return (
                 <div key={filePath} className="flex flex-col gap-1 border-b border-editor-border/40 pb-2 shrink-0">
                   {/* File Header */}

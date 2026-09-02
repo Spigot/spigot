@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 // Expose safe APIs to the React renderer
 contextBridge.exposeInMainWorld('api', {
+  // Renderer-safe platform identity; Node globals remain unavailable to web content.
+  platform: process.platform,
   app: {
     minimize: () => ipcRenderer.send('app:minimize'),
     maximize: () => ipcRenderer.send('app:maximize'),
@@ -28,6 +30,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   fs: {
     selectWorkspace: () => ipcRenderer.invoke('fs:select-workspace'),
+    activateWorkspace: (workspacePath: string) => ipcRenderer.invoke('fs:activate-workspace', workspacePath),
     createProject: (parentPath: string, name: string) => ipcRenderer.invoke('fs:create-project', parentPath, name),
     readDir: (dirPath: string) => ipcRenderer.invoke('fs:read-dir', dirPath),
     readFile: (filePath: string) => ipcRenderer.invoke('fs:read-file', filePath),
@@ -35,6 +38,8 @@ contextBridge.exposeInMainWorld('api', {
     writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:write-file', filePath, content),
     createItem: (itemPath: string, type: 'file' | 'directory') => ipcRenderer.invoke('fs:create-item', itemPath, type),
     deleteItem: (itemPath: string) => ipcRenderer.invoke('fs:delete-item', itemPath),
+    renameItem: (itemPath: string, newName: string) => ipcRenderer.invoke('fs:rename-item', itemPath, newName),
+    moveItem: (itemPath: string, destinationDirectory: string) => ipcRenderer.invoke('fs:move-item', itemPath, destinationDirectory),
     watchWorkspace: (workspacePath: string) => ipcRenderer.invoke('fs:watch-workspace', workspacePath),
     unwatchWorkspace: () => ipcRenderer.invoke('fs:unwatch-workspace'),
     onWorkspaceChanged: (callback: (filename: string | null) => void) => {
@@ -64,7 +69,14 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.removeListener(`terminal:close:${sessionId}`, subscription);
       };
     },
-    getHistory: (sessionId: string) => ipcRenderer.invoke('terminal:get-history', sessionId)
+    getHistory: (sessionId: string) => ipcRenderer.invoke('terminal:get-history', sessionId),
+    onAgentSession: (callback: (session: { id: string; name: string; cwd: string }) => void) => {
+      const subscription = (_event: any, session: { id: string; name: string; cwd: string }) => callback(session);
+      ipcRenderer.on('terminal:agent-session', subscription);
+      return () => {
+        ipcRenderer.removeListener('terminal:agent-session', subscription);
+      };
+    }
   },
   store: {
     getKeys: () => ipcRenderer.invoke('store:get-keys'),
@@ -101,6 +113,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   ai: {
     fetchModels: (provider: string, apiKey: string) => ipcRenderer.invoke('ai:fetch-models', provider, apiKey),
+    fetchCatalogProviders: (): Promise<Array<{ id: string; name: string; modelCount: number }>> => ipcRenderer.invoke('ai:fetch-catalog-providers'),
     streamChat: (args: { 
       conversationId?: string;
       turnId?: string;
