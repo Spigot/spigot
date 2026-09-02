@@ -45,6 +45,16 @@ function reasoningDetailsDeltas(value: unknown, previous: Map<string, string>): 
   return deltas;
 }
 
+function parseJwtPayload(token: string): Record<string, any> | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
 export class OpenAIAdapter implements AIProviderAdapter {
   readonly id: string;
   private readonly defaultBaseUrl?: string;
@@ -54,7 +64,7 @@ export class OpenAIAdapter implements AIProviderAdapter {
     this.defaultBaseUrl = defaultBaseUrl;
   }
 
-  resolveUrl(provider: string, overrideUrl?: string): string {
+  resolveUrl(provider: string, overrideUrl?: string, apiKey?: string): string {
     if (overrideUrl) return overrideUrl;
     if (this.defaultBaseUrl) return this.defaultBaseUrl;
 
@@ -70,8 +80,16 @@ export class OpenAIAdapter implements AIProviderAdapter {
         return 'https://api.minimax.io/v1/chat/completions';
       case 'openrouter':
         return 'https://openrouter.ai/api/v1/chat/completions';
-      default:
+      default: {
+        const isOAuthJwt = apiKey && apiKey.split('.').length === 3;
+        if (isOAuthJwt) {
+          const claims = parseJwtPayload(apiKey);
+          if (claims?.chatgpt_account_id || claims?.['https://api.openai.com/auth']?.chatgpt_account_id) {
+            return 'https://chatgpt.com/backend-api/codex/responses';
+          }
+        }
         return 'https://api.openai.com/v1/chat/completions';
+      }
     }
   }
 
@@ -94,12 +112,25 @@ export class OpenAIAdapter implements AIProviderAdapter {
   }
 
   buildRequest(options: ProviderRequestOptions): ProviderHttpRequest {
-    const url = this.resolveUrl(options.provider, options.baseUrl);
+    const url = this.resolveUrl(options.provider, options.baseUrl, options.apiKey);
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${options.apiKey}`,
       ...(options.extraHeaders || {}),
     };
+
+    if (options.provider === 'openai' && options.apiKey) {
+      const claims = parseJwtPayload(options.apiKey);
+      if (claims) {
+        const accountId =
+          claims.chatgpt_account_id ||
+          claims['https://api.openai.com/auth']?.chatgpt_account_id ||
+          claims.organizations?.[0]?.id;
+        if (accountId) {
+          headers['ChatGPT-Account-Id'] = accountId;
+        }
+      }
+    }
 
     const openaiMessages: any[] = [];
     if (options.systemPrompt) {
