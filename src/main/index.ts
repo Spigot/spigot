@@ -685,6 +685,10 @@ ipcMain.handle('store:set-model-configuration', async (_event, configuration: un
 });
 
 ipcMain.handle('store:get-last-workspace', async () => {
+  // E2E runs pin the workspace to a disposable temp directory.
+  if (process.env.SPIGOT_E2E_WORKSPACE && process.env.SPIGOT_E2E_WORKSPACE.trim()) {
+    return process.env.SPIGOT_E2E_WORKSPACE.trim();
+  }
   const data = await readStore();
   const lastWorkspacePath = data.lastWorkspacePath;
 
