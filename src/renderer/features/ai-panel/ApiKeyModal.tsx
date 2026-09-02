@@ -17,6 +17,11 @@ const PROVIDERS = [
   { id: 'kimi', name: 'Kimi' },
   { id: 'openrouter', name: 'OpenRouter' },
   { id: 'minimax', name: 'MiniMax' },
+  { id: 'groq', name: 'Groq' },
+  { id: 'mistral', name: 'Mistral' },
+  { id: 'xai', name: 'xAI' },
+  { id: 'togetherai', name: 'Together AI' },
+  { id: 'perplexity', name: 'Perplexity' },
 ];
 
 const PROVIDER_OPTIONS = PROVIDERS.map((provider) => ({

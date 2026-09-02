@@ -17,6 +17,11 @@ export class ProviderRegistry {
     this.registerAdapter(new OpenAIAdapter('kimi', 'https://api.moonshot.cn/v1/chat/completions'));
     this.registerAdapter(new OpenAIAdapter('qwen', 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions'));
     this.registerAdapter(new OpenAIAdapter('minimax', 'https://api.minimax.io/v1/chat/completions'));
+    this.registerAdapter(new OpenAIAdapter('groq', 'https://api.groq.com/openai/v1/chat/completions'));
+    this.registerAdapter(new OpenAIAdapter('mistral', 'https://api.mistral.ai/v1/chat/completions'));
+    this.registerAdapter(new OpenAIAdapter('xai', 'https://api.x.ai/v1/chat/completions'));
+    this.registerAdapter(new OpenAIAdapter('togetherai', 'https://api.together.xyz/v1/chat/completions'));
+    this.registerAdapter(new OpenAIAdapter('perplexity', 'https://api.perplexity.ai/chat/completions'));
     this.registerAdapter(new AnthropicAdapter());
     this.registerAdapter(new GeminiAdapter());
     this.registerAdapter(new OpenRouterAdapter());

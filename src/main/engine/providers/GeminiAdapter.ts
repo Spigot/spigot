@@ -94,9 +94,14 @@ export class GeminiAdapter implements AIProviderAdapter {
       }
     }
 
+    let resolvedModel = options.model || 'gemini-2.5-flash';
+    if (resolvedModel.startsWith('antigravity-')) {
+      resolvedModel = resolvedModel.replace(/^antigravity-/, '');
+    }
+
     const defaultUrl = isOAuth
       ? 'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse'
-      : `https://generativelanguage.googleapis.com/v1beta/models/${options.model}:streamGenerateContent?key=${options.apiKey}`;
+      : `https://generativelanguage.googleapis.com/v1beta/models/${resolvedModel}:streamGenerateContent?key=${options.apiKey}`;
 
     const baseUrl = options.baseUrl || defaultUrl;
     const headers: Record<string, string> = {
@@ -161,7 +166,7 @@ export class GeminiAdapter implements AIProviderAdapter {
     const body: Record<string, unknown> = isOAuth
       ? {
           project: projectId,
-          model: options.model,
+          model: resolvedModel,
           request: {
             systemInstruction: {
               parts: [{ text: options.systemPrompt }],
