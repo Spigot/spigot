@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { DiffEditor } from '@monaco-editor/react';
 import { Check, FileCode2, RotateCcw, X } from 'lucide-react';
+import { useAIStore } from '../../store/aiStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 
 export type ChangeSetReview = {
@@ -8,6 +9,7 @@ export type ChangeSetReview = {
   turnId: string;
   state: 'open' | 'ready' | 'applying' | 'applied' | 'rolling-back' | 'rolled-back' | 'conflicted' | 'closed';
   entries: Array<{ relativePath: string; operation: 'create' | 'modify' | 'delete' }>;
+  mode?: 'orchestrator' | 'build' | 'plan' | 'review';
 };
 
 export function ChangeSetReviewCard({ review, onStateChange }: { review: ChangeSetReview; onStateChange: (state: ChangeSetReview['state']) => void }) {
@@ -18,6 +20,24 @@ export function ChangeSetReviewCard({ review, onStateChange }: { review: ChangeS
   const [rollbackLoading, setRollbackLoading] = useState(false);
   const { dirtyFiles, refreshWorkspace, theme, workspacePath } = useWorkspaceStore();
   const actionable = review.state === 'ready';
+
+  // After accepting or rejecting, the agent's turn is already over, so nothing
+  // would wake it up again. Tell it what happened so it keeps going instead of
+  // stalling until the user types another message.
+  const resumeAgent = (decisionMessage: string) => {
+    const ai = useAIStore.getState();
+    const entry = {
+      prompt: decisionMessage,
+      mode: review.mode ?? ('orchestrator' as const),
+      contextText: null,
+      contextSource: 'default' as const,
+    };
+    if (ai.isGenerating) {
+      ai.enqueueMessage(entry);
+    } else {
+      void ai.sendMessage(entry.prompt, entry.contextText, null, entry.mode, entry.contextSource);
+    }
+  };
 
   useEffect(() => {
     if (!selectedPath) return;
@@ -34,10 +54,13 @@ export function ChangeSetReviewCard({ review, onStateChange }: { review: ChangeS
       await refreshWorkspace();
       // Open the files the agent just wrote to disk, like VS Code agent mode.
       const base = (workspacePath || '').replace(/[\\/]+$/, '');
+      const workspace = useWorkspaceStore.getState();
       for (const item of review.entries.filter(e => e.operation !== 'delete')) {
         const absolutePath = base ? `${base}/${item.relativePath.replaceAll('\\', '/')}` : item.relativePath;
-        useWorkspaceStore.getState().openFile(absolutePath).catch(() => {});
+        await workspace.reloadFile(absolutePath).catch(() => {});
+        workspace.openFile(absolutePath).catch(() => {});
       }
+      resumeAgent('[Sistema] El usuario ACEPTÓ los cambios propuestos y ya fueron aplicados al disco. Continuá con la tarea desde donde la dejaste; si ya no queda nada pendiente, resumí el resultado.');
     } catch (reason: any) {
       setError(reason?.message || 'The staged changes could not be applied.');
     }
@@ -48,6 +71,7 @@ export function ChangeSetReviewCard({ review, onStateChange }: { review: ChangeS
     try {
       await (window as any).api.changes.reject(review.id);
       onStateChange('closed');
+      resumeAgent('[Sistema] El usuario RECHAZÓ los cambios propuestos: no se aplicó nada al disco. Revisá el enfoque y volvé a proponer los cambios; consultá el estado real de los archivos con read_file antes de reintentar.');
     } catch (reason: any) {
       setError(reason?.message || 'The staged changes could not be rejected.');
     }

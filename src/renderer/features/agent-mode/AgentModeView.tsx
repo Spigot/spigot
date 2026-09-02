@@ -9,6 +9,8 @@ import { useAIStore } from '../../store/aiStore';
 import { useLayoutStore } from '../../store/layoutStore';
 import { compileContext } from '../ai-panel/contextCompiler';
 import { SubagentExecutionCard } from '../chat/SubagentExecutionCard';
+import { SubagentStatusBar } from '../chat/SubagentStatusBar';
+import { ToolPermissionCard } from '../chat/ToolPermissionCard';
 import ConsolePanel from '../terminal/ConsolePanel';
 import { ChatAgentControls } from '../ai-panel/ChatAgentControls';
 import { ProgressiveMessageRenderer } from '../chat/ProgressiveMessageRenderer';
@@ -254,10 +256,11 @@ const ThoughtBlock: React.FC<{
 export const AgentModeView: React.FC = () => {
   const confirmDialog = useSystemDialogStore(state => state.confirm);
   const { workspacePath, setWorkspacePath, fileTree, explorerSelectedPath } = useWorkspaceStore();
-  const { 
+  const {
     conversations, activeConversationId, selectConversation, createConversation,
     messages, sendMessage, isGenerating, incomingStreamText, activeStreams,
-    initializeStore, deleteConversation, abortChat
+    initializeStore, deleteConversation, abortChat,
+    messageQueue, enqueueMessage, removeQueuedMessage
   } = useAIStore();
   const { setSettingsModalOpen } = useLayoutStore();
   
@@ -375,7 +378,7 @@ export const AgentModeView: React.FC = () => {
   }, [prompt]);
 
   const handleSend = async () => {
-    if (!prompt.trim() || isGenerating) return;
+    if (!prompt.trim()) return;
     const textToSend = prompt;
     setPrompt('');
     scrollToBottom(true);
@@ -405,6 +408,13 @@ export const AgentModeView: React.FC = () => {
       contextSource = compiled.contextSource;
     } catch (e) {
       console.error('Failed to compile context:', e);
+    }
+
+    // While the agent is working, the message waits in a queue and is sent
+    // automatically when the current turn finishes.
+    if (isGenerating) {
+      enqueueMessage({ prompt: textToSend.trim(), mode: agentModeType, contextText, contextSource });
+      return;
     }
 
     await sendMessage(textToSend.trim(), contextText, null, agentModeType, contextSource);
@@ -749,6 +759,8 @@ export const AgentModeView: React.FC = () => {
           
           {/* 1. Chat Area */}
           <div className="flex-1 min-w-0 flex flex-col overflow-hidden relative">
+            <SubagentStatusBar />
+            <ToolPermissionCard />
             {isConversationEmpty ? (
               <div className="flex-1 flex flex-col overflow-y-auto custom-scrollbar-agent scroll-smooth justify-center items-center px-8 pb-8 relative">
                 <div className="w-full max-w-3xl flex flex-col items-center justify-center animate-in fade-in zoom-in-95 duration-500 py-12">
@@ -768,9 +780,8 @@ export const AgentModeView: React.FC = () => {
                           handleSend();
                         }
                       }}
-                      placeholder="Pregunta lo que quieras"
+                      placeholder={isGenerating ? 'El agente está trabajando: tu mensaje quedará en cola' : 'Pregunta lo que quieras'}
                       className="w-full bg-transparent text-editor-text p-4 min-h-[120px] outline-none resize-none placeholder:text-editor-textDark text-[14px]"
-                      disabled={isGenerating}
                     />
                     
                     <div className="flex flex-wrap items-center justify-between gap-2 p-3 pt-0">
@@ -934,6 +945,22 @@ export const AgentModeView: React.FC = () => {
                     background: 'linear-gradient(to top, var(--editor-bg) 60%, transparent 100%)'
                   }}
                 >
+                  {messageQueue.length > 0 && (
+                    <div className="w-full max-w-3xl flex flex-col gap-1 mb-1.5 pointer-events-auto" aria-label="Mensajes en cola">
+                      {messageQueue.map((queued) => (
+                        <div key={queued.id} className="flex items-center justify-between gap-2 rounded-lg border border-editor-border bg-white/5 px-3 py-1.5 text-[11px] text-editor-textDark">
+                          <span className="flex items-center gap-1.5 min-w-0">
+                            <Clock className="w-3 h-3 shrink-0 text-editor-accent" />
+                            <span className="truncate">{queued.prompt}</span>
+                            <span className="shrink-0 uppercase tracking-wide opacity-60">{queued.mode}</span>
+                          </span>
+                          <button type="button" onClick={() => removeQueuedMessage(queued.id)} className="shrink-0 hover:text-editor-error transition-colors cursor-pointer" title="Quitar de la cola">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div className="w-full max-w-3xl bg-white/5 border border-editor-border rounded-xl flex flex-col shadow-2xl backdrop-blur-md animate-in slide-in-from-bottom-2 duration-300 pointer-events-auto">
                     <textarea 
                       ref={textareaRef}
@@ -945,9 +972,8 @@ export const AgentModeView: React.FC = () => {
                           handleSend();
                         }
                       }}
-                      placeholder="Pregunta lo que quieras"
+                      placeholder={isGenerating ? 'El agente está trabajando: tu mensaje quedará en cola' : 'Pregunta lo que quieras'}
                       className="w-full bg-transparent text-editor-text p-4 min-h-[120px] outline-none resize-none placeholder:text-editor-textDark text-[14px]"
-                      disabled={isGenerating}
                     />
                     
                     <div className="flex flex-wrap items-center justify-between gap-2 p-3 pt-0">

@@ -18,4 +18,18 @@ describe('ChangeSetReviewCard', () => {
     expect(source).toContain("onStateChange('rolled-back')");
     expect(source).toContain('No files will be changed');
   });
+
+  it('resumes the agent after accept/reject so it does not stall waiting for the user', () => {
+    expect(source).toContain('resumeAgent');
+    // The decision is reported back to the model as a system-style user message.
+    expect(source).toContain('ACEPTÓ los cambios propuestos');
+    expect(source).toContain('RECHAZÓ los cambios propuestos');
+    // The original turn mode is reused, and a running turn queues the message.
+    expect(source).toContain('review.mode ??');
+    expect(source).toContain('ai.enqueueMessage(entry)');
+    expect(source).toContain('ai.sendMessage(');
+    // Accept still opens the written files in the editor.
+    expect(source).toContain('reloadFile');
+    expect(source).toContain('openFile');
+  });
 });

@@ -8,6 +8,8 @@ import { ChatAgentControls } from './ChatAgentControls';
 import { SLASH_COMMANDS, SlashCommand } from './slashCommands';
 import { SubagentExecutionCard } from '../chat/SubagentExecutionCard';
 import { ChangeSetReviewCard } from '../chat/ChangeSetReviewCard';
+import { SubagentStatusBar } from '../chat/SubagentStatusBar';
+import { ToolPermissionCard } from '../chat/ToolPermissionCard';
 import { ProgressiveMessageRenderer } from '../chat/ProgressiveMessageRenderer';
 import { useScrollFollow } from '../chat/useScrollFollow';
 import { MemoizedMessageRow } from '../chat/MemoizedMessageRow';
@@ -187,7 +189,8 @@ export const AIPanel: React.FC = () => {
     messages, providers, activeProvider, isGenerating, incomingStreamText, error,
     conversations, activeConversationId, activeStreams, oauthAccounts,
     initializeStore, sendMessage, clearHistory, abortChat,
-    createConversation, selectConversation, deleteConversation
+    createConversation, selectConversation, deleteConversation,
+    messageQueue, enqueueMessage, removeQueuedMessage
   } = useAIStore();
   const latestAssistantMessageId = [...messages].reverse().find(message => message.role === 'assistant')?.id;
 
@@ -309,7 +312,6 @@ export const AIPanel: React.FC = () => {
   const handleSend = async (customPrompt?: string) => {
     const textToSend = customPrompt !== undefined ? customPrompt : prompt;
     if (!textToSend.trim() && attachedFiles.length === 0) return;
-    if (isGenerating) return;
 
     setPrompt('');
     setShowCommands(false);
@@ -381,6 +383,13 @@ export const AIPanel: React.FC = () => {
       contextSource = compiled.contextSource;
     } catch (e) {
       console.error('Failed to compile context:', e);
+    }
+
+    // While the agent is working, the message waits in a queue and is sent
+    // automatically when the current turn finishes.
+    if (isGenerating) {
+      enqueueMessage({ prompt: finalPrompt, mode: agentModeType, contextText, contextSource, image: attachedImage });
+      return;
     }
 
     await sendMessage(finalPrompt, contextText, attachedImage, agentModeType, contextSource);
@@ -648,6 +657,12 @@ export const AIPanel: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Live subagent status, directly below the chat header */}
+      <SubagentStatusBar />
+
+      {/* In-chat tool confirmations */}
+      <ToolPermissionCard />
 
       {/* Chat History Panel Popover */}
       {showHistoryPanel && (
@@ -1005,6 +1020,23 @@ export const AIPanel: React.FC = () => {
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* Queued messages awaiting the current turn */}
+        {messageQueue.length > 0 && (
+          <div className="flex flex-col gap-1 mb-1" aria-label="Mensajes en cola">
+            {messageQueue.map((queued) => (
+              <div key={queued.id} className="flex items-center justify-between gap-2 rounded-md border border-editor-border bg-editor-bg px-2 py-1 text-[11px] text-editor-textDark">
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <Clock className="w-3 h-3 shrink-0 text-editor-accent" />
+                  <span className="truncate">{queued.prompt}</span>
+                </span>
+                <button type="button" onClick={() => removeQueuedMessage(queued.id)} className="shrink-0 hover:text-editor-error transition-colors cursor-pointer" title="Quitar de la cola">
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
           </div>
         )}
 
