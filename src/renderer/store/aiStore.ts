@@ -750,26 +750,41 @@ export const useAIStore = create<AIState>((set, get) => {
         }
         const workspacePath = useWorkspaceStore.getState().workspacePath;
         const chatHistory = await (window as any).api.store.getChatHistory(workspacePath);
-        
+        const accounts = await get().fetchOAuthAccounts();
+
         set((state) => {
           const updated = { ...state.providers };
+          for (const [provider, defaultList] of Object.entries(DEFAULT_MODELS)) {
+            if (updated[provider]) {
+              updated[provider].availableModels = [...defaultList];
+              if (!updated[provider].activeModel && defaultList.length > 0) {
+                updated[provider].activeModel = defaultList[0];
+              }
+            }
+          }
+
           for (const [provider, key] of Object.entries(keys)) {
             if (updated[provider]) {
               updated[provider].key = key as string;
               const storedAuthType = (localStorage.getItem(`spigot_ai_authtype_${provider}`) as 'api' | 'oauth') || 'api';
               updated[provider].authType = storedAuthType;
-              if (!key) {
-                updated[provider].activeModel = '';
-                updated[provider].availableModels = [];
-              }
             }
           }
+
+          if (accounts && accounts.length > 0 && updated.gemini) {
+            updated.gemini.authType = 'oauth';
+            if (!updated.gemini.key) {
+              const activeAcc = accounts.find((a: any) => a.isActive) || accounts[0];
+              updated.gemini.key = `oauth_${activeAcc?.id || 'active'}`;
+            }
+          }
+
           for (const [provider, model] of Object.entries(selectedModels)) {
-            if (updated[provider]?.key) {
+            if (updated[provider] && model) {
               updated[provider].activeModel = model as string;
             }
           }
-          const firstConfiguredProvider = Object.entries(updated).find(([, data]) => data.key.trim().length > 0)?.[0];
+          const firstConfiguredProvider = Object.entries(updated).find(([, data]) => Boolean(data.key && data.key.trim().length > 0))?.[0];
 
           // Parse and migrate chatHistory
           let loadedConvs: ChatConversation[] = [];
@@ -822,31 +837,27 @@ export const useAIStore = create<AIState>((set, get) => {
           };
         });
 
-        await get().fetchOAuthAccounts();
-
         // Query models dynamically for configured providers
         const { providers } = get();
         for (const [provider, data] of Object.entries(providers)) {
-          if (data.key) {
-            try {
-              const dynamic = await (window as any).api.ai.fetchModels(provider, data.key);
-              const availableModels = dynamic && dynamic.length > 0
-                ? dynamic
-                : DEFAULT_MODELS[provider] ?? [];
+          try {
+            const dynamic = await (window as any).api.ai.fetchModels(provider, data.key || undefined);
+            const availableModels = dynamic && dynamic.length > 0
+              ? dynamic
+              : DEFAULT_MODELS[provider] ?? [];
 
-              if (availableModels.length > 0) {
-                set((state) => {
-                  const updated = { ...state.providers };
-                  updated[provider].availableModels = availableModels;
-                  if (!availableModels.includes(updated[provider].activeModel)) {
-                    updated[provider].activeModel = availableModels[0];
-                  }
-                  return { providers: updated };
-                });
-              }
-            } catch (e) {
-              console.error(`Failed to refresh dynamic models on init for ${provider}`, e);
+            if (availableModels.length > 0) {
+              set((state) => {
+                const updated = { ...state.providers };
+                updated[provider].availableModels = availableModels;
+                if (!availableModels.includes(updated[provider].activeModel)) {
+                  updated[provider].activeModel = availableModels[0];
+                }
+                return { providers: updated };
+              });
             }
+          } catch (e) {
+            console.error(`Failed to refresh dynamic models on init for ${provider}`, e);
           }
         }
       } catch (err) {
@@ -856,7 +867,7 @@ export const useAIStore = create<AIState>((set, get) => {
 
     setApiKey: async (provider: string, key: string, authType: 'api' | 'oauth' = 'api') => {
       try {
-        await (window as any).api.store.setKey(provider, key);
+        await (window as any).api.store.setKey(provider, key, authType);
         try {
           localStorage.setItem(`spigot_ai_authtype_${provider}`, authType);
         } catch {}
@@ -866,34 +877,28 @@ export const useAIStore = create<AIState>((set, get) => {
           if (updated[provider]) {
             updated[provider].key = key;
             updated[provider].authType = authType;
-            if (!key) {
-              updated[provider].activeModel = '';
-              updated[provider].availableModels = [];
-            }
           }
-          const firstConfiguredProvider = Object.entries(updated).find(([, data]) => data.key.trim().length > 0)?.[0];
+          const firstConfiguredProvider = Object.entries(updated).find(([, data]) => Boolean(data.key && data.key.trim().length > 0))?.[0];
           return {
             providers: updated,
             activeProvider: key ? provider : firstConfiguredProvider ?? state.activeProvider,
           };
         });
 
-        if (key) {
-          const dynamic = await (window as any).api.ai.fetchModels(provider, key);
-          const availableModels = dynamic && dynamic.length > 0
-            ? dynamic
-            : DEFAULT_MODELS[provider] ?? [];
+        const dynamic = await (window as any).api.ai.fetchModels(provider, key || undefined);
+        const availableModels = dynamic && dynamic.length > 0
+          ? dynamic
+          : DEFAULT_MODELS[provider] ?? [];
 
-          if (availableModels.length > 0) {
-            set((state) => {
-              const updated = { ...state.providers };
-              updated[provider].availableModels = availableModels;
-              if (!availableModels.includes(updated[provider].activeModel)) {
-                updated[provider].activeModel = availableModels[0];
-              }
-              return { providers: updated };
-            });
-          }
+        if (availableModels.length > 0) {
+          set((state) => {
+            const updated = { ...state.providers };
+            updated[provider].availableModels = availableModels;
+            if (!availableModels.includes(updated[provider].activeModel)) {
+              updated[provider].activeModel = availableModels[0];
+            }
+            return { providers: updated };
+          });
         }
       } catch (err) {
         console.error(`Failed setting API key for ${provider}`, err);
