@@ -32,6 +32,7 @@ export interface WorkspaceState {
   setWorkspacePath: (path: string) => Promise<void>;
   refreshWorkspace: () => Promise<void>;
   openFile: (filePath: string) => Promise<void>;
+  reloadFile: (filePath: string) => Promise<void>;
   closeFile: (filePath: string) => void;
   requestCloseFile: (filePath: string) => void;
   cancelCloseFile: () => void;
@@ -345,6 +346,19 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       fileBuffers: { ...state.fileBuffers, [recordPath(state.fileBuffers, filePath) ?? filePath]: nextContent },
       dirtyFiles: isRecovered && !findPath(state.dirtyFiles, filePath) ? [...state.dirtyFiles, filePath] : state.dirtyFiles,
     }));
+  },
+
+  // Re-reads a file from disk into its editor buffer so stale open tabs pick
+  // up external changes (e.g. agent edits accepted from a change-set).
+  reloadFile: async (filePath: string) => {
+    try {
+      const content = await (window as any).api.fs.readFile(filePath);
+      set((state) => ({
+        fileBuffers: { ...state.fileBuffers, [recordPath(state.fileBuffers, filePath) ?? filePath]: content },
+      }));
+    } catch (err) {
+      console.error(`Failed to reload file contents for ${filePath}:`, err);
+    }
   },
 
   closeFile: (filePath: string) => {
