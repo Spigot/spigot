@@ -185,7 +185,7 @@ export const AIPanel: React.FC = () => {
   const { workspacePath, fileTree, explorerSelectedPath, activeTabPath, updateFileBuffer } = useWorkspaceStore();
   const { 
     messages, providers, activeProvider, isGenerating, incomingStreamText, error,
-    conversations, activeConversationId, activeStreams,
+    conversations, activeConversationId, activeStreams, oauthAccounts,
     initializeStore, sendMessage, clearHistory, abortChat,
     createConversation, selectConversation, deleteConversation
   } = useAIStore();

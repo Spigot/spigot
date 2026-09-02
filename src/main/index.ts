@@ -19,7 +19,7 @@ import {
   authorizeAntigravity,
   exchangeAntigravity,
 } from './oauth/antigravityOAuth';
-import { getGlobalOAuthAccountPool, type OAuthAccount } from './oauth/accountPool';
+import { getGlobalOAuthAccountPool } from './oauth/accountPool';
 import { SDDPipelineService } from './engine/sddPipeline';
 import { GENTLE_SKILLS } from './engine/gentleSkills';
 import { gentleAgentBuilder, type CustomAgentRoleSpec } from './engine/gentleAgentBuilder';
@@ -821,7 +821,7 @@ ipcMain.handle('oauth:google-login', async () => {
       projectId: exchangeResult.projectId,
       refreshToken: exchangeResult.refresh,
       accessToken: exchangeResult.access,
-      expiresAt: exchangeResult.expiresAt,
+      expiresAt: exchangeResult.expires,
     });
 
     return {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAIStore } from '../../store/aiStore';
-import { X, Key, Check, AlertCircle, Eye, EyeOff, Settings, Sparkles, LogIn, User, Trash2, Plus } from 'lucide-react';
+import { X, Key, Check, AlertCircle, Eye, EyeOff, Settings, Sparkles, LogIn, Plus } from 'lucide-react';
 import { StyledSelect } from './StyledSelect';
 
 interface ApiKeyModalProps {

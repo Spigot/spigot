@@ -5,7 +5,7 @@ import { useAIStore } from '../../store/aiStore';
 import { 
   Settings, X, Search, Palette, Code, Terminal, GitBranch, 
   Sparkles, Keyboard, Check, Eye, EyeOff, ChevronDown, AlertCircle, LogIn,
-  User, Trash2, Plus
+  Plus
 } from 'lucide-react';
 import { ProviderIcon } from '../../components/ui/ProviderIcon';
 import { GentleRoleSettingsFields } from '../ai-panel/ModeModelSettings';

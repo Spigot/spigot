@@ -115,8 +115,6 @@ export function renderInlineMarkdown(text: string): React.ReactNode {
             );
           }
 
-          // 5. Split by italic *text* or _text_
-          const italicParts = codePart.split(/(?:^|[^\w])(\*[^*]+\*|_[^_]+_)(?:[^\w]|$)/g);
           return (
             <React.Fragment key={`text-${codeIdx}`}>
               {codePart}

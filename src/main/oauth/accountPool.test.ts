@@ -20,6 +20,7 @@ describe('OAuthAccountPool', () => {
       refreshToken: 'refresh-2',
     });
 
+    expect(acc2.email).toBe('user2@gmail.com');
     expect(pool.getActiveAccountId()).toBe('user2@gmail.com');
     expect(pool.getAccounts()).toHaveLength(2);
   });

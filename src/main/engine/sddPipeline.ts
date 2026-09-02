@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { GENTLE_ROLE_IDS, type GentleRoleId } from '../../shared/modelConfiguration';
+import type { GentleRoleId } from '../../shared/modelConfiguration';
 
 export type SDDPhase =
   | 'init'
@@ -68,6 +68,10 @@ export class SDDPipelineService {
     this.workspaceRoot = workspaceRoot;
     this.sddDir = path.join(workspaceRoot, '.sdd');
     this.stateFile = path.join(this.sddDir, 'state.json');
+  }
+
+  public getWorkspaceRoot(): string {
+    return this.workspaceRoot;
   }
 
   ensureDir(): void {

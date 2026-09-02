@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { MarkdownRenderer } from './MarkdownRenderer';
@@ -12,7 +11,7 @@ describe('MarkdownRenderer', () => {
 | Multiplicar | 2 números |
 `;
 
-    const { container } = render(<MarkdownRenderer content={tableMarkdown} />);
+    render(<MarkdownRenderer content={tableMarkdown} />);
 
     expect(screen.getByRole('table')).toBeDefined();
     expect(screen.getAllByRole('columnheader').length).toBe(2);
