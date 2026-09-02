@@ -179,6 +179,7 @@ export class OpenAIAdapter implements AIProviderAdapter {
       model: options.model,
       messages: openaiMessages,
       stream: true,
+      store: false,
     };
 
     if (isMiniMaxM3(options.provider, options.model)) {
@@ -327,6 +328,25 @@ export class OpenAIAdapter implements AIProviderAdapter {
 
         try {
           const parsed = JSON.parse(dataStr);
+
+          // 1. Responses / Codex API SSE format
+          if (parsed.type === 'response.text.delta' && typeof parsed.delta === 'string') {
+            normalizeThinkContent(parsed.delta);
+          } else if (parsed.type === 'response.reasoning.delta' && typeof parsed.delta === 'string') {
+            emitContentDelta('reasoning', parsed.delta);
+          } else if (parsed.type === 'response.function_call_arguments.delta') {
+            const callId = parsed.call_id || parsed.item_id || 'call_0';
+            const existing = toolCallsMap.get(callId) || {
+              id: callId,
+              name: parsed.name || '',
+              arguments: '',
+            };
+            if (parsed.name && !existing.name) existing.name = parsed.name;
+            if (parsed.delta) existing.arguments += parsed.delta;
+            toolCallsMap.set(callId, existing);
+          }
+
+          // 2. Standard Chat Completions format
           const choice = parsed.choices?.[0];
           const delta = choice?.delta;
           if (choice?.finish_reason) diagnostics.finishMarkerCount++;
@@ -358,15 +378,13 @@ export class OpenAIAdapter implements AIProviderAdapter {
               const tc = delta.tool_calls[idx];
               const mapKey = tc.index ?? idx;
               const existing = toolCallsMap.get(mapKey) || {
-                id: '',
-                name: '',
+                id: tc.id || '',
+                name: tc.function?.name || '',
                 arguments: '',
               };
-
-              if (tc.id) existing.id = tc.id;
-              if (tc.function?.name) existing.name += tc.function.name;
+              if (tc.id && !existing.id) existing.id = tc.id;
+              if (tc.function?.name && !existing.name) existing.name = tc.function.name;
               if (tc.function?.arguments) existing.arguments += tc.function.arguments;
-
               toolCallsMap.set(mapKey, existing);
               diagnostics.recognizedToolDeltaCount++;
             }
