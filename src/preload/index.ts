@@ -87,6 +87,15 @@ contextBridge.exposeInMainWorld('api', {
     removeAccount: (accountId: string) => ipcRenderer.invoke('oauth:remove-account', accountId),
     setActiveAccount: (accountId: string) => ipcRenderer.invoke('oauth:set-active-account', accountId),
   },
+  gentle: {
+    getSDDState: (workspacePath: string) => ipcRenderer.invoke('gentle:sdd-get-state', workspacePath),
+    advanceSDDPhase: (workspacePath: string, artifactSummary?: string) => ipcRenderer.invoke('gentle:sdd-advance-phase', workspacePath, artifactSummary),
+    resetSDDPipeline: (workspacePath: string) => ipcRenderer.invoke('gentle:sdd-reset', workspacePath),
+    getSkills: () => ipcRenderer.invoke('gentle:get-skills'),
+    buildAgentRole: (spec: any) => ipcRenderer.invoke('gentle:build-agent-role', spec),
+    listCustomRoles: () => ipcRenderer.invoke('gentle:list-custom-roles'),
+    removeCustomRole: (id: string) => ipcRenderer.invoke('gentle:remove-custom-role', id),
+  },
   ai: {
     fetchModels: (provider: string, apiKey: string) => ipcRenderer.invoke('ai:fetch-models', provider, apiKey),
     streamChat: (args: { 

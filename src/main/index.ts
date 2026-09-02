@@ -20,6 +20,9 @@ import {
   exchangeAntigravity,
 } from './oauth/antigravityOAuth';
 import { getGlobalOAuthAccountPool, type OAuthAccount } from './oauth/accountPool';
+import { SDDPipelineService } from './engine/sddPipeline';
+import { GENTLE_SKILLS } from './engine/gentleSkills';
+import { gentleAgentBuilder, type CustomAgentRoleSpec } from './engine/gentleAgentBuilder';
 
 // Set App User Model ID for Windows Taskbar icon grouping and display
 if (process.platform === 'win32') {
@@ -844,6 +847,42 @@ ipcMain.handle('oauth:remove-account', async (_event, accountId: string) => {
 ipcMain.handle('oauth:set-active-account', async (_event, accountId: string) => {
   const success = oauthAccountPool.setActiveAccount(accountId);
   return { success, accounts: oauthAccountPool.listPublic() };
+});
+
+// ==========================================
+// GENTLE AI SDD PIPELINE & AGENT BUILDER IPC
+// ==========================================
+
+ipcMain.handle('gentle:sdd-get-state', async (_event, workspacePath: string) => {
+  const service = new SDDPipelineService(workspacePath || process.cwd());
+  return service.loadState();
+});
+
+ipcMain.handle('gentle:sdd-advance-phase', async (_event, workspacePath: string, artifactSummary?: string) => {
+  const service = new SDDPipelineService(workspacePath || process.cwd());
+  const state = service.loadState();
+  return service.advancePhase(state, artifactSummary);
+});
+
+ipcMain.handle('gentle:sdd-reset', async (_event, workspacePath: string) => {
+  const service = new SDDPipelineService(workspacePath || process.cwd());
+  return service.resetPipeline();
+});
+
+ipcMain.handle('gentle:get-skills', async () => {
+  return GENTLE_SKILLS;
+});
+
+ipcMain.handle('gentle:build-agent-role', async (_event, spec: CustomAgentRoleSpec) => {
+  return gentleAgentBuilder.buildRole(spec);
+});
+
+ipcMain.handle('gentle:list-custom-roles', async () => {
+  return gentleAgentBuilder.listCustomRoles();
+});
+
+ipcMain.handle('gentle:remove-custom-role', async (_event, id: string) => {
+  return gentleAgentBuilder.removeCustomRole(id);
 });
 
 // 2. Fetch Models Dynamically from Provider endpoints
