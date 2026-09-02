@@ -1,5 +1,11 @@
 import { useMemo } from 'react';
-import type { ChatMode } from '../../../shared/modelConfiguration';
+import {
+  getAssignmentEffort,
+  getModelEffortCapability,
+  resolveRoleAssignment,
+  type ChatMode,
+  type ModelEffort,
+} from '../../../shared/modelConfiguration';
 import { useAIStore } from '../../store/aiStore';
 import { StyledSelect } from './StyledSelect';
 
@@ -28,8 +34,19 @@ type ChatAgentControlsProps = {
 };
 
 export function ChatAgentControls({ mode, onModeChange, className = '' }: ChatAgentControlsProps) {
-  const { providers, modelConfiguration, setModeModelAssignment } = useAIStore();
-  const assignment = modelConfiguration.assignments[mode];
+  const {
+    providers,
+    modelConfiguration,
+    chatModelOverrides,
+    setChatModelOverride,
+    setChatModelOverrideEffort,
+  } = useAIStore();
+  const configuredAssignment = mode === 'orchestrator'
+    ? resolveRoleAssignment(modelConfiguration, 'gentle-orchestrator', modelConfiguration.assignments.orchestrator)
+    : modelConfiguration.assignments[mode];
+  const assignment = chatModelOverrides[mode] ?? configuredAssignment;
+  const capability = getModelEffortCapability(assignment);
+  const effort = getAssignmentEffort(assignment);
   const modelOptions = useMemo(() => Object.entries(providers).flatMap(([providerId, provider]) => (
     provider.key.trim() ? provider.availableModels.map((modelId) => ({
       value: `${encodeURIComponent(providerId)}:${encodeURIComponent(modelId)}`,
@@ -58,7 +75,8 @@ export function ChatAgentControls({ mode, onModeChange, className = '' }: ChatAg
         options={modelOptions}
         onChange={(value) => {
           const selected = modelOptions.find((option) => option.value === value);
-          if (selected) void setModeModelAssignment(mode, selected.assignment);
+          if (!selected) return;
+          setChatModelOverride(mode, selected.assignment);
         }}
         placeholder="Select model"
         disabled={modelOptions.length === 0}
@@ -67,6 +85,20 @@ export function ChatAgentControls({ mode, onModeChange, className = '' }: ChatAg
         className="min-w-[120px] max-w-[180px]"
         buttonClassName="h-7 rounded-md bg-editor-sidebar px-2 py-1 text-[11px] font-medium"
       />
+      {capability && (
+        <select
+          value={effort ?? ''}
+          onChange={(event) => {
+            const nextEffort = event.target.value as ModelEffort || undefined;
+            setChatModelOverrideEffort(mode, nextEffort);
+          }}
+          aria-label={`Select ${AGENT_OPTIONS.find((option) => option.value === mode)?.label ?? 'chat'} effort`}
+          className="h-7 max-w-[100px] rounded-md border border-editor-border bg-editor-sidebar px-1.5 text-[11px] font-medium text-editor-text outline-none focus:border-editor-accent disabled:cursor-default disabled:opacity-50"
+        >
+          <option value="">Effort</option>
+          {capability.levels.map((level) => <option key={level} value={level}>{level}</option>)}
+        </select>
+      )}
     </div>
   );
 }

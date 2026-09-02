@@ -52,7 +52,7 @@ describe('SettingsModal provider configuration styles', () => {
     expect(screen.queryByText('Effort is unavailable because this exact provider and model has no registered capability.')).toBeNull();
     ROLE_DESCRIPTIONS.forEach((description) => expect(screen.queryByText(description)).toBeNull());
     expect(screen.getAllByLabelText(/modelo$/i)).toHaveLength(21);
-    expect(settingsSource).toContain('sm:grid-cols-[minmax(12rem,1.35fr)_minmax(12rem,1fr)_minmax(10rem,0.7fr)]');
+    expect(settingsSource).toContain('lg:grid-cols-[minmax(11rem,1fr)_minmax(20rem,1.8fr)_minmax(11rem,0.75fr)]');
     expect(settingsSource).toContain('grid-cols-1 gap-3');
     expect(screen.queryByRole('heading', { name: 'Build agent' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Plan agent' })).toBeNull();

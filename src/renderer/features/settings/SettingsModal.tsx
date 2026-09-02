@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useLayoutStore } from '../../store/layoutStore';
+import { useLayoutStore, type SettingsCategory } from '../../store/layoutStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useAIStore } from '../../store/aiStore';
 import { 
@@ -10,8 +10,6 @@ import {
 import { ProviderIcon } from '../../components/ui/ProviderIcon';
 import { GentleRoleSettingsFields } from '../ai-panel/ModeModelSettings';
 import { GENTLE_ROLE_GROUPS, GENTLE_ROLE_LABELS } from '../../../shared/modelConfiguration';
-
-type SettingsCategory = 'appearance' | 'editor' | 'terminal' | 'git' | 'ai' | 'orchestrator' | 'shortcuts';
 
 const OAUTH_SUPPORTED_PROVIDERS = ['gemini', 'openai', 'github-copilot', 'opencode'];
 
@@ -34,7 +32,7 @@ const PROVIDERS = [
 ];
 
 export const SettingsModal: React.FC = () => {
-  const { isSettingsModalOpen, setSettingsModalOpen } = useLayoutStore();
+  const { isSettingsModalOpen, settingsCategory, setSettingsModalOpen } = useLayoutStore();
   const { theme, setTheme } = useWorkspaceStore();
   const {
     providers,
@@ -115,6 +113,10 @@ export const SettingsModal: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isSettingsModalOpen, setSettingsModalOpen]);
+
+  useEffect(() => {
+    if (isSettingsModalOpen && settingsCategory) setActiveCategory(settingsCategory);
+  }, [isSettingsModalOpen, settingsCategory]);
 
   if (!isSettingsModalOpen) return null;
 
@@ -870,12 +872,12 @@ export const SettingsModal: React.FC = () => {
                 </div>
 
                 <section className="overflow-hidden rounded-lg border border-editor-border bg-editor-sidebar shadow-sm" aria-labelledby="orchestrator-model-heading">
-                  <div className="hidden grid-cols-[minmax(12rem,1.35fr)_minmax(12rem,1fr)_minmax(10rem,0.7fr)] gap-4 border-b border-editor-border bg-editor-active/50 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-editor-textDark sm:grid">
+                  <div className="hidden grid-cols-[minmax(11rem,1fr)_minmax(20rem,1.8fr)_minmax(11rem,0.75fr)] gap-4 border-b border-editor-border bg-editor-active/50 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-editor-textDark lg:grid">
                     <span>Rol</span>
                     <span>Modelo</span>
                     <span>Esfuerzo</span>
                   </div>
-                    <div className="grid grid-cols-1 gap-3 px-4 py-3 sm:grid-cols-[minmax(12rem,1.35fr)_minmax(12rem,1fr)_minmax(10rem,0.7fr)] sm:items-start sm:gap-4">
+                    <div className="grid grid-cols-1 gap-3 px-4 py-3 lg:grid-cols-[minmax(11rem,1fr)_minmax(20rem,1.8fr)_minmax(11rem,0.75fr)] lg:items-start lg:gap-4">
                       <div>
                         <h4 id="orchestrator-model-heading" className="text-[13px] font-semibold text-editor-text">Orquestador de Gentle AI</h4>
                       </div>
@@ -888,7 +890,7 @@ export const SettingsModal: React.FC = () => {
                       Roles de {group.label} ({group.roles.length})
                     </summary>
                     <div className="border-t border-editor-border">
-                      <div className="hidden grid-cols-[minmax(12rem,1.35fr)_minmax(12rem,1fr)_minmax(10rem,0.7fr)] gap-4 border-b border-editor-border bg-editor-active/50 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-editor-textDark sm:grid">
+                      <div className="hidden grid-cols-[minmax(11rem,1fr)_minmax(20rem,1.8fr)_minmax(11rem,0.75fr)] gap-4 border-b border-editor-border bg-editor-active/50 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-editor-textDark lg:grid">
                         <span>Rol</span>
                         <span>Modelo</span>
                         <span>Esfuerzo</span>
@@ -896,7 +898,7 @@ export const SettingsModal: React.FC = () => {
                       {group.roles.map((role) => {
                         const label = GENTLE_ROLE_LABELS[role];
                         return (
-                          <section key={role} className="grid grid-cols-1 gap-3 border-b border-editor-border px-4 py-3 last:border-b-0 sm:grid-cols-[minmax(12rem,1.35fr)_minmax(12rem,1fr)_minmax(10rem,0.7fr)] sm:items-start sm:gap-4" aria-labelledby={`${role}-heading`}>
+                          <section key={role} className="grid grid-cols-1 gap-3 border-b border-editor-border px-4 py-3 last:border-b-0 lg:grid-cols-[minmax(11rem,1fr)_minmax(20rem,1.8fr)_minmax(11rem,0.75fr)] lg:items-start lg:gap-4" aria-labelledby={`${role}-heading`}>
                             <div>
                             <h5 id={`${role}-heading`} className="text-xs font-semibold text-editor-text">{label}</h5>
                             </div>

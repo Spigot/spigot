@@ -24,6 +24,14 @@ export const useGlobalShortcuts = () => {
       const key = event.key.toLowerCase();
       const workspace = useWorkspaceStore.getState();
 
+      if (key === 'a') {
+        if (isEditableTarget(event.target)) return;
+        event.preventDefault();
+        useLayoutStore.getState().setSettingsCategory('ai');
+        useLayoutStore.getState().setSettingsModalOpen(true);
+        return;
+      }
+
       if (key === ',') {
         event.preventDefault();
         useLayoutStore.getState().setSettingsModalOpen(true);

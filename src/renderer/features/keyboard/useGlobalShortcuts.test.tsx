@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { useGlobalShortcuts } from './useGlobalShortcuts';
 import { useSystemDialogStore } from '../../components/ui/systemDialogStore';
+import { useLayoutStore } from '../../store/layoutStore';
 
 const mockSaveActiveFile = vi.fn();
 const mockSelectWorkspace = vi.fn();
@@ -29,6 +30,7 @@ describe('useGlobalShortcuts', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockWorkspaceState.workspacePath = '/workspace';
+    useLayoutStore.setState({ isSettingsModalOpen: false, settingsCategory: null });
   });
 
   afterEach(() => {
@@ -69,6 +71,24 @@ describe('useGlobalShortcuts', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', ctrlKey: true, bubbles: true }));
 
     expect(mockCreateItem).not.toHaveBeenCalled();
+  });
+
+  it('opens provider settings with Ctrl+A outside editable fields', () => {
+    render(<ShortcutHarness />);
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true }));
+
+    expect(useLayoutStore.getState()).toMatchObject({ isSettingsModalOpen: true, settingsCategory: 'ai' });
+  });
+
+  it('does not steal Ctrl+A from editable fields', () => {
+    render(<ShortcutHarness />);
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true }));
+
+    expect(useLayoutStore.getState().isSettingsModalOpen).toBe(false);
   });
 
   it('triggers zoomIn on Ctrl++', () => {

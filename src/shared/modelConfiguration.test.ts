@@ -6,6 +6,7 @@ import {
   GENTLE_ROLE_IDS,
   resolveRoleAssignment,
   setModeAssignment,
+  setModeEffort,
   setRoleAssignment,
   setRoleEffort,
 } from './modelConfiguration';
@@ -76,6 +77,17 @@ describe('model configuration', () => {
     expect(getAssignmentEffort(configured.roleAssignments['sdd-spec'])).toBeUndefined();
   });
 
+  it('persists effort independently for each chat mode', () => {
+    const configured = setModeEffort(
+      setModeAssignment(createModelConfiguration(undefined), 'build', { providerId: 'openai', modelId: 'gpt-5.6-terra' }),
+      'build',
+      'high',
+    );
+
+    expect(getAssignmentEffort(configured.assignments.build)).toBe('high');
+    expect(getAssignmentEffort(configured.assignments.orchestrator)).toBeUndefined();
+  });
+
   it('prefers the coordinator role assignment and falls back to the legacy orchestrator assignment', () => {
     const legacy = { providerId: 'openai', modelId: 'gpt-5' };
     const empty = { ...createModelConfiguration(undefined), roleAssignments: {} };
@@ -87,5 +99,16 @@ describe('model configuration', () => {
 
   it('does not grant effort to unregistered models', () => {
     expect(getModelEffortCapability({ providerId: 'openai', modelId: 'gpt-custom-reasoning' })).toBeUndefined();
+  });
+
+  it('registers the documented Terra reasoning effort levels', () => {
+    expect(getModelEffortCapability({ providerId: 'openai', modelId: 'gpt-5.6-terra' })).toEqual({
+      payload: 'openai',
+      levels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+    });
+    expect(getModelEffortCapability({ providerId: 'openai', modelId: 'gpt-5.6-terra-pro' })).toEqual({
+      payload: 'openai',
+      levels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+    });
   });
 });

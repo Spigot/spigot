@@ -55,6 +55,10 @@ function parseJwtPayload(token: string): Record<string, any> | null {
   }
 }
 
+function isResponsesEndpoint(url: string): boolean {
+  return new URL(url).pathname.endsWith('/responses');
+}
+
 export class OpenAIAdapter implements AIProviderAdapter {
   readonly id: string;
   private readonly defaultBaseUrl?: string;
@@ -175,19 +179,54 @@ export class OpenAIAdapter implements AIProviderAdapter {
       }
     }
 
-    let body: Record<string, unknown> = {
-      model: options.model,
-      messages: openaiMessages,
-      stream: true,
-      store: false,
-    };
+    const usesResponsesApi = isResponsesEndpoint(url);
+    let body: Record<string, unknown> = usesResponsesApi
+      ? {
+        model: options.model,
+        instructions: options.systemPrompt || undefined,
+        input: openaiMessages.flatMap(message => {
+          // Responses receives the system prompt through instructions, not input.
+          if (message.role === 'system') return [];
+          if (message.role === 'tool') {
+            return {
+              type: 'function_call_output',
+              call_id: message.tool_call_id,
+              output: message.content,
+            };
+          }
+          if (message.role === 'assistant' && message.tool_calls) {
+            return message.tool_calls.map((toolCall: { id: string; function: { name: string; arguments: string } }) => ({
+              type: 'function_call',
+              call_id: toolCall.id,
+              name: toolCall.function.name,
+              arguments: toolCall.function.arguments,
+            }));
+          }
+          return { role: message.role, content: message.content };
+        }).flat(),
+        stream: true,
+        store: false,
+      }
+      : {
+        model: options.model,
+        messages: openaiMessages,
+        stream: true,
+        store: false,
+      };
 
     if (isMiniMaxM3(options.provider, options.model)) {
       body.reasoning_split = true;
     }
 
     if (options.tools && options.tools.length > 0) {
-      body.tools = this.sanitizeTools(options.tools);
+      body.tools = usesResponsesApi
+        ? options.tools.map(tool => ({
+          type: 'function',
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters,
+        }))
+        : this.sanitizeTools(options.tools);
       body.tool_choice = 'auto';
     }
 
@@ -197,7 +236,8 @@ export class OpenAIAdapter implements AIProviderAdapter {
         modelId: options.model,
       });
       if (capability?.payload === 'openai' && capability.levels.includes(options.effort)) {
-        body.reasoning_effort = options.effort;
+        if (usesResponsesApi) body.reasoning = { effort: options.effort };
+        else body.reasoning_effort = options.effort;
       }
     }
 
@@ -330,9 +370,22 @@ export class OpenAIAdapter implements AIProviderAdapter {
           const parsed = JSON.parse(dataStr);
 
           // 1. Responses / Codex API SSE format
-          if (parsed.type === 'response.text.delta' && typeof parsed.delta === 'string') {
+          if (parsed.type === 'response.output_item.added' && parsed.item?.type === 'function_call') {
+            const callId = parsed.item.call_id || parsed.item.id;
+            if (callId) {
+              const toolCall = {
+                id: callId,
+                name: parsed.item.name || '',
+                arguments: parsed.item.arguments || '',
+              };
+              toolCallsMap.set(callId, toolCall);
+              if (parsed.item.id) toolCallsMap.set(parsed.item.id, toolCall);
+            }
+          } else if ((parsed.type === 'response.output_text.delta' || parsed.type === 'response.text.delta')
+            && typeof parsed.delta === 'string') {
             normalizeThinkContent(parsed.delta);
-          } else if (parsed.type === 'response.reasoning.delta' && typeof parsed.delta === 'string') {
+          } else if ((parsed.type === 'response.reasoning_text.delta' || parsed.type === 'response.reasoning.delta')
+            && typeof parsed.delta === 'string') {
             emitContentDelta('reasoning', parsed.delta);
           } else if (parsed.type === 'response.function_call_arguments.delta') {
             const callId = parsed.call_id || parsed.item_id || 'call_0';
@@ -400,7 +453,7 @@ export class OpenAIAdapter implements AIProviderAdapter {
     if (textPartId) emitStreamPart(context, { partId: textPartId, kind: 'text', lifecycle: 'end' });
 
     const toolCalls: ToolCall[] = [];
-    for (const item of toolCallsMap.values()) {
+    for (const item of new Set(toolCallsMap.values())) {
       if (item.name) {
         let input: Record<string, any> = {};
         try {

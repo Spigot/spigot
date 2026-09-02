@@ -16,6 +16,7 @@ describe('ModeModelSettingsButton', () => {
       providers: { openai: { key: 'key', activeModel: 'gpt-5', availableModels: ['gpt-5'] } },
       modelConfiguration: createModelConfiguration(undefined, { openai: 'gpt-5' }),
       setModeModelAssignment: vi.fn(),
+      setModeModelEffort: vi.fn(),
       setRoleModelAssignment: vi.fn(),
       setRoleModelEffort: vi.fn(),
     });
@@ -44,25 +45,58 @@ describe('ModeModelSettingsButton', () => {
     await waitFor(() => expect((window as any).api.store.getRecentWorkspaces).toHaveBeenCalled());
   });
 
-  it('assigns a model to the selected mode without changing the conversation', () => {
-    const setModeModelAssignment = vi.fn();
+  it('uses a temporary chat override without changing Gentle Settings', () => {
+    const setChatModelOverride = vi.fn();
+    const setChatModelOverrideEffort = vi.fn();
     useAIStore.setState({
       activeConversationId: 'conversation-1',
-      setModeModelAssignment,
+      chatModelOverrides: {},
+      setChatModelOverride,
+      setChatModelOverrideEffort,
       providers: {
-        openai: { key: 'key', activeModel: 'gpt-5', availableModels: ['gpt-5'] },
-        anthropic: { key: 'key', activeModel: 'gpt-5', availableModels: ['gpt-5'] },
+        openai: { key: 'key', activeModel: 'gpt-5.6-terra', availableModels: ['gpt-5.6-terra'] },
+        anthropic: { key: 'key', activeModel: 'claude-sonnet-4-6', availableModels: ['claude-sonnet-4-6'] },
+      },
+      modelConfiguration: {
+        ...createModelConfiguration(undefined, { openai: 'gpt-5' }),
+        assignments: { orchestrator: { providerId: 'openai', modelId: 'gpt-5' } },
+        roleAssignments: { 'gentle-orchestrator': { providerId: 'openai', modelId: 'gpt-5.6-terra' } },
       },
     });
     render(<ChatAgentControls mode="orchestrator" onModeChange={() => undefined} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Select Orchestrator model' }));
-    fireEvent.click(screen.getAllByRole('option', { name: 'gpt-5 (Anthropic)' })[0]);
+    fireEvent.click(screen.getAllByRole('option', { name: 'claude-sonnet-4-6 (Anthropic)' })[0]);
 
-    expect(setModeModelAssignment).toHaveBeenCalledWith('orchestrator', {
+    expect(setChatModelOverride).toHaveBeenCalledWith('orchestrator', {
       providerId: 'anthropic',
-      modelId: 'gpt-5',
+      modelId: 'claude-sonnet-4-6',
     });
+    fireEvent.change(screen.getByLabelText('Select Orchestrator effort'), { target: { value: 'high' } });
+    expect(setChatModelOverrideEffort).toHaveBeenCalledWith('orchestrator', 'high');
     expect(useAIStore.getState().activeConversationId).toBe('conversation-1');
+  });
+
+  it('allows every primary agent to use a temporary chat override', () => {
+    const setChatModelOverride = vi.fn();
+    const setChatModelOverrideEffort = vi.fn();
+    useAIStore.setState({
+      setChatModelOverride,
+      setChatModelOverrideEffort,
+      chatModelOverrides: {},
+      providers: { openai: { key: 'key', activeModel: 'gpt-5.6-terra', availableModels: ['gpt-5.6-terra'] } },
+      modelConfiguration: {
+        ...createModelConfiguration(undefined),
+        assignments: { build: { providerId: 'openai', modelId: 'gpt-5.6-terra', effort: 'high' } },
+      },
+    });
+    render(<ChatAgentControls mode="build" onModeChange={() => undefined} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Build model' }));
+    fireEvent.click(screen.getByRole('option', { name: 'gpt-5.6-terra (OpenAI)' }));
+    fireEvent.change(screen.getByLabelText('Select Build effort'), { target: { value: 'medium' } });
+
+    expect(setChatModelOverride).toHaveBeenCalledWith('build', { providerId: 'openai', modelId: 'gpt-5.6-terra' });
+    expect(setChatModelOverrideEffort).toHaveBeenCalledWith('build', 'medium');
   });
 });

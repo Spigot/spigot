@@ -5,6 +5,7 @@ export const AI_PANEL_MIN_WIDTH = 400;
 export const AI_PANEL_MAX_WIDTH = 700;
 
 export type SidebarTab = 'explorer' | 'search' | 'source-control' | 'pull-request';
+export type SettingsCategory = 'appearance' | 'editor' | 'terminal' | 'git' | 'ai' | 'orchestrator' | 'shortcuts';
 
 interface LayoutState {
   activeSidebarTab: SidebarTab;
@@ -17,6 +18,7 @@ interface LayoutState {
   aiPanelWidth: number;
   isAgentModeOpen: boolean;
   isSettingsModalOpen: boolean;
+  settingsCategory: SettingsCategory | null;
   
   setSidebarTab: (tab: SidebarTab) => void;
   toggleSidebar: () => void;
@@ -32,6 +34,7 @@ interface LayoutState {
   toggleAgentMode: () => void;
   setAgentModeOpen: (open: boolean) => void;
   setSettingsModalOpen: (open: boolean) => void;
+  setSettingsCategory: (category: SettingsCategory | null) => void;
 }
 
 export const useLayoutStore = create<LayoutState>((set) => ({
@@ -45,6 +48,7 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   aiPanelWidth: AI_PANEL_MIN_WIDTH,
   isAgentModeOpen: false,
   isSettingsModalOpen: false,
+  settingsCategory: null,
 
   setSidebarTab: (tab) => set((state) => ({
     activeSidebarTab: tab,
@@ -79,5 +83,6 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   setAgentModeOpen: (open) => set({ isAgentModeOpen: open }),
 
   setSettingsModalOpen: (open) => set({ isSettingsModalOpen: open }),
+  setSettingsCategory: (category) => set({ settingsCategory: category }),
 }));
 

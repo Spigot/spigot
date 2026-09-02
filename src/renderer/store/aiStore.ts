@@ -11,6 +11,8 @@ import {
   resolveModeAssignment,
   resolveRoleAssignment,
   setModeAssignment,
+  setModeEffort,
+  setModelEffort,
   setRoleAssignment,
   setRoleEffort,
   type ChatMode,
@@ -100,6 +102,7 @@ interface AIState {
   error: string | null;
   activeStreams: Record<string, ActiveStreamState>;
   modelConfiguration: ModelConfiguration;
+  chatModelOverrides: Partial<Record<ChatMode, ModelAssignment>>;
   oauthAccounts: OAuthAccountInfo[];
 
   loginWithOAuth: (provider: string) => Promise<{ email?: string; projectId?: string; token: string; accounts?: OAuthAccountInfo[] }>;
@@ -111,6 +114,9 @@ interface AIState {
   setApiKey: (provider: string, key: string, authType?: 'api' | 'oauth') => Promise<void>;
   selectModel: (provider: string, model: string) => Promise<void>;
   setModeModelAssignment: (mode: ChatMode, assignment: ModelAssignment) => Promise<void>;
+  setModeModelEffort: (mode: ChatMode, effort: ModelEffort | undefined) => Promise<void>;
+  setChatModelOverride: (mode: ChatMode, assignment: ModelAssignment) => void;
+  setChatModelOverrideEffort: (mode: ChatMode, effort: ModelEffort | undefined) => void;
   setRoleModelAssignment: (role: GentleRoleId, assignment: ModelAssignment) => Promise<void>;
   setRoleModelEffort: (role: GentleRoleId, effort: ModelEffort | undefined) => Promise<void>;
   setActiveProvider: (provider: string) => void;
@@ -642,6 +648,7 @@ export const useAIStore = create<AIState>((set, get) => {
     error: null,
     activeStreams: {},
     modelConfiguration: createModelConfiguration(undefined),
+    chatModelOverrides: {},
     oauthAccounts: [],
 
     fetchOAuthAccounts: async () => {
@@ -927,6 +934,32 @@ export const useAIStore = create<AIState>((set, get) => {
       set({ modelConfiguration: next });
     },
 
+    setModeModelEffort: async (mode: ChatMode, effort: ModelEffort | undefined) => {
+      const next = setModeEffort(get().modelConfiguration, mode, effort);
+      await (window as any).api.store.setModelConfiguration(next);
+      set({ modelConfiguration: next });
+    },
+
+    setChatModelOverride: (mode: ChatMode, assignment: ModelAssignment) => {
+      set(state => ({ chatModelOverrides: { ...state.chatModelOverrides, [mode]: assignment } }));
+    },
+
+    setChatModelOverrideEffort: (mode: ChatMode, effort: ModelEffort | undefined) => {
+      set(state => {
+        const configured = mode === 'orchestrator'
+          ? resolveRoleAssignment(state.modelConfiguration, 'gentle-orchestrator', state.modelConfiguration.assignments.orchestrator)
+          : state.modelConfiguration.assignments[mode];
+        const assignment = state.chatModelOverrides[mode] ?? configured;
+        if (!assignment) return {};
+        return {
+          chatModelOverrides: {
+            ...state.chatModelOverrides,
+            [mode]: setModelEffort(assignment, effort),
+          },
+        };
+      });
+    },
+
     setRoleModelAssignment: async (role: GentleRoleId, assignment: ModelAssignment) => {
       const next = setRoleAssignment(get().modelConfiguration, role, assignment);
       await (window as any).api.store.setModelConfiguration(next);
@@ -955,9 +988,10 @@ export const useAIStore = create<AIState>((set, get) => {
         ? { providerId: activeProvider, modelId: providers[activeProvider].activeModel }
         : undefined;
       const legacyAssignment = resolveModeAssignment(modelConfiguration, mode, fallbackAssignment);
-      const assignment = mode === 'orchestrator'
+      const configuredAssignment = mode === 'orchestrator'
         ? resolveRoleAssignment(modelConfiguration, 'gentle-orchestrator', legacyAssignment)
         : legacyAssignment;
+      const assignment = get().chatModelOverrides[mode] ?? configuredAssignment;
       const providerData = assignment ? providers[assignment.providerId] : undefined;
       if (!providerData || !providerData.key) {
         set({ error: 'Falta configurar la API Key para este proveedor.' });
@@ -1063,7 +1097,7 @@ export const useAIStore = create<AIState>((set, get) => {
           mode,
           provider: assignment.providerId,
           model: assignment.modelId,
-          effort: mode === 'orchestrator' ? getAssignmentEffort(assignment) : undefined,
+          effort: getAssignmentEffort(assignment),
           apiKey: providerData.key,
           prompt,
           contextText,

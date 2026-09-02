@@ -61,6 +61,7 @@ type EffortCapability = {
 };
 
 const OPENAI_EFFORT_LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+const OPENAI_TERRA_EFFORT_LEVELS = ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 const ANTHROPIC_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh'] as const;
 const ANTHROPIC_OPUS_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 
@@ -73,6 +74,8 @@ const EFFORT_CAPABILITIES: Record<string, EffortCapability> = {
   'openai:gpt-5': { levels: OPENAI_EFFORT_LEVELS, payload: 'openai' },
   'openai:gpt-5-mini': { levels: OPENAI_EFFORT_LEVELS, payload: 'openai' },
   'openai:gpt-5-nano': { levels: OPENAI_EFFORT_LEVELS, payload: 'openai' },
+  'openai:gpt-5.6-terra': { levels: OPENAI_TERRA_EFFORT_LEVELS, payload: 'openai' },
+  'openai:gpt-5.6-terra-pro': { levels: OPENAI_TERRA_EFFORT_LEVELS, payload: 'openai' },
   'anthropic:claude-opus-4-6': { levels: ANTHROPIC_OPUS_EFFORT_LEVELS, payload: 'anthropic' },
   'anthropic:claude-sonnet-4-6': { levels: ANTHROPIC_EFFORT_LEVELS, payload: 'anthropic' },
 };
@@ -159,6 +162,19 @@ export function setModelEffort(
   if (effort && getModelEffortCapability(assignment)?.levels.includes(effort)) return { ...assignment, effort };
   const { effort: _effort, ...withoutEffort } = assignment;
   return withoutEffort;
+}
+
+export function setModeEffort(
+  configuration: ModelConfiguration,
+  mode: ChatMode,
+  effort: ModelEffort | undefined,
+): ModelConfiguration {
+  const assignment = configuration.assignments[mode];
+  if (!assignment) return configuration;
+  return {
+    ...configuration,
+    assignments: { ...configuration.assignments, [mode]: setModelEffort(assignment, effort) },
+  };
 }
 
 export function setRoleAssignment(

@@ -105,6 +105,7 @@ describe('useAIStore - Session and Turn Isolation', () => {
       incomingStreamText: '',
       error: null,
       activeStreams: {},
+      chatModelOverrides: {},
     });
   });
 
@@ -387,6 +388,60 @@ describe('useAIStore - Session and Turn Isolation', () => {
     });
     await useAIStore.getState().sendMessage('Use the fallback assignment', null, null, 'orchestrator');
     expect(mockStreamChat).toHaveBeenCalledWith(expect.objectContaining({ provider: 'openai', model: 'gpt-5' }));
+  });
+
+  it('sends the selected reasoning effort for every compatible mode', async () => {
+    useAIStore.setState({
+      providers: {
+        openai: { key: 'openai-key', activeModel: 'gpt-5.6-terra', availableModels: ['gpt-5.6-terra'] },
+      },
+      activeProvider: 'openai',
+      modelConfiguration: {
+        ...createModelConfiguration(undefined),
+        assignments: { build: { providerId: 'openai', modelId: 'gpt-5.6-terra', effort: 'high' } },
+      },
+    });
+
+    await useAIStore.getState().sendMessage('Build this feature', null, null, 'build');
+
+    expect(mockStreamChat).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'build',
+      provider: 'openai',
+      model: 'gpt-5.6-terra',
+      effort: 'high',
+    }));
+  });
+
+  it('uses chat model overrides without persisting or changing subagent settings', async () => {
+    const configured = createModelConfiguration(undefined);
+    configured.assignments.build = { providerId: 'openai', modelId: 'gpt-5.6-terra', effort: 'high' };
+    configured.roleAssignments['sdd-apply'] = { providerId: 'openai', modelId: 'gpt-5.6-terra' };
+    useAIStore.setState({
+      providers: {
+        openai: { key: 'openai-key', activeModel: 'gpt-5.6-terra', availableModels: ['gpt-5.6-terra'] },
+        anthropic: { key: 'anthropic-key', activeModel: 'claude-sonnet-4-6', availableModels: ['claude-sonnet-4-6'] },
+      },
+      activeProvider: 'openai',
+      modelConfiguration: configured,
+      chatModelOverrides: {},
+    });
+
+    useAIStore.getState().setChatModelOverride('build', { providerId: 'anthropic', modelId: 'claude-sonnet-4-6' });
+    useAIStore.getState().setChatModelOverrideEffort('build', 'high');
+    await useAIStore.getState().sendMessage('Build with fallback model', null, null, 'build');
+
+    expect(mockStreamChat).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-6',
+      effort: 'high',
+    }));
+    expect(useAIStore.getState().modelConfiguration.assignments.build).toEqual({
+      providerId: 'openai', modelId: 'gpt-5.6-terra', effort: 'high',
+    });
+    expect(useAIStore.getState().modelConfiguration.roleAssignments['sdd-apply']).toEqual({
+      providerId: 'openai', modelId: 'gpt-5.6-terra',
+    });
+    expect((window as any).api.store.setModelConfiguration).not.toHaveBeenCalled();
   });
 
   it('persists a mode assignment without changing the active conversation or stream', async () => {

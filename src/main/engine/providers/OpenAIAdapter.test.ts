@@ -111,6 +111,49 @@ describe('OpenAIAdapter', () => {
     });
   });
 
+  it('uses the Responses API contract for ChatGPT OAuth tokens', () => {
+    const oauthToken = `header.${Buffer.from(JSON.stringify({
+      chatgpt_account_id: 'account_123',
+    })).toString('base64url')}.signature`;
+    const req = adapter.buildRequest({
+      provider: 'openai',
+      model: 'gpt-5.6-terra',
+      apiKey: oauthToken,
+      prompt: 'Hello',
+      systemPrompt: 'You are an assistant',
+      effort: 'high',
+      messages: [
+        { role: 'user', content: 'Hello' },
+        {
+          role: 'assistant',
+          tool_calls: [{ id: 'call_123', name: 'read_file', input: { filePath: 'foo.ts' } }],
+        },
+        { role: 'tool', tool_call_id: 'call_123', content: 'file content' },
+      ],
+      tools: sampleTools,
+    });
+
+    const body = req.body as any;
+    expect(req.url).toBe('https://chatgpt.com/backend-api/codex/responses');
+    expect(req.headers['ChatGPT-Account-Id']).toBe('account_123');
+    expect(body).not.toHaveProperty('messages');
+    expect(body.instructions).toBe('You are an assistant');
+    expect(body.store).toBe(false);
+    expect(body.reasoning).toEqual({ effort: 'high' });
+    expect(body).not.toHaveProperty('reasoning_effort');
+    expect(body.input).toEqual([
+      { role: 'user', content: 'Hello' },
+      { type: 'function_call', call_id: 'call_123', name: 'read_file', arguments: JSON.stringify({ filePath: 'foo.ts' }) },
+      { type: 'function_call_output', call_id: 'call_123', output: 'file content' },
+    ]);
+    expect(body.tools[0]).toEqual({
+      type: 'function',
+      name: 'read_file',
+      description: 'Read file content',
+      parameters: sampleTools[0].parameters,
+    });
+  });
+
   it('enables MiniMax reasoning split only for the normalized MiniMax-M3 capability', () => {
     const minimax = adapter.buildRequest({
       provider: ' MiniMax ', model: ' minimax-m3 ', apiKey: 'test-key', prompt: 'Hello', systemPrompt: '', messages: [],
@@ -160,6 +203,41 @@ describe('OpenAIAdapter', () => {
       name: 'read_file',
       input: { filePath: 'test.ts' },
     });
+  });
+
+  it('parses Responses API function calls using the output item metadata', async () => {
+    const streamData = [
+      'data: {"type":"response.output_item.added","item":{"type":"function_call","id":"fc_1","call_id":"call_123","name":"read_file","arguments":""}}\n\n',
+      'data: {"type":"response.function_call_arguments.delta","item_id":"fc_1","delta":"{\\"filePath\\":\\"foo.ts\\"}"}\n\n',
+    ].join('');
+    const response = new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(streamData));
+        controller.close();
+      },
+    }));
+
+    const result = await adapter.parseStream(response, { sendChunk: vi.fn() });
+
+    expect(result.toolCalls).toEqual([{ id: 'call_123', name: 'read_file', input: { filePath: 'foo.ts' } }]);
+  });
+
+  it('parses official Responses text and reasoning delta event names', async () => {
+    const streamData = [
+      'data: {"type":"response.reasoning_text.delta","delta":"Plan"}\n\n',
+      'data: {"type":"response.output_text.delta","delta":"Answer"}\n\n',
+    ].join('');
+    const response = new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(streamData));
+        controller.close();
+      },
+    }));
+
+    const result = await adapter.parseStream(response, { sendChunk: vi.fn() });
+
+    expect(result.reasoningContent).toBe('Plan');
+    expect(result.textContent).toBe('Answer');
   });
 
   it('parses MiniMax content and cumulative reasoning_details without duplicating output', async () => {

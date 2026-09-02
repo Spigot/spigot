@@ -93,7 +93,7 @@ export function AssignmentEditor({ label, assignment, onAssignmentChange, onEffo
 
   if (compact) {
     return (
-      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-[minmax(12rem,1fr)_minmax(10rem,0.7fr)] sm:items-start sm:gap-4">
+      <div className="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-[minmax(20rem,1.8fr)_minmax(11rem,0.75fr)] lg:items-start lg:gap-4">
         {modelControl}
         {effortControl}
       </div>
@@ -109,13 +109,13 @@ export function AssignmentEditor({ label, assignment, onAssignmentChange, onEffo
 }
 
 export function ModeModelSettingsFields({ mode }: { mode: ChatMode }) {
-  const { modelConfiguration, setModeModelAssignment } = useAIStore();
+  const { modelConfiguration, setModeModelAssignment, setModeModelEffort } = useAIStore();
   return (
     <AssignmentEditor
       label={MODE_LABELS[mode]}
       assignment={modelConfiguration.assignments[mode]}
       onAssignmentChange={(assignment) => setModeModelAssignment(mode, assignment)}
-      onEffortChange={async () => undefined}
+      onEffortChange={(effort) => setModeModelEffort(mode, effort)}
     />
   );
 }
