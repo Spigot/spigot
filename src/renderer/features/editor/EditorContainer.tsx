@@ -250,6 +250,8 @@ export const EditorContainer: React.FC = () => {
         return 'css';
       case 'md':
         return 'markdown';
+      case 'php':
+        return 'php';
       case 'py':
         return 'python';
       case 'rs':
