@@ -8,10 +8,14 @@ interface ApiKeyModalProps {
   onClose: () => void;
 }
 
+const OAUTH_SUPPORTED_PROVIDERS = ['gemini', 'openai', 'github-copilot', 'opencode'];
+
 const PROVIDERS = [
   { id: 'openai', name: 'OpenAI' },
   { id: 'anthropic', name: 'Anthropic' },
   { id: 'gemini', name: 'Gemini' },
+  { id: 'github-copilot', name: 'GitHub Copilot' },
+  { id: 'opencode', name: 'OpenCode Console' },
   { id: 'deepseek', name: 'DeepSeek' },
   { id: 'qwen', name: 'Qwen' },
   { id: 'kimi', name: 'Kimi' },
@@ -33,7 +37,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
   const {
     providers,
     setApiKey,
-    loginWithGoogleOAuth,
+    loginWithOAuth,
     oauthAccounts,
     removeOAuthAccount,
     setActiveOAuthAccount,
@@ -45,9 +49,14 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
 
+  const isOAuthSupported = OAUTH_SUPPORTED_PROVIDERS.includes(selectedProvider);
+
   // Load existing key and authType when provider changes
   useEffect(() => {
-    if (providers[selectedProvider]) {
+    if (!OAUTH_SUPPORTED_PROVIDERS.includes(selectedProvider)) {
+      setAuthType('api');
+      setApiKeyInput(providers[selectedProvider]?.key || '');
+    } else if (providers[selectedProvider]) {
       const currentAuth = providers[selectedProvider].authType || 'api';
       setAuthType(currentAuth);
       if (currentAuth === 'api') {
@@ -64,10 +73,6 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
   }, [selectedProvider, providers, isOpen]);
 
   if (!isOpen) return null;
-
-  const configuredProviders = Object.entries(providers).filter(
-    ([, data]) => Boolean(data.key && data.key.trim().length > 0)
-  );
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,23 +96,13 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
     setStatus('saving');
     setErrorMsg('');
     try {
-      if (selectedProvider === 'gemini') {
-        const res = await loginWithGoogleOAuth();
-        setStatus('success');
-        setApiKeyInput(res.token);
-        setTimeout(() => {
-          setStatus('idle');
-          onClose();
-        }, 1200);
-      } else {
-        const generatedToken = apiKey.trim() || `oauth_${selectedProvider}_${Date.now().toString(36)}`;
-        setApiKeyInput(generatedToken);
-        await setApiKey(selectedProvider, generatedToken, 'oauth');
-        setStatus('success');
-        setTimeout(() => {
-          setStatus('idle');
-        }, 1500);
-      }
+      const res = await loginWithOAuth(selectedProvider);
+      setStatus('success');
+      setApiKeyInput(res.token);
+      setTimeout(() => {
+        setStatus('idle');
+        onClose();
+      }, 1200);
     } catch (err: any) {
       setStatus('error');
       setErrorMsg(err.message || 'Error al conectar por OAuth.');
@@ -126,7 +121,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-editor-bg/80 backdrop-blur-sm select-none p-4 animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm select-none p-4 animate-fade-in">
       <div 
         className="w-full max-w-lg bg-editor-bg border-2 border-editor-border rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.6)] overflow-visible flex flex-col transition-all-custom max-h-[90vh] overflow-y-auto text-editor-text"
         onClick={(e) => e.stopPropagation()}
@@ -167,39 +162,41 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
             />
           </div>
 
-          {/* Auth Type Selector */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] text-editor-textDark font-bold uppercase tracking-wider">
-              Tipo de Autenticación
-            </label>
-            <div className="grid grid-cols-2 gap-2 bg-editor-bg p-1 rounded-lg border border-editor-border text-xs">
-              <button
-                type="button"
-                onClick={() => setAuthType('api')}
-                className={`py-1.5 px-3 rounded-md font-medium transition-all ${
-                  authType === 'api'
-                    ? 'bg-editor-active text-editor-text border border-editor-accent shadow-sm'
-                    : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover'
-                }`}
-              >
-                Clave de API (API Key)
-              </button>
-              <button
-                type="button"
-                onClick={() => setAuthType('oauth')}
-                className={`py-1.5 px-3 rounded-md font-medium transition-all ${
-                  authType === 'oauth'
-                    ? 'bg-editor-active text-editor-text border border-editor-accent shadow-sm'
-                    : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover'
-                }`}
-              >
-                OAuth Token / Flujo OAuth
-              </button>
+          {/* Auth Type Selector - Only visible for OAuth supported providers */}
+          {isOAuthSupported && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] text-editor-textDark font-bold uppercase tracking-wider">
+                Tipo de Autenticación
+              </label>
+              <div className="grid grid-cols-2 gap-2 bg-editor-bg p-1 rounded-lg border border-editor-border text-xs">
+                <button
+                  type="button"
+                  onClick={() => setAuthType('api')}
+                  className={`py-1.5 px-3 rounded-md font-medium transition-all ${
+                    authType === 'api'
+                      ? 'bg-editor-active text-editor-text border border-editor-accent shadow-sm'
+                      : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover'
+                  }`}
+                >
+                  Clave de API (API Key)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAuthType('oauth')}
+                  className={`py-1.5 px-3 rounded-md font-medium transition-all ${
+                    authType === 'oauth'
+                      ? 'bg-editor-active text-editor-text border border-editor-accent shadow-sm'
+                      : 'text-editor-textDark hover:text-editor-text hover:bg-editor-hover'
+                  }`}
+                >
+                  OAuth Token / Flujo OAuth
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* OAuth Connection Card */}
-          {authType === 'oauth' && (
+          {isOAuthSupported && authType === 'oauth' && (
             <div className="flex flex-col gap-2 p-3.5 rounded-lg bg-editor-hover border border-editor-accent animate-fade-in">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-editor-text flex items-center gap-1.5">
@@ -207,21 +204,33 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
                   Conexión Automática OAuth 2.0
                 </span>
                 <span className="text-[10px] bg-editor-active text-editor-accent border border-editor-border px-2 py-0.5 rounded-full font-bold">
-                  {oauthAccounts.length > 0 ? `${oauthAccounts.length} ${oauthAccounts.length === 1 ? 'cuenta' : 'cuentas'}` : 'Recomendado'}
+                  {selectedProvider === 'gemini' && oauthAccounts.length > 0
+                    ? `${oauthAccounts.length} ${oauthAccounts.length === 1 ? 'cuenta' : 'cuentas'}`
+                    : 'Recomendado'}
                 </span>
               </div>
               <p className="text-[11px] text-editor-textDark leading-relaxed">
-                {oauthAccounts.length > 0
-                  ? 'Podés vincular cuentas adicionales de Google para alternar o activar rotación automática en caso de límite de cuota.'
-                  : 'Iniciá sesión para autorizar y conectar automáticamente tu cuenta de Google Antigravity sin ingresar tokens manualmente.'}
+                {selectedProvider === 'gemini'
+                  ? (oauthAccounts.length > 0
+                    ? 'Podés vincular cuentas adicionales de Google para alternar o activar rotación automática en caso de límite de cuota.'
+                    : 'Iniciá sesión para autorizar y conectar automáticamente tu cuenta de Google Antigravity sin ingresar tokens manualmente.')
+                  : selectedProvider === 'openai'
+                  ? 'Iniciá sesión con tu cuenta de ChatGPT Plus o Pro para usar tus suscripciones de OpenAI sin costo adicional de API.'
+                  : selectedProvider === 'github-copilot'
+                  ? 'Iniciá sesión con GitHub Device Code para usar tu suscripción activa de GitHub Copilot.'
+                  : 'Iniciá sesión con tu cuenta de OpenCode Console para conectar balance y créditos compartidos.'}
               </p>
               <button
                 type="button"
                 onClick={handleOAuthConnect}
                 className="w-full py-2 px-3 rounded-md bg-editor-accent text-editor-bg text-xs font-bold flex items-center justify-center gap-2 transition-all hover:brightness-110 shadow-md cursor-pointer mt-1"
               >
-                {oauthAccounts.length > 0 ? <Plus className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
-                <span>{oauthAccounts.length > 0 ? 'Conectar otra cuenta' : 'Conectar cuenta'}</span>
+                {selectedProvider === 'gemini' && oauthAccounts.length > 0 ? <Plus className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
+                <span>
+                  {selectedProvider === 'gemini' && oauthAccounts.length > 0
+                    ? 'Conectar otra cuenta'
+                    : `Conectar con ${PROVIDERS.find((p) => p.id === selectedProvider)?.name}`}
+                </span>
               </button>
             </div>
           )}

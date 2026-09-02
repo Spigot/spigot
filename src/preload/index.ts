@@ -83,6 +83,9 @@ contextBridge.exposeInMainWorld('api', {
   },
   oauth: {
     loginGoogle: () => ipcRenderer.invoke('oauth:google-login'),
+    loginOpenAI: () => ipcRenderer.invoke('oauth:openai-login'),
+    loginCopilot: () => ipcRenderer.invoke('oauth:copilot-login'),
+    loginOpenCode: () => ipcRenderer.invoke('oauth:opencode-login'),
     listAccounts: () => ipcRenderer.invoke('oauth:list-accounts'),
     removeAccount: (accountId: string) => ipcRenderer.invoke('oauth:remove-account', accountId),
     setActiveAccount: (accountId: string) => ipcRenderer.invoke('oauth:set-active-account', accountId),

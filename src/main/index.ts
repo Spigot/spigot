@@ -23,6 +23,9 @@ import { getGlobalOAuthAccountPool, type OAuthAccount } from './oauth/accountPoo
 import { SDDPipelineService } from './engine/sddPipeline';
 import { GENTLE_SKILLS } from './engine/gentleSkills';
 import { gentleAgentBuilder, type CustomAgentRoleSpec } from './engine/gentleAgentBuilder';
+import { startOpenAIOAuthFlow } from './oauth/openaiOAuth';
+import { startCopilotOAuthFlow } from './oauth/copilotOAuth';
+import { startOpenCodeConsoleOAuthFlow } from './oauth/opencodeConsoleOAuth';
 
 // Set App User Model ID for Windows Taskbar icon grouping and display
 if (process.platform === 'win32') {
@@ -847,6 +850,45 @@ ipcMain.handle('oauth:remove-account', async (_event, accountId: string) => {
 ipcMain.handle('oauth:set-active-account', async (_event, accountId: string) => {
   const success = oauthAccountPool.setActiveAccount(accountId);
   return { success, accounts: oauthAccountPool.listPublic() };
+});
+
+ipcMain.handle('oauth:openai-login', async () => {
+  try {
+    const result = await startOpenAIOAuthFlow();
+    return {
+      success: true,
+      email: result.email,
+      token: result.accessToken,
+    };
+  } catch (err: any) {
+    throw new Error(err.message || 'Error durante el inicio de sesión OAuth con OpenAI');
+  }
+});
+
+ipcMain.handle('oauth:copilot-login', async () => {
+  try {
+    const result = await startCopilotOAuthFlow();
+    return {
+      success: true,
+      email: result.email,
+      token: result.accessToken,
+    };
+  } catch (err: any) {
+    throw new Error(err.message || 'Error durante el inicio de sesión OAuth con GitHub Copilot');
+  }
+});
+
+ipcMain.handle('oauth:opencode-login', async () => {
+  try {
+    const result = await startOpenCodeConsoleOAuthFlow();
+    return {
+      success: true,
+      email: result.email,
+      token: result.accessToken,
+    };
+  } catch (err: any) {
+    throw new Error(err.message || 'Error durante el inicio de sesión OAuth con OpenCode Console');
+  }
 });
 
 // ==========================================

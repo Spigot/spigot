@@ -102,6 +102,7 @@ interface AIState {
   modelConfiguration: ModelConfiguration;
   oauthAccounts: OAuthAccountInfo[];
 
+  loginWithOAuth: (provider: string) => Promise<{ email?: string; projectId?: string; token: string; accounts?: OAuthAccountInfo[] }>;
   loginWithGoogleOAuth: () => Promise<{ email?: string; projectId?: string; token: string; accounts?: OAuthAccountInfo[] }>;
   fetchOAuthAccounts: () => Promise<OAuthAccountInfo[]>;
   removeOAuthAccount: (accountId: string) => Promise<void>;
@@ -669,21 +670,36 @@ export const useAIStore = create<AIState>((set, get) => {
       }
     },
 
-    loginWithGoogleOAuth: async () => {
-      const result = await (window as any).api.oauth.loginGoogle();
-      if (!result?.token) {
-        throw new Error('No se recibió token de autenticación de Google');
+    loginWithOAuth: async (provider: string) => {
+      let result: any;
+      if (provider === 'gemini') {
+        result = await (window as any).api?.oauth?.loginGoogle?.();
+      } else if (provider === 'openai') {
+        result = await (window as any).api?.oauth?.loginOpenAI?.();
+      } else if (provider === 'github-copilot') {
+        result = await (window as any).api?.oauth?.loginCopilot?.();
+      } else if (provider === 'opencode') {
+        result = await (window as any).api?.oauth?.loginOpenCode?.();
+      } else {
+        throw new Error(`OAuth no está disponible para el proveedor ${provider}`);
       }
 
-      await get().setApiKey('gemini', result.token, 'oauth');
-      if (result.accounts) {
-        set({ oauthAccounts: result.accounts });
-      } else {
-        await get().fetchOAuthAccounts();
+      if (!result?.token) {
+        throw new Error(`No se recibió token de autenticación para ${provider}`);
+      }
+
+      await get().setApiKey(provider, result.token, 'oauth');
+
+      if (provider === 'gemini') {
+        if (result.accounts) {
+          set({ oauthAccounts: result.accounts });
+        } else {
+          await get().fetchOAuthAccounts();
+        }
       }
 
       try {
-        localStorage.setItem('spigot_ai_oauth_email_gemini', result.email || '');
+        localStorage.setItem(`spigot_ai_oauth_email_${provider}`, result.email || '');
       } catch {}
 
       return {
@@ -692,6 +708,10 @@ export const useAIStore = create<AIState>((set, get) => {
         token: result.token,
         accounts: result.accounts,
       };
+    },
+
+    loginWithGoogleOAuth: async () => {
+      return get().loginWithOAuth('gemini');
     },
 
     initializeStore: async () => {
