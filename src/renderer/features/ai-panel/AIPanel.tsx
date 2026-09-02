@@ -255,10 +255,18 @@ export const AIPanel: React.FC = () => {
 
   if (!isAIPanelOpen) return null;
 
-  // Active Key Check
-  const activeKeysConfigured = Object.values(providers).some(p => p.key.trim().length > 0);
-  const currentProviderData = providers[activeProvider];
-  const hasActiveKey = currentProviderData?.key.trim().length > 0;
+  // Active Key / OAuth Connection Check
+  const isProviderConnected = (pId: string) => {
+    const p = providers[pId];
+    if (!p) return false;
+    if (pId === 'gemini') {
+      return Boolean((p.authType === 'oauth' && (oauthAccounts.length > 0 || p.key?.trim())) || (p.authType === 'api' && p.key?.trim()));
+    }
+    return Boolean(p.key && p.key.trim().length > 0);
+  };
+
+  const activeKeysConfigured = Object.keys(providers).some(isProviderConnected) || oauthAccounts.length > 0;
+  const hasActiveKey = isProviderConnected(activeProvider);
 
   // Get active explorer path context names
   const getContextInfo = () => {
@@ -721,30 +729,30 @@ export const AIPanel: React.FC = () => {
             </div>
             <h2 className="text-[13px] font-semibold text-editor-text mb-1.5 tracking-wide">Spigot</h2>
             <p className="text-[12px] text-editor-textDark leading-relaxed mb-5 max-w-[240px]">
-              Configurá una clave de API para activar el asistente de IA y empezar a construir en tu proyecto.
+              Configurá una clave de API o conectá una cuenta por OAuth para activar el asistente de IA y empezar a construir en tu proyecto.
             </p>
             <button
               onClick={() => setIsModalOpen(true)}
               className="bg-editor-accent text-editor-sidebar font-semibold text-[12px] px-4 py-1.5 rounded flex items-center gap-1.5 transition-colors shadow-sm"
             >
               <Key className="w-3.5 h-3.5" />
-              <span>Configurar API Key</span>
+              <span>Configurar Conexión</span>
             </button>
           </div>
         ) : !hasActiveKey ? (
-          /* Warning when the active provider doesn't have a key configured */
+          /* Warning when the active provider doesn't have a key or OAuth configured */
           <div className="flex-1 flex flex-col items-center justify-center text-center p-6 select-none">
             <ShieldAlert className="w-9 h-9 text-amber-500 mb-3" />
-            <h3 className="text-[13px] font-semibold text-editor-text mb-1.5">Falta API Key para {PROVIDER_LABELS[activeProvider] || activeProvider.toUpperCase()}</h3>
+            <h3 className="text-[13px] font-semibold text-editor-text mb-1.5">Conexión requerida para {PROVIDER_LABELS[activeProvider] || activeProvider.toUpperCase()}</h3>
             <p className="text-[12px] text-editor-textDark leading-relaxed mb-4 max-w-[220px]">
-              Ingresá tu clave para este proveedor para continuar utilizando el chat.
+              Ingresá tu clave o conectá tu cuenta para este proveedor para continuar utilizando el chat.
             </p>
             <button
               onClick={() => setIsModalOpen(true)}
               className="border border-editor-border bg-editor-active hover:bg-editor-hover text-editor-text text-[12px] px-3 py-1.5 rounded flex items-center gap-1.5 transition-colors"
             >
               <Key className="w-3.5 h-3.5" />
-              <span>Ingresar Clave</span>
+              <span>Configurar Proveedor</span>
             </button>
           </div>
         ) : messages.length === 0 ? (

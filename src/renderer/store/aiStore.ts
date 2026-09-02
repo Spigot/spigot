@@ -125,6 +125,8 @@ interface AIState {
 
 const DEFAULT_MODELS: Record<string, string[]> = {
   openai: [
+    'gpt-5.6-terra',
+    'gpt-5.6-terra-pro',
     'gpt-5',
     'gpt-5-mini',
     'gpt-5-nano',
@@ -136,6 +138,21 @@ const DEFAULT_MODELS: Record<string, string[]> = {
     'gpt-4o-mini',
     'gpt-4-turbo',
     'gpt-3.5-turbo',
+  ],
+  'github-copilot': [
+    'gpt-5.6-terra',
+    'claude-3.7-sonnet',
+    'claude-3.5-sonnet',
+    'gpt-4o',
+    'o1',
+    'o3-mini',
+  ],
+  opencode: [
+    'gpt-5.6-terra',
+    'claude-3-7-sonnet',
+    'gpt-5',
+    'claude-3-5-sonnet',
+    'gemini-2.5-pro',
   ],
   anthropic: [
     'claude-opus-4-6',
@@ -185,6 +202,8 @@ const DEFAULT_MODELS: Record<string, string[]> = {
     'kimi-latest',
   ],
   openrouter: [
+    'openai/gpt-5.6-terra',
+    'openai/gpt-5.6-terra-pro',
     'anthropic/claude-3.5-sonnet',
     'openai/gpt-4o',
     'deepseek/deepseek-r1',

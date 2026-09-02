@@ -26,6 +26,7 @@ import { gentleAgentBuilder, type CustomAgentRoleSpec } from './engine/gentleAge
 import { startOpenAIOAuthFlow } from './oauth/openaiOAuth';
 import { startCopilotOAuthFlow } from './oauth/copilotOAuth';
 import { startOpenCodeConsoleOAuthFlow } from './oauth/opencodeConsoleOAuth';
+import { modelsCatalogService } from './engine/modelsCatalog';
 
 // Set App User Model ID for Windows Taskbar icon grouping and display
 if (process.platform === 'win32') {
@@ -927,80 +928,82 @@ ipcMain.handle('gentle:remove-custom-role', async (_event, id: string) => {
   return gentleAgentBuilder.removeCustomRole(id);
 });
 
-// 2. Fetch Models Dynamically from Provider endpoints
-ipcMain.handle('ai:fetch-models', async (_event, provider: string, apiKey: string) => {
+// 2. Fetch Models Dynamically from OpenCode Catalog & Provider endpoints
+ipcMain.handle('ai:fetch-models', async (_event, provider: string, apiKey?: string) => {
   if (process.env.SPIGOT_E2E_TYPED_STREAM === '1') return ['e2e-typed-model'];
-  if (!apiKey || !apiKey.trim()) {
-    return [];
+
+  const catalogModels = await modelsCatalogService.getModelsForProvider(provider);
+  const results = new Set<string>(catalogModels);
+
+  if (apiKey && apiKey.trim()) {
+    try {
+      if (provider === 'openai') {
+        const res = await fetch('https://api.openai.com/v1/models', {
+          headers: { 'Authorization': `Bearer ${apiKey}` }
+        });
+        if (res.ok) {
+          const json = await res.json() as any;
+          json.data?.forEach((m: any) => {
+            if (m.id && (m.id.includes('gpt') || m.id.includes('o1') || m.id.includes('o3') || m.id.includes('terra'))) {
+              results.add(m.id);
+            }
+          });
+        }
+      } else if (provider === 'deepseek') {
+        const res = await fetch('https://api.deepseek.com/models', {
+          headers: { 'Authorization': `Bearer ${apiKey}` }
+        });
+        if (res.ok) {
+          const json = await res.json() as any;
+          json.data?.forEach((m: any) => m.id && results.add(m.id));
+        }
+      } else if (provider === 'gemini') {
+        const isOAuth = apiKey.includes('|') || apiKey.startsWith('{') || apiKey.startsWith('ya29.');
+        if (!isOAuth) {
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+          if (res.ok) {
+            const json = await res.json() as any;
+            json.models?.forEach((m: any) => {
+              const name = m.name?.replace('models/', '');
+              if (name && name.includes('gemini')) results.add(name);
+            });
+          }
+        }
+      } else if (provider === 'openrouter') {
+        const res = await fetch('https://openrouter.ai/api/v1/models', {
+          headers: { 
+            'Authorization': `Bearer ${apiKey}`,
+            'HTTP-Referer': 'https://spigot.gentleman.com',
+            'X-Title': 'Spigot'
+          }
+        });
+        if (res.ok) {
+          const json = await res.json() as any;
+          json.data?.forEach((m: any) => m.id && results.add(m.id));
+        }
+      } else if (provider === 'kimi') {
+        const res = await fetch('https://api.moonshot.cn/v1/models', {
+          headers: { 'Authorization': `Bearer ${apiKey}` }
+        });
+        if (res.ok) {
+          const json = await res.json() as any;
+          json.data?.forEach((m: any) => m.id && results.add(m.id));
+        }
+      } else if (provider === 'minimax') {
+        const res = await fetch('https://api.minimax.io/v1/models', {
+          headers: { 'Authorization': `Bearer ${apiKey}` }
+        });
+        if (res.ok) {
+          const json = await res.json() as any;
+          json.data?.forEach((m: any) => m.id && results.add(m.id));
+        }
+      }
+    } catch (_err) {
+      // Ignored, fallback to catalog
+    }
   }
 
-  try {
-    if (provider === 'openai') {
-      const res = await fetch('https://api.openai.com/v1/models', {
-        headers: { 'Authorization': `Bearer ${apiKey}` }
-      });
-      if (!res.ok) return [];
-      const json = await res.json() as any;
-      return json.data.map((m: any) => m.id).filter((id: string) => id.includes('gpt') || id.includes('o1') || id.includes('o3'));
-    } else if (provider === 'deepseek') {
-      const res = await fetch('https://api.deepseek.com/models', {
-        headers: { 'Authorization': `Bearer ${apiKey}` }
-      });
-      if (!res.ok) return [];
-      const json = await res.json() as any;
-      return json.data.map((m: any) => m.id);
-    } else if (provider === 'gemini') {
-      const isOAuth = apiKey.includes('|') || apiKey.startsWith('{') || apiKey.startsWith('ya29.');
-      if (isOAuth) {
-        return [
-          'gemini-2.5-pro',
-          'gemini-2.5-flash',
-          'gemini-3.7-flash',
-          'gemini-3.1-pro-preview',
-          'gemini-3-pro-preview',
-          'gemini-3-flash-preview',
-          'gemini-1.5-pro',
-          'gemini-1.5-flash',
-          'claude-3-7-sonnet',
-          'claude-opus-4-6-thinking',
-        ];
-      }
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-      if (!res.ok) return [];
-      const json = await res.json() as any;
-      return json.models
-        .map((m: any) => m.name.replace('models/', ''))
-        .filter((id: string) => id.includes('gemini'));
-    } else if (provider === 'openrouter') {
-      const res = await fetch('https://openrouter.ai/api/v1/models', {
-        headers: { 
-          'Authorization': `Bearer ${apiKey}`,
-          'HTTP-Referer': 'https://spigot.gentleman.com',
-          'X-Title': 'Spigot'
-        }
-      });
-      if (!res.ok) return [];
-      const json = await res.json() as any;
-      return json.data.map((m: any) => m.id);
-    } else if (provider === 'kimi') {
-      const res = await fetch('https://api.moonshot.cn/v1/models', {
-        headers: { 'Authorization': `Bearer ${apiKey}` }
-      });
-      if (!res.ok) return [];
-      const json = await res.json() as any;
-      return json.data.map((m: any) => m.id);
-    } else if (provider === 'minimax') {
-      const res = await fetch('https://api.minimax.io/v1/models', {
-        headers: { 'Authorization': `Bearer ${apiKey}` }
-      });
-      if (!res.ok) return [];
-      const json = await res.json() as any;
-      return json.data.map((m: any) => m.id);
-    }
-    return [];
-  } catch (_err) {
-    return [];
-  }
+  return Array.from(results);
 });
 
 // 3. Unified Stream Chat SSE Handler
