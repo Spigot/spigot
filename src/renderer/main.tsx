@@ -100,6 +100,7 @@ const App: React.FC = () => {
   const workspacePath = useWorkspaceStore((state) => state.workspacePath);
   const refreshWorkspace = useWorkspaceStore((state) => state.refreshWorkspace);
   const isAgentModeOpen = useLayoutStore((state) => state.isAgentModeOpen);
+  const theme = useWorkspaceStore((state) => state.theme);
 
   const isSidebarOpen = useLayoutStore((state) => state.isSidebarOpen);
   const setSidebarWidth = useLayoutStore((state) => state.setSidebarWidth);
@@ -112,6 +113,11 @@ const App: React.FC = () => {
   const setConsoleHeight = useLayoutStore((state) => state.setConsoleHeight);
 
   useGlobalShortcuts();
+
+  useEffect(() => {
+    // The app-wide CSS theme keys off [data-theme=...]; Monaco is set separately.
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
 
   useEffect(() => {
     restoreLastWorkspace();
