@@ -18,6 +18,7 @@ import {
   startOAuthListener,
   authorizeAntigravity,
   exchangeAntigravity,
+  refreshAccessToken,
 } from './oauth/antigravityOAuth';
 import { getGlobalOAuthAccountPool } from './oauth/accountPool';
 import { SDDPipelineService } from './engine/sddPipeline';
@@ -820,20 +821,53 @@ oauthAccountPool.setOnChange(async (accounts, activeId) => {
   }
 });
 
+// Resolves the Google account owner's email from a stored refresh token so the
+// connected-providers UI shows the real address instead of a generic label.
+async function resolveGoogleEmail(refreshToken: string): Promise<string | null> {
+  try {
+    const refreshed = await refreshAccessToken(refreshToken);
+    if (!refreshed?.accessToken) return null;
+    const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v1/userinfo?alt=json', {
+      headers: { Authorization: `Bearer ${refreshed.accessToken}` },
+    });
+    if (!userInfoResponse.ok) return null;
+    const userInfo = await userInfoResponse.json() as { email?: string };
+    return userInfo.email ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // Rehydrate pool on boot
 readStore().then((data) => {
   if (Array.isArray(data.oauthAccounts) && data.oauthAccounts.length > 0) {
     oauthAccountPool.rehydrate(data.oauthAccounts, data.activeOAuthAccountId ?? null);
+    // Upgrade legacy placeholder entries created before emails were persisted.
+    for (const account of data.oauthAccounts.filter((a) => !a.email || a.email === 'Google Account')) {
+      void resolveGoogleEmail(account.refreshToken).then((email) => {
+        if (!email) return;
+        const wasActive = data.activeOAuthAccountId === account.id;
+        oauthAccountPool.removeAccount(account.id);
+        oauthAccountPool.addAccount({ email, projectId: account.projectId, refreshToken: account.refreshToken });
+        if (wasActive) oauthAccountPool.setActiveAccount(email);
+      }).catch(() => {});
+    }
   } else {
     const rawKey = data.apiKeys?.['gemini'] || (data.encryptedApiKeys?.['gemini'] && safeStorage?.isEncryptionAvailable?.()
       ? safeStorage.decryptString(Buffer.from(data.encryptedApiKeys['gemini'], 'base64'))
       : null);
     if (rawKey && data.authTypes?.['gemini'] === 'oauth') {
-      oauthAccountPool.addAccount({
-        email: 'Google Account',
-        projectId: 'rising-fact-p41fc',
-        refreshToken: rawKey,
-      });
+      // Legacy single-account store: the refresh token alone does not carry the
+      // owner's email, so resolve it from Google's userinfo endpoint instead of
+      // showing the generic "Google Account" placeholder in connected providers.
+      void (async () => {
+        const email = await resolveGoogleEmail(rawKey);
+        oauthAccountPool.addAccount({
+          email: email ?? 'Google Account',
+          projectId: 'rising-fact-p41fc',
+          refreshToken: rawKey,
+        });
+      })();
     }
   }
 }).catch(console.error);
