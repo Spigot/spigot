@@ -37,7 +37,7 @@ export type EngineTurnRequest = {
   requestToolPermission?: (input: {
     tool: string;
     input: unknown;
-  }) => Promise<string | null>;
+  }) => Promise<'granted' | 'denied' | null>;
   changeSetService?: WorkspaceChangeSetService;
   changeSetId?: string;
 };
@@ -98,7 +98,7 @@ export function normalizeEngineEvents(events: EngineEvent[]): EngineEvent[] {
 }
 
 export function mapEngineEventToIpc(event: EngineEvent): {
-  channel: 'ai:stream-chunk' | 'ai:stream-part' | 'ai:stream-error' | 'ai:stream-end' | 'ai:stream-tool' | 'ai:context-bounded' | null;
+  channel: 'ai:stream-chunk' | 'ai:stream-part' | 'ai:stream-error' | 'ai:stream-end' | 'ai:stream-tool' | 'ai:context-bounded' | 'ai:permission-request' | 'ai:permission-result' | null;
   payload: unknown;
 } {
   switch (event.type) {
@@ -122,6 +122,10 @@ export function mapEngineEventToIpc(event: EngineEvent): {
       return { channel: 'ai:stream-end', payload: Boolean(event.aborted) };
     case 'context:bounded':
       return { channel: 'ai:context-bounded', payload: event.data };
+    case 'permission:request':
+      return { channel: 'ai:permission-request', payload: { id: event.id, tool: event.tool, input: event.input } };
+    case 'permission:result':
+      return { channel: 'ai:permission-result', payload: { id: event.id, granted: event.granted } };
     default:
       return { channel: null, payload: event };
   }

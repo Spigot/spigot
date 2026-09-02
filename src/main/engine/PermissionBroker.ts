@@ -1,6 +1,8 @@
 import { randomUUID } from 'crypto';
 
-export type PermissionDecision = 'grant' | 'deny';
+// 'always' grants the same tool for the rest of the session and 'full' grants
+// every gated tool; the session layer records those before resolving the wait.
+export type PermissionDecision = 'grant' | 'deny' | 'always' | 'full';
 
 export type PermissionRequestEvent = {
   id: string;
@@ -30,13 +32,22 @@ export class PermissionBroker {
     return { request, promise };
   }
 
+  /** Resolves a wait that will never be answered (turn abort, shutdown). */
+  abandon(requestId: string): void {
+    const resolver = this.pending.get(requestId);
+    if (resolver) {
+      this.pending.delete(requestId);
+      resolver(false);
+    }
+  }
+
   resolvePermission(input: { requestId: string; decision: PermissionDecision }): boolean {
     const resolver = this.pending.get(input.requestId);
     if (!resolver) {
       return false;
     }
 
-    resolver(input.decision === 'grant');
+    resolver(input.decision !== 'deny');
     return true;
   }
 }

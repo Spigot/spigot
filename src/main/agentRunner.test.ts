@@ -307,6 +307,91 @@ describe('agentRunner - code editing tools', () => {
     });
   });
 
+  describe('move_file', () => {
+    it('renames a file inside the workspace', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'spigot-move-test-'));
+      const source = path.join(tempDir, 'old-name.ts');
+      await fs.writeFile(source, 'export const value = 1;', 'utf-8');
+
+      const result = await executeTool('move_file', { sourcePath: 'old-name.ts', targetPath: 'src/new-name.ts' }, tempDir, 'build');
+
+      expect(result).toContain('Archivo movido a src/new-name.ts');
+      const moved = await fs.readFile(path.join(tempDir, 'src', 'new-name.ts'), 'utf-8');
+      expect(moved).toBe('export const value = 1;');
+      await expect(fs.access(source)).rejects.toThrow();
+
+      await fs.rm(tempDir, { recursive: true, force: true });
+    });
+
+    it('rejects a missing source or an existing destination', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'spigot-move-test-'));
+      const target = path.join(tempDir, 'taken.txt');
+      await fs.writeFile(target, 'occupied', 'utf-8');
+
+      const missingSource = await executeTool('move_file', { sourcePath: 'nope.txt', targetPath: 'moved.txt' }, tempDir, 'build');
+      expect(missingSource).toContain('ERROR ejecutando la herramienta');
+      expect(missingSource).toContain('no existe');
+
+      const occupiedTarget = await executeTool('move_file', { sourcePath: 'taken.txt', targetPath: 'taken.txt' }, tempDir, 'build');
+      expect(occupiedTarget).toContain('Sin cambios');
+
+      await fs.writeFile(path.join(tempDir, 'other.txt'), 'x', 'utf-8');
+      const collision = await executeTool('move_file', { sourcePath: 'other.txt', targetPath: 'taken.txt' }, tempDir, 'build');
+      expect(collision).toContain('El destino ya existe');
+
+      await fs.rm(tempDir, { recursive: true, force: true });
+    });
+
+    it('is blocked in plan mode and included in build mode tools', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'spigot-move-test-'));
+      const planMove = await executeTool('move_file', { sourcePath: 'a.txt', targetPath: 'b.txt' }, tempDir, 'plan');
+      expect(planMove).toContain('Acceso denegado');
+
+      const buildToolNames = getToolsForMode('build').map(t => t.name);
+      expect(buildToolNames).toContain('move_file');
+      const planToolNames = getToolsForMode('plan').map(t => t.name);
+      expect(planToolNames).not.toContain('move_file');
+
+      await fs.rm(tempDir, { recursive: true, force: true });
+    });
+  });
+
+  describe('tool permission gating', () => {
+    it('blocks gated tools when the user denies and executes on grant', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'spigot-perm-test-'));
+      await fs.writeFile(path.join(tempDir, 'a.txt'), 'x', 'utf-8');
+
+      const denied = await executeTool('move_file', { sourcePath: 'a.txt', targetPath: 'b.txt' }, tempDir, 'build', {
+        requestToolPermission: async () => 'denied',
+      });
+      expect(denied).toContain('Permiso denegado');
+      await expect(fs.access(path.join(tempDir, 'a.txt'))).resolves.toBeUndefined();
+
+      const granted = await executeTool('move_file', { sourcePath: 'a.txt', targetPath: 'b.txt' }, tempDir, 'build', {
+        requestToolPermission: async () => 'granted',
+      });
+      expect(granted).toContain('Archivo movido a b.txt');
+      await expect(fs.access(path.join(tempDir, 'b.txt'))).resolves.toBeUndefined();
+
+      await fs.rm(tempDir, { recursive: true, force: true });
+    });
+
+    it('does not prompt for ungated tools', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'spigot-perm-test-'));
+      await fs.writeFile(path.join(tempDir, 'file.txt'), 'hello', 'utf-8');
+
+      const permissionSpy = vi.fn();
+      const result = await executeTool('read_file', { filePath: 'file.txt' }, tempDir, 'build', {
+        requestToolPermission: permissionSpy,
+      });
+
+      expect(result).toBe('hello');
+      expect(permissionSpy).not.toHaveBeenCalled();
+
+      await fs.rm(tempDir, { recursive: true, force: true });
+    });
+  });
+
   describe('Workspace Path Containment & Security', () => {
     it('allows valid relative and absolute paths inside the workspace', async () => {
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'spigot-path-test-'));

@@ -8,7 +8,7 @@ import type { EngineAdapter } from './SpigotChatsEngineAdapter';
 import type { AssistantPart, EngineEvent, EngineEventListener, EngineModelEffort, EngineTurnRequest } from './types';
 import { EngineHistoryStore } from './historyStore';
 type TurnChangeSetBoundary = {
-  beginTurn(input: { turnId: string; conversationId: string; workspacePath: string }): Promise<{ id: string }>;
+  beginTurn(input: { turnId: string; conversationId: string; workspacePath: string; mode?: 'orchestrator' | 'build' | 'plan' | 'review' }): Promise<{ id: string }>;
   closeTurn(turnId: string): void;
 };
 
@@ -41,9 +41,17 @@ type ActiveTurn = {
   closed: boolean;
 };
 
+type SessionToolGrants = { tools: Set<string>; full: boolean };
+
+/** Tools that mutate the workspace outside the ChangeSet review flow. */
+const PERMISSION_GATED_TOOLS = new Set(['run_command', 'move_file']);
+const PERMISSION_TIMEOUT_MS = 180_000;
+
 export class EngineSessionService {
   private readonly activeTurns = new Map<string, ActiveTurn>();
   private readonly historyStore: EngineHistoryStore;
+  private readonly sessionToolGrants = new Map<string, SessionToolGrants>();
+  private readonly pendingRequestMeta = new Map<string, { sessionId: string; tool: string }>();
 
   constructor(
     private readonly adapter: EngineAdapter,
@@ -78,9 +86,73 @@ export class EngineSessionService {
         turnId,
         conversationId: input.sessionId,
         workspacePath: input.workspacePath,
+        mode: input.mode,
       })).id;
     }
     const permissionBroker = new PermissionBroker();
+    const requestToolPermission = async ({ tool, input: permissionInput }: { tool: string; input: unknown }): Promise<'granted' | 'denied' | null> => {
+        const active = this.activeTurns.get(input.sessionId);
+        if (!active || active.turnId !== turnId) {
+          return null;
+        }
+
+        // Previously granted permissions skip the prompt entirely.
+        const grants = this.sessionToolGrants.get(input.sessionId);
+        if (grants && (grants.full || grants.tools.has(tool))) {
+          return 'granted';
+        }
+        if (!PERMISSION_GATED_TOOLS.has(tool)) {
+          return 'granted';
+        }
+
+        const pending = active.permissionBroker.requestPermission({
+          turnId,
+          tool,
+          input: permissionInput,
+        });
+        this.pendingRequestMeta.set(pending.request.id, { sessionId: input.sessionId, tool });
+
+        active.emit({
+          type: 'permission:request',
+          turnId,
+          id: pending.request.id,
+          tool,
+          input: permissionInput,
+        });
+
+        const result = await new Promise<{ granted: boolean }>((resolve) => {
+          let settled = false;
+          const settle = (value: { granted: boolean }) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            abortController.signal.removeEventListener('abort', onAbort);
+            resolve(value);
+          };
+          const timer = setTimeout(() => settle({ granted: false }), PERMISSION_TIMEOUT_MS);
+          const onAbort = () => {
+            active.permissionBroker.abandon(pending.request.id);
+            settle({ granted: false });
+          };
+          if (abortController.signal.aborted) {
+            onAbort();
+          } else {
+            abortController.signal.addEventListener('abort', onAbort, { once: true });
+          }
+          pending.promise.then(settle);
+        });
+        this.pendingRequestMeta.delete(pending.request.id);
+
+        active.emit({
+          type: 'permission:result',
+          turnId,
+          id: pending.request.id,
+          granted: result.granted,
+        });
+
+        return result.granted ? 'granted' : 'denied';
+
+    };
     const assistantMessages: unknown[] = [];
     const assistantParts = new Map<string, AssistantPart & { content: string }>();
     const fileHistory: Array<{ path: string; action: 'snapshot' | 'restore' }> = [];
@@ -135,6 +207,7 @@ export class EngineSessionService {
         abortController.signal,
         emit,
         changeSetId,
+        requestToolPermission,
       );
       if (assistantParts.size > 0) {
         const parts = [...assistantParts.values()].sort((a, b) => a.ordinal - b.ordinal);
@@ -156,36 +229,7 @@ export class EngineSessionService {
       changeSetService: this.options.changeSetService as WorkspaceChangeSetService | undefined,
       changeSetId,
       fileHistory: persistedHistory.fileHistory,
-      requestToolPermission: async ({ tool, input: permissionInput }) => {
-        const active = this.activeTurns.get(input.sessionId);
-        if (!active || active.turnId !== turnId) {
-          return null;
-        }
-
-        const pending = active.permissionBroker.requestPermission({
-          turnId,
-          tool,
-          input: permissionInput,
-        });
-
-        active.emit({
-          type: 'permission:request',
-          turnId,
-          id: pending.request.id,
-          tool,
-          input: permissionInput,
-        });
-
-        const result = await pending.promise;
-        active.emit({
-          type: 'permission:result',
-          turnId,
-          id: pending.request.id,
-          granted: result.granted,
-        });
-
-        return result.granted ? pending.request.id : null;
-      },
+      requestToolPermission,
     };
 
     const success = await this.adapter.startTurn(request, emit);
@@ -246,16 +290,41 @@ export class EngineSessionService {
   }
 
   resolvePermissionRequest(requestId: string, decision: PermissionDecision, sessionId?: string): boolean {
-    if (sessionId) {
-      const turn = this.activeTurns.get(sessionId);
-      return turn ? turn.permissionBroker.resolvePermission({ requestId, decision }) : false;
-    }
-    for (const turn of this.activeTurns.values()) {
-      if (turn.permissionBroker.resolvePermission({ requestId, decision })) {
-        return true;
+    const meta = this.pendingRequestMeta.get(requestId);
+
+    // Record session-scoped grants before waking the waiting turn.
+    if (decision === 'always' || decision === 'full') {
+      const targetSession = meta?.sessionId ?? sessionId;
+      if (targetSession) {
+        const grants = this.sessionToolGrants.get(targetSession) ?? { tools: new Set<string>(), full: false };
+        if (decision === 'always') {
+          if (meta?.tool) grants.tools.add(meta.tool);
+        } else {
+          grants.full = true;
+        }
+        this.sessionToolGrants.set(targetSession, grants);
       }
     }
-    return false;
+
+    let resolved = false;
+    const brokerFor = (id: string) => {
+      const turn = this.activeTurns.get(id);
+      return turn ? turn.permissionBroker : undefined;
+    };
+    const broker = sessionId ? brokerFor(sessionId) : meta ? brokerFor(meta.sessionId) : undefined;
+    if (broker) {
+      resolved = broker.resolvePermission({ requestId, decision });
+    } else {
+      for (const turn of this.activeTurns.values()) {
+        if (turn.permissionBroker.resolvePermission({ requestId, decision })) {
+          resolved = true;
+          break;
+        }
+      }
+    }
+
+    this.pendingRequestMeta.delete(requestId);
+    return resolved;
   }
 
   private async runLegacy(
@@ -264,6 +333,7 @@ export class EngineSessionService {
     signal: AbortSignal,
     onEvent: EngineEventListener,
     changeSetId?: string,
+    requestToolPermission?: (input: { tool: string; input: unknown }) => Promise<'granted' | 'denied' | null>,
   ): Promise<boolean> {
     const runner = this.options.legacyRunner;
     let nextPartOrdinal = 0;
@@ -292,6 +362,7 @@ export class EngineSessionService {
         onEvent: (event) => onEvent(event),
         changeSetService: this.options.changeSetService as WorkspaceChangeSetService | undefined,
         changeSetId,
+        requestToolPermission,
         sendChunk: (chunk: string) => onEvent({ type: 'content', turnId, text: chunk }),
         sendPart: (part) => onEvent({
           type: 'part',

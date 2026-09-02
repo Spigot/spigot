@@ -282,7 +282,7 @@ describe('EngineSessionService', () => {
     }, () => {});
 
     expect(changeSetService.beginTurn).toHaveBeenCalledWith({
-      turnId: 'turn-1', conversationId: 'conversation-1', workspacePath: 'C:/workspace',
+      turnId: 'turn-1', conversationId: 'conversation-1', workspacePath: 'C:/workspace', mode: 'build',
     });
     expect(changeSetService.closeTurn).toHaveBeenCalledWith('turn-1');
   });
@@ -290,11 +290,11 @@ describe('EngineSessionService', () => {
   it('emits inline permission request/result events and resolves grant', async () => {
     const adapter = {
       startTurn: vi.fn(async (request, onEvent) => {
-        const permissionId = await request.requestToolPermission?.({
-          tool: 'read_file',
-          input: { filePath: 'README.md' },
+        const decision = await request.requestToolPermission?.({
+          tool: 'run_command',
+          input: { command: 'npm test' },
         });
-        onEvent({ type: 'content', turnId: request.turnId, text: permissionId ? 'granted' : 'denied' });
+        onEvent({ type: 'content', turnId: request.turnId, text: decision ?? 'no-callback' });
         onEvent({ type: 'end', turnId: request.turnId, aborted: false });
         return true;
       }),
@@ -327,6 +327,45 @@ describe('EngineSessionService', () => {
     const success = await run;
     expect(success).toBe(true);
     expect(events).toEqual(['permission:request', 'permission:result', 'content', 'end']);
+  });
+
+  it('auto-approves permission requests for tools outside the gated set', async () => {
+    const adapter = {
+      startTurn: vi.fn(async (request, onEvent) => {
+        const decision = await request.requestToolPermission?.({
+          tool: 'read_file',
+          input: { filePath: 'README.md' },
+        });
+        onEvent({ type: 'content', turnId: request.turnId, text: decision ?? 'no-callback' });
+        onEvent({ type: 'end', turnId: request.turnId, aborted: false });
+        return true;
+      }),
+      abortTurn: vi.fn(),
+    };
+
+    const service = new EngineSessionService(adapter);
+    const events: string[] = [];
+
+    const run = service.startTurn(
+      {
+        sessionId: 's1',
+        mode: 'plan',
+        provider: 'openai',
+        model: 'gpt-5',
+        apiKey: 'k',
+        prompt: 'hello',
+        contextText: null,
+        history: [],
+        workspacePath: 'C:/repo',
+      },
+      event => {
+        events.push(event.type);
+      },
+    );
+
+    const success = await run;
+    expect(success).toBe(true);
+    expect(events).toEqual(['content', 'end']);
   });
 
   it('does not duplicate renderer-provided chat history and preserves file-history replay', async () => {

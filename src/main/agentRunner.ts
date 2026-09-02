@@ -160,10 +160,13 @@ Core Directives:
    - Execute changes using 'edit_file' for surgical edits and 'write_file' for new components or tests.
    - Maintain strict workspace containment and consistent code style.
 4. SELF-VERIFICATION LOOP:
-   - Always run tests and typechecks using 'run_command' (e.g. 'pnpm test', 'npm test', 'tsc --noEmit') to verify changes before concluding.
-5. NO REDUNDANT EXPLORATION:
+   - Always run tests and typechecks using 'run_command' (e.g. 'pnpm test', 'npm test', 'tsc --noEmit') to verify changes before concluding. If your edits are staged in a ChangeSet (the tool result says so), run verification AFTER the user accepts them, when the '[Sistema]' confirmation message arrives.
+5. CHANGE REVIEW WORKFLOW (ChangeSet):
+   - 'write_file' and 'edit_file' may register changes in a ChangeSet instead of writing to disk immediately; the tool result tells you which happened. NEVER claim files exist on disk when the result says the change was staged.
+   - After registering all changes, end your turn with a summary: the UI asks the user to accept/reject automatically. When the decision arrives as a '[Sistema]' message, continue from there.
+6. NO REDUNDANT EXPLORATION:
    - DO NOT repeatedly execute 'list_dir' or 'glob_search' if you already know the workspace context or if the directory is empty. Immediately proceed to write the requested code with 'write_file'.
-6. CONCISE SYNTHESIS & CLEAN FORMATTING:
+7. CONCISE SYNTHESIS & CLEAN FORMATTING:
    - Present your final answer with clean GitHub-flavored Markdown: use clear headings (#, ##), clean markdown tables, bullet lists, and code blocks.
    - When executing tools, do NOT emit conversational filler, repetitive greetings, or intermediate chatter. Go straight to tool execution and present your answer cleanly upon receiving the tool results.`;
 
@@ -183,7 +186,11 @@ Key Instructions:
 3. VERIFICATION & EXECUTION:
    - You can use 'run_command' to run tests, typechecks, linters, or build scripts to verify your changes.
 4. CONCISENESS & CLEAN FORMATTING:
-   - Keep responses direct, structured, and beautifully formatted with Markdown headings, lists, and tables. Avoid conversational filler.`;
+   - Keep responses direct, structured, and beautifully formatted with Markdown headings, lists, and tables. Avoid conversational filler.
+5. CHANGE REVIEW WORKFLOW (ChangeSet):
+   - When a review session is active, 'write_file' and 'edit_file' REGISTER changes in a ChangeSet instead of writing them to disk immediately; the tool result tells you which happened. Read the result carefully and NEVER claim a file was created on disk when the result says it was staged.
+   - Run verification commands ('run_command') BEFORE the user accepts is pointless for staged files (disk is stale): after registering all your changes, end your turn with a brief summary. The UI shows the user an Accept/Reject review automatically when your turn ends; do NOT ask for permission or tell the user to do anything else.
+   - When the user accepts or rejects, you receive a '[Sistema]' message. If ACCEPTED, continue the task: run tests/typechecks now that the files are on disk, fix issues, and summarize. If REJECTED, propose a different approach.`;
 
 const SYSTEM_PROMPT_PLAN = `You are Spigot Architect & Planner, a dedicated planning and system design assistant integrated directly into Spigot.
 Your purpose is to formulate structured implementation plans, breakdown complex features, analyze tradeoffs, and guide architectural strategy.
@@ -398,7 +405,11 @@ export type ExecuteToolContext = {
   changeSetService?: WorkspaceChangeSetService;
   changeSetId?: string;
   toolCallId?: string;
+  requestToolPermission?: (input: { tool: string; input: unknown }) => Promise<'granted' | 'denied' | null>;
 };
+
+/** Tools that mutate the workspace outside the ChangeSet review flow. */
+export const PERMISSION_GATED_TOOLS = new Set(['run_command', 'move_file']);
 
 export async function executeTool(
   name: string,
@@ -408,6 +419,12 @@ export async function executeTool(
   context?: ExecuteToolContext
 ): Promise<string> {
   try {
+    if (context?.requestToolPermission && PERMISSION_GATED_TOOLS.has(name)) {
+      const decision = await context.requestToolPermission({ tool: name, input: args });
+      if (decision === 'denied') {
+        return `[Permiso denegado] El usuario no autorizó ejecutar '${name}'. Continuá la tarea sin esa herramienta o preguntale cómo prefiere proceder.`;
+      }
+    }
     if (context?.role) {
       if (!isToolAllowedForRole(context.role, name)) {
         throw new Error(`Acceso denegado: El rol "${context.role}" no tiene permisos para ejecutar la herramienta "${name}".`);
@@ -455,6 +472,7 @@ export async function executeTool(
           signal: context?.signal,
           agentRunner: context?.agentRunner,
           onEvent: context?.onEvent,
+          requestToolPermission: context?.requestToolPermission,
           turnId: context?.turnId,
           sessionId: context?.sessionId,
         });
@@ -485,7 +503,10 @@ export async function executeTool(
         }
         const diagnostics = await postWriteDiagnostics(file, updatedContent);
         context?.onEvent?.({ type: 'tool', turnId: context.turnId || 'turn-default', id: `lsp-post-write-${Date.now()}`, name: 'lsp_post_write_diagnostics', status: 'end', data: diagnostics });
-        return `Edición exitosa en ${path.relative(workspacePath, file) || file} (${count} reemplazo(s) aplicado(s)).\nLSP_POST_WRITE_DIAGNOSTICS:${lspResult(diagnostics)}`;
+        const editNote = context?.changeSetId && context.changeSetService
+          ? `Edición REGISTRADA EN EL CHANGESET para revisión del usuario en ${relativePath} (${count} reemplazo(s)). Se escribirá al disco cuando el usuario la acepte; no la des por aplicada hasta recibir el mensaje [Sistema] de confirmación.`
+          : `Edición exitosa en ${relativePath || file} (${count} reemplazo(s) aplicado(s)).`;
+        return `${editNote}\nLSP_POST_WRITE_DIAGNOSTICS:${lspResult(diagnostics)}`;
       }
 
       case 'glob_search': {
@@ -596,8 +617,10 @@ export async function executeTool(
       case 'write_file': {
         const file = resolvePath(args.filePath);
         const relativePath = path.relative(workspacePath, file).replaceAll('\\', '/');
+        let staged = false;
         if (context?.changeSetId && context.changeSetService) {
           await context.changeSetService.capture(context.changeSetId, { relativePath, proposedContent: args.content, source: { toolName: name, toolCallId: context.toolCallId || 'tool' }, handoff: { kind: 'disk' } });
+          staged = true;
         } else {
           await fs.mkdir(path.dirname(file), { recursive: true });
           await fs.writeFile(file, args.content, 'utf-8');
@@ -605,7 +628,10 @@ export async function executeTool(
         }
         const diagnostics = await postWriteDiagnostics(file, args.content);
         context?.onEvent?.({ type: 'tool', turnId: context.turnId || 'turn-default', id: `lsp-post-write-${Date.now()}`, name: 'lsp_post_write_diagnostics', status: 'end', data: diagnostics });
-        return `Archivo creado/escrito exitosamente en: ${file}\nLSP_POST_WRITE_DIAGNOSTICS:${lspResult(diagnostics)}`;
+        const writeNote = staged
+          ? `Cambio REGISTRADO EN EL CHANGESET para revisión del usuario: ${relativePath}. Se escribirá al disco cuando el usuario lo acepte; no lo des por creado hasta recibir el mensaje [Sistema] de confirmación.`
+          : `Archivo creado/escrito exitosamente en: ${file}`;
+        return `${writeNote}\nLSP_POST_WRITE_DIAGNOSTICS:${lspResult(diagnostics)}`;
       }
 
       case 'lsp_error_diagnostics': {
@@ -818,6 +844,7 @@ export type AgentRunOptions = {
   sessionId?: string;
   changeSetService?: WorkspaceChangeSetService;
   changeSetId?: string;
+  requestToolPermission?: (input: { tool: string; input: unknown }) => Promise<'granted' | 'denied' | null>;
 };
 
 export function applyModelEffort(
@@ -864,6 +891,7 @@ export async function runAgentLoop({
   sessionId,
   changeSetService,
   changeSetId,
+  requestToolPermission,
 }: AgentRunOptions): Promise<boolean> {
   let turn = 0;
   const logContext = { conversationId: sessionId, turnId, mode, providerModelId: `${provider}/${model}`, startedAt: Date.now() };
@@ -1125,6 +1153,7 @@ export async function runAgentLoop({
               changeSetService,
               changeSetId,
               toolCallId,
+              requestToolPermission,
             });
             sendReasoning(`Subagente \`${roleLabel}\` completó su tarea.\n`);
           } else {
@@ -1141,6 +1170,7 @@ export async function runAgentLoop({
               changeSetService,
               changeSetId,
               toolCallId,
+              requestToolPermission,
             });
             if (tc.name === 'write_file' || tc.name === 'edit_file' || tc.name === 'delete_file' || tc.name === 'move_file') {
               executedWriteSignatures.add(sig);

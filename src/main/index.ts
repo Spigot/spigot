@@ -1104,6 +1104,20 @@ const engineSessionService = new EngineSessionService(new SpigotChatsEngineAdapt
   changeSetService: workspaceChangeSetService,
 });
 
+// Renderer decisions for in-chat tool confirmation prompts.
+ipcMain.handle('ai:permission-response', async (_event, args: { requestId?: string; decision?: string; conversationId?: string }) => {
+  if (!args?.requestId || typeof args.decision !== 'string') return false;
+  const decisionMap: Record<string, 'grant' | 'deny' | 'always' | 'full'> = {
+    once: 'grant',
+    always: 'always',
+    full: 'full',
+    denied: 'deny',
+  };
+  const decision = decisionMap[args.decision];
+  if (!decision) return false;
+  return engineSessionService.resolvePermissionRequest(args.requestId, decision, args.conversationId);
+});
+
 function stagedChangeSet(changeSetId: unknown) {
   if (typeof changeSetId !== 'string' || !changeSetId) throw new Error('A change-set identity is required.');
   return workspaceChangeSetService.get(changeSetId);
@@ -1260,6 +1274,8 @@ ipcMain.handle('ai:stream-chat', async (
             ...(mapped.channel === 'ai:stream-end' ? { aborted: mapped.payload } : {}),
             ...(mapped.channel === 'ai:stream-tool' ? { tool: mapped.payload } : {}),
             ...(mapped.channel === 'ai:context-bounded' ? { warning: mapped.payload } : {}),
+            ...(mapped.channel === 'ai:permission-request' ? { permission: mapped.payload } : {}),
+            ...(mapped.channel === 'ai:permission-result' ? { permissionResult: mapped.payload } : {}),
           });
         }
       },

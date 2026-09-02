@@ -164,6 +164,18 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('ai:changeset-ready', listener);
       return () => ipcRenderer.removeListener('ai:changeset-ready', listener);
     },
+    onPermissionRequest: (callback: (payload: { conversationId: string; turnId: string; permission: { id: string; tool: string; input: unknown } }) => void) => {
+      const listener = (_event: any, payload: any) => callback(payload);
+      ipcRenderer.on('ai:permission-request', listener);
+      return () => ipcRenderer.removeListener('ai:permission-request', listener);
+    },
+    onPermissionResult: (callback: (payload: { conversationId: string; permissionResult: { id: string; granted: boolean } }) => void) => {
+      const listener = (_event: any, payload: any) => callback(payload);
+      ipcRenderer.on('ai:permission-result', listener);
+      return () => ipcRenderer.removeListener('ai:permission-result', listener);
+    },
+    respondPermission: (args: { requestId: string; decision: 'once' | 'always' | 'full' | 'denied'; conversationId?: string }) =>
+      ipcRenderer.invoke('ai:permission-response', args),
   },
   changes: {
     summary: (changeSetId: string) => ipcRenderer.invoke('changes:summary', changeSetId),

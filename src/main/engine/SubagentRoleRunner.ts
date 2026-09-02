@@ -34,6 +34,7 @@ export type SubagentDispatchOptions = {
   sessionId?: string;
   onEvent?: EngineEventListener;
   agentRunner?: (options: AgentRunOptions) => Promise<boolean>;
+  requestToolPermission?: (input: { tool: string; input: unknown }) => Promise<'granted' | 'denied' | null>;
 };
 
 export type SubagentDispatchResult = {
@@ -198,6 +199,7 @@ export class SubagentRoleRunner {
         modelConfig: options.modelConfig,
         providers: options.providers,
         onEvent: options.onEvent,
+        requestToolPermission: options.requestToolPermission,
         turnId,
         sessionId: options.sessionId,
         sendChunk: (chunk: string) => {

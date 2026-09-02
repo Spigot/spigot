@@ -7,6 +7,7 @@ const chatLog = createChatLogger();
 
 export type ChangeOperation = 'create' | 'modify' | 'delete';
 export type ChangeSetState = 'open' | 'ready' | 'applying' | 'applied' | 'rolling-back' | 'rolled-back' | 'conflicted' | 'closed';
+export type ChangeSetMode = 'orchestrator' | 'build' | 'plan' | 'review';
 
 export type WorkspaceIdentity = Readonly<{
   canonicalPath: string;
@@ -34,6 +35,8 @@ export type ChangeSet = Readonly<{
   workspace: WorkspaceIdentity;
   entries: readonly ChangeEntry[];
   state: ChangeSetState;
+  /** Chat mode the turn ran in; lets the renderer resume the agent with the same configuration. */
+  mode?: ChangeSetMode;
 }>;
 
 export type ChangeSetSummary = Readonly<{
@@ -175,7 +178,7 @@ export class WorkspaceChangeSetService {
     private readonly maxTextBytes = DEFAULT_MAX_TEXT_BYTES,
   ) {}
 
-  async beginTurn(input: { turnId: string; conversationId: string; workspacePath: string }): Promise<ChangeSet> {
+  async beginTurn(input: { turnId: string; conversationId: string; workspacePath: string; mode?: ChangeSetMode }): Promise<ChangeSet> {
     if (!input.turnId || !input.conversationId) throw new Error('Turn and conversation identities are required.');
     const workspace = await validateWorkspace(input.workspacePath);
     const changeSet = freezeChangeSet({
@@ -185,6 +188,7 @@ export class WorkspaceChangeSetService {
       workspace,
       entries: [],
       state: 'open',
+      ...(input.mode ? { mode: input.mode } : {}),
     });
     this.sets.set(changeSet.id, changeSet);
     return changeSet;
