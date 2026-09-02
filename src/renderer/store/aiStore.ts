@@ -79,6 +79,26 @@ export interface ActiveStreamState {
   contextWarning?: ContextBoundEvent;
 }
 
+/** A prompt waiting to be sent when the current turn finishes. */
+export interface QueuedMessage {
+  id: string;
+  prompt: string;
+  mode: 'orchestrator' | 'build' | 'plan' | 'review';
+  contextText: string | null;
+  contextSource: 'default' | 'explicit';
+  image?: string | null;
+}
+
+/** A tool execution waiting for the user's in-chat confirmation. */
+export interface PendingPermission {
+  id: string;
+  tool: string;
+  input?: any;
+  conversationId?: string;
+}
+
+export type PermissionDecisionValue = 'once' | 'always' | 'full' | 'denied';
+
 export interface OAuthAccountInfo {
   id: string;
   email: string;
@@ -103,6 +123,8 @@ interface AIState {
   activeStreams: Record<string, ActiveStreamState>;
   modelConfiguration: ModelConfiguration;
   chatModelOverrides: Partial<Record<ChatMode, ModelAssignment>>;
+  messageQueue: QueuedMessage[];
+  pendingPermissions: PendingPermission[];
   oauthAccounts: OAuthAccountInfo[];
 
   loginWithOAuth: (provider: string) => Promise<{ email?: string; projectId?: string; token: string; accounts?: OAuthAccountInfo[] }>;
@@ -115,12 +137,15 @@ interface AIState {
   selectModel: (provider: string, model: string) => Promise<void>;
   setModeModelAssignment: (mode: ChatMode, assignment: ModelAssignment) => Promise<void>;
   setModeModelEffort: (mode: ChatMode, effort: ModelEffort | undefined) => Promise<void>;
-  setChatModelOverride: (mode: ChatMode, assignment: ModelAssignment) => void;
-  setChatModelOverrideEffort: (mode: ChatMode, effort: ModelEffort | undefined) => void;
+  setChatModelOverride: (mode: ChatMode, assignment: ModelAssignment) => Promise<void>;
+  setChatModelOverrideEffort: (mode: ChatMode, effort: ModelEffort | undefined) => Promise<void>;
   setRoleModelAssignment: (role: GentleRoleId, assignment: ModelAssignment) => Promise<void>;
   setRoleModelEffort: (role: GentleRoleId, effort: ModelEffort | undefined) => Promise<void>;
   setActiveProvider: (provider: string) => void;
   sendMessage: (prompt: string, contextText: string | null, image?: string | null, mode?: 'orchestrator' | 'build' | 'plan' | 'review', contextSource?: 'default' | 'explicit') => Promise<void>;
+  enqueueMessage: (entry: Omit<QueuedMessage, 'id'>) => void;
+  removeQueuedMessage: (id: string) => void;
+  respondPermission: (requestId: string, decision: PermissionDecisionValue) => Promise<void>;
   abortChat: (conversationId?: string) => void;
   generateCommitMessage: (gitDiff: string, onChunk: (chunk: string) => void) => Promise<string>;
   clearHistory: () => void;
@@ -330,6 +355,16 @@ export const useAIStore = create<AIState>((set, get) => {
     armTerminalWatchdog(conversationId, watchdog.turnId, watchdog.logContext);
   };
 
+  // Sends the next queued message once the current turn has fully finished.
+  // Queue entries survive aborts/errors so the user keeps control of retries.
+  const dequeueNextMessage = () => {
+    const queue = get().messageQueue;
+    if (queue.length === 0) return;
+    const [next, ...rest] = queue;
+    set({ messageQueue: rest });
+    void get().sendMessage(next.prompt, next.contextText, next.image ?? null, next.mode, next.contextSource);
+  };
+
   const isValidTypedPart = (payload: any, existing: ActiveStreamState): payload is { conversationId: string; turnId: string; part: AssistantPart } => {
     const part = payload?.part;
     return payload?.conversationId === existing.conversationId
@@ -458,6 +493,25 @@ export const useAIStore = create<AIState>((set, get) => {
       }
       pendingChunks.set(conversationId, { turnId, chunks: [], parts: [...(pending?.parts || []), part], sawTypedParts: true });
       schedulePendingChunkFlush();
+    });
+
+    (window as any).api.ai.onPermissionRequest?.((payload: any) => {
+      const permission = payload?.permission;
+      if (!permission?.id || typeof permission.tool !== 'string') return;
+      const conversationId: string | undefined = payload.conversationId;
+      if (conversationId && get().activeStreams[conversationId]) touchTerminalWatchdog(conversationId);
+      set(state => ({
+        pendingPermissions: [
+          ...state.pendingPermissions.filter(existing => existing.id !== permission.id),
+          { id: permission.id, tool: permission.tool, input: permission.input, conversationId },
+        ],
+      }));
+    });
+
+    (window as any).api.ai.onPermissionResult?.((payload: any) => {
+      const id = payload?.permissionResult?.id;
+      if (!id) return;
+      set(state => ({ pendingPermissions: state.pendingPermissions.filter(existing => existing.id !== id) }));
     });
 
     (window as any).api.ai.onChangeSetReady?.((payload: any) => {
@@ -678,6 +732,9 @@ export const useAIStore = create<AIState>((set, get) => {
         const workspacePath = useWorkspaceStore.getState().workspacePath;
         await (window as any).api.store.setChatHistory(updatedConvs, workspacePath).catch(console.error);
       }
+
+      // The turn finished on its own: run the next queued message, if any.
+      if (!aborted) dequeueNextMessage();
     });
   };
 
@@ -702,6 +759,8 @@ export const useAIStore = create<AIState>((set, get) => {
     activeStreams: {},
     modelConfiguration: createModelConfiguration(undefined),
     chatModelOverrides: {},
+    messageQueue: [],
+    pendingPermissions: [],
     oauthAccounts: [],
 
     fetchOAuthAccounts: async () => {
@@ -993,11 +1052,21 @@ export const useAIStore = create<AIState>((set, get) => {
       set({ modelConfiguration: next });
     },
 
-    setChatModelOverride: (mode: ChatMode, assignment: ModelAssignment) => {
+    // The chat selector is the canonical way to pick a model for a mode, so it
+    // writes through to the persisted configuration: reopening the panel or the
+    // app restores the same provider/model instead of showing "Select model".
+    setChatModelOverride: async (mode: ChatMode, assignment: ModelAssignment) => {
       set(state => ({ chatModelOverrides: { ...state.chatModelOverrides, [mode]: assignment } }));
+      await get().setModeModelAssignment(mode, assignment);
+      if (mode === 'orchestrator') {
+        // setRoleAssignment strips effort, so carry the current one over.
+        const currentEffort = resolveRoleAssignment(get().modelConfiguration, 'gentle-orchestrator', get().modelConfiguration.assignments.orchestrator)?.effort;
+        await get().setRoleModelAssignment('gentle-orchestrator', assignment);
+        if (currentEffort) await get().setRoleModelEffort('gentle-orchestrator', currentEffort);
+      }
     },
 
-    setChatModelOverrideEffort: (mode: ChatMode, effort: ModelEffort | undefined) => {
+    setChatModelOverrideEffort: async (mode: ChatMode, effort: ModelEffort | undefined) => {
       set(state => {
         const configured = mode === 'orchestrator'
           ? resolveRoleAssignment(state.modelConfiguration, 'gentle-orchestrator', state.modelConfiguration.assignments.orchestrator)
@@ -1011,6 +1080,30 @@ export const useAIStore = create<AIState>((set, get) => {
           },
         };
       });
+      await get().setModeModelEffort(mode, effort);
+      if (mode === 'orchestrator') {
+        await get().setRoleModelEffort('gentle-orchestrator', effort);
+      }
+    },
+
+    enqueueMessage: (entry) => {
+      const queued: QueuedMessage = { ...entry, id: `queued-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` };
+      set(state => ({ messageQueue: [...state.messageQueue, queued] }));
+    },
+
+    removeQueuedMessage: (id) => {
+      set(state => ({ messageQueue: state.messageQueue.filter(item => item.id !== id) }));
+    },
+
+    respondPermission: async (requestId, decision) => {
+      // Optimistically close the prompt; the result event also cleans up if the
+      // turn already ended (timeout/abort) and the IPC call fails.
+      set(state => ({ pendingPermissions: state.pendingPermissions.filter(item => item.id !== requestId) }));
+      try {
+        await (window as any).api.ai.respondPermission?.({ requestId, decision });
+      } catch (err) {
+        console.error('Failed to respond to permission request:', err);
+      }
     },
 
     setRoleModelAssignment: async (role: GentleRoleId, assignment: ModelAssignment) => {

@@ -412,7 +412,7 @@ describe('useAIStore - Session and Turn Isolation', () => {
     }));
   });
 
-  it('uses chat model overrides without persisting or changing subagent settings', async () => {
+  it('uses chat model overrides, persists them, and keeps subagent settings', async () => {
     const configured = createModelConfiguration(undefined);
     configured.assignments.build = { providerId: 'openai', modelId: 'gpt-5.6-terra', effort: 'high' };
     configured.roleAssignments['sdd-apply'] = { providerId: 'openai', modelId: 'gpt-5.6-terra' };
@@ -426,8 +426,8 @@ describe('useAIStore - Session and Turn Isolation', () => {
       chatModelOverrides: {},
     });
 
-    useAIStore.getState().setChatModelOverride('build', { providerId: 'anthropic', modelId: 'claude-sonnet-4-6' });
-    useAIStore.getState().setChatModelOverrideEffort('build', 'high');
+    await useAIStore.getState().setChatModelOverride('build', { providerId: 'anthropic', modelId: 'claude-sonnet-4-6' });
+    await useAIStore.getState().setChatModelOverrideEffort('build', 'high');
     await useAIStore.getState().sendMessage('Build with fallback model', null, null, 'build');
 
     expect(mockStreamChat).toHaveBeenCalledWith(expect.objectContaining({
@@ -435,13 +435,15 @@ describe('useAIStore - Session and Turn Isolation', () => {
       model: 'claude-sonnet-4-6',
       effort: 'high',
     }));
+    // The chat selector writes through so the pick survives reopening the agent or the app.
     expect(useAIStore.getState().modelConfiguration.assignments.build).toEqual({
-      providerId: 'openai', modelId: 'gpt-5.6-terra', effort: 'high',
+      providerId: 'anthropic', modelId: 'claude-sonnet-4-6', effort: 'high',
     });
+    expect((window as any).api.store.setModelConfiguration).toHaveBeenCalled();
+    // Dedicated subagent role assignments remain untouched.
     expect(useAIStore.getState().modelConfiguration.roleAssignments['sdd-apply']).toEqual({
       providerId: 'openai', modelId: 'gpt-5.6-terra',
     });
-    expect((window as any).api.store.setModelConfiguration).not.toHaveBeenCalled();
   });
 
   it('persists a mode assignment without changing the active conversation or stream', async () => {
