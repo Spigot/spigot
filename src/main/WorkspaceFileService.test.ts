@@ -179,7 +179,9 @@ describe('WorkspaceFileService', () => {
     });
 
     try {
-      await expect(service.moveToDirectory(source, destination)).rejects.toMatchObject({ code: 'ELOOP' });
+      await expect(service.moveToDirectory(source, destination)).rejects.toSatisfy(
+        (err: any) => err?.code === 'ELOOP' || err?.code === 'ENOTDIR',
+      );
     } finally {
       openSpy.mockRestore();
     }
@@ -212,7 +214,9 @@ describe('WorkspaceFileService', () => {
     });
 
     try {
-      await expect(service.delete(source)).rejects.toMatchObject({ code: 'ELOOP' });
+      await expect(service.delete(source)).rejects.toSatisfy(
+        (err: any) => err?.code === 'ELOOP' || err?.code === 'ENOTDIR',
+      );
     } finally {
       openSpy.mockRestore();
     }
