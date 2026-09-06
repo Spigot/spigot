@@ -45,6 +45,7 @@ const CATALOG_ALIASES: Record<string, string> = {
   qwen: 'alibaba',
   kimi: 'moonshotai',
   zhipu: 'zhipuai',
+  grok: 'xai',
 };
 
 // Well-known base URLs for catalog providers that rely on an SDK default.

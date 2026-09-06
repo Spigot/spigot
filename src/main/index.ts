@@ -1085,6 +1085,22 @@ ipcMain.handle('ai:fetch-models', async (_event, provider: string, apiKey?: stri
           const json = await res.json() as any;
           json.data?.forEach((m: any) => m.id && results.add(m.id));
         }
+      } else if (provider === 'xai' || provider === 'grok') {
+        const res = await fetch('https://api.x.ai/v1/models', {
+          headers: { 'Authorization': `Bearer ${apiKey}` }
+        });
+        if (res.ok) {
+          const json = await res.json() as any;
+          json.data?.forEach((m: any) => m.id && results.add(m.id));
+        }
+      } else if (provider === 'groq') {
+        const res = await fetch('https://api.groq.com/openai/v1/models', {
+          headers: { 'Authorization': `Bearer ${apiKey}` }
+        });
+        if (res.ok) {
+          const json = await res.json() as any;
+          json.data?.forEach((m: any) => m.id && results.add(m.id));
+        }
       }
     } catch (_err) {
       // Ignored, fallback to catalog

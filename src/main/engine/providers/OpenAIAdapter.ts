@@ -84,6 +84,17 @@ export class OpenAIAdapter implements AIProviderAdapter {
         return 'https://api.minimax.io/v1/chat/completions';
       case 'openrouter':
         return 'https://openrouter.ai/api/v1/chat/completions';
+      case 'xai':
+      case 'grok':
+        return 'https://api.x.ai/v1/chat/completions';
+      case 'groq':
+        return 'https://api.groq.com/openai/v1/chat/completions';
+      case 'mistral':
+        return 'https://api.mistral.ai/v1/chat/completions';
+      case 'togetherai':
+        return 'https://api.together.xyz/v1/chat/completions';
+      case 'perplexity':
+        return 'https://api.perplexity.ai/chat/completions';
       default: {
         const isOAuthJwt = apiKey && apiKey.split('.').length === 3;
         if (isOAuthJwt) {

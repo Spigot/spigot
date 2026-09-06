@@ -273,7 +273,16 @@ const DEFAULT_MODELS: Record<string, string[]> = {
   xai: [
     'grok-2-latest',
     'grok-2-vision-latest',
+    'grok-2',
     'grok-beta',
+    'grok-vision-beta',
+  ],
+  grok: [
+    'grok-2-latest',
+    'grok-2-vision-latest',
+    'grok-2',
+    'grok-beta',
+    'grok-vision-beta',
   ],
   togetherai: [
     'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo',
@@ -754,6 +763,12 @@ export const useAIStore = create<AIState>((set, get) => {
       kimi: { key: '', activeModel: '', availableModels: [] },
       openrouter: { key: '', activeModel: '', availableModels: [] },
       minimax: { key: '', activeModel: '', availableModels: [] },
+      groq: { key: '', activeModel: '', availableModels: [] },
+      mistral: { key: '', activeModel: '', availableModels: [] },
+      xai: { key: '', activeModel: '', availableModels: [] },
+      grok: { key: '', activeModel: '', availableModels: [] },
+      togetherai: { key: '', activeModel: '', availableModels: [] },
+      perplexity: { key: '', activeModel: '', availableModels: [] },
     },
     activeProvider: 'openai',
     isGenerating: false,
@@ -877,20 +892,22 @@ export const useAIStore = create<AIState>((set, get) => {
         set((state) => {
           const updated = { ...state.providers };
           for (const [provider, defaultList] of Object.entries(DEFAULT_MODELS)) {
-            if (updated[provider]) {
-              updated[provider].availableModels = [...defaultList];
-              if (!updated[provider].activeModel && defaultList.length > 0) {
-                updated[provider].activeModel = defaultList[0];
-              }
+            if (!updated[provider]) {
+              updated[provider] = { key: '', activeModel: '', availableModels: [] };
+            }
+            updated[provider].availableModels = [...defaultList];
+            if (!updated[provider].activeModel && defaultList.length > 0) {
+              updated[provider].activeModel = defaultList[0];
             }
           }
 
           for (const [provider, key] of Object.entries(keys)) {
-            if (updated[provider]) {
-              updated[provider].key = key as string;
-              const storedAuthType = (localStorage.getItem(`spigot_ai_authtype_${provider}`) as 'api' | 'oauth') || 'api';
-              updated[provider].authType = storedAuthType;
+            if (!updated[provider]) {
+              updated[provider] = { key: '', activeModel: '', availableModels: [] };
             }
+            updated[provider].key = key as string;
+            const storedAuthType = (localStorage.getItem(`spigot_ai_authtype_${provider}`) as 'api' | 'oauth') || 'api';
+            updated[provider].authType = storedAuthType;
           }
 
           if (accounts && accounts.length > 0 && updated.gemini) {
@@ -996,10 +1013,20 @@ export const useAIStore = create<AIState>((set, get) => {
         
         set((state) => {
           const updated = { ...state.providers };
-          if (updated[provider]) {
-            updated[provider].key = key;
-            updated[provider].authType = authType;
+          if (!updated[provider]) {
+            updated[provider] = { key: '', activeModel: '', availableModels: [] };
           }
+          updated[provider].key = key;
+          updated[provider].authType = authType;
+
+          if (provider === 'xai' && updated.grok) {
+            updated.grok.key = key;
+            updated.grok.authType = authType;
+          } else if (provider === 'grok' && updated.xai) {
+            updated.xai.key = key;
+            updated.xai.authType = authType;
+          }
+
           const firstConfiguredProvider = Object.entries(updated).find(([, data]) => Boolean(data.key && data.key.trim().length > 0))?.[0];
           return {
             providers: updated,
@@ -1015,9 +1042,20 @@ export const useAIStore = create<AIState>((set, get) => {
         if (availableModels.length > 0) {
           set((state) => {
             const updated = { ...state.providers };
-            updated[provider].availableModels = availableModels;
-            if (!availableModels.includes(updated[provider].activeModel)) {
-              updated[provider].activeModel = availableModels[0];
+            if (!updated[provider]) {
+              updated[provider] = { key: '', activeModel: availableModels[0], availableModels };
+            } else {
+              updated[provider].availableModels = availableModels;
+              if (!availableModels.includes(updated[provider].activeModel)) {
+                updated[provider].activeModel = availableModels[0];
+              }
+            }
+            if (provider === 'xai' && updated.grok) {
+              updated.grok.availableModels = availableModels;
+              updated.grok.activeModel = updated[provider].activeModel;
+            } else if (provider === 'grok' && updated.xai) {
+              updated.xai.availableModels = availableModels;
+              updated.xai.activeModel = updated[provider].activeModel;
             }
             return { providers: updated };
           });
