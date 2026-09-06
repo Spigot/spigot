@@ -1102,7 +1102,7 @@ ipcMain.handle('ai:fetch-models', async (_event, provider: string, apiKey?: stri
         if (res.ok) {
           const json = await res.json() as any;
           json.data?.forEach((m: any) => {
-            if (m.id && !m.id.includes('whisper')) {
+            if (m.id && !m.id.includes('whisper') && !m.id.includes('prompt-guard')) {
               results.add(m.id);
             }
           });
