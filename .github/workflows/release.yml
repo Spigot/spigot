@@ -1,4 +1,4 @@
-name: Release Windows
+name: Release
 
 on:
   push:
@@ -11,7 +11,18 @@ permissions:
 
 jobs:
   release:
-    runs-on: windows-latest
+    name: Build & Release (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            script: release:win
+          - os: ubuntu-latest
+            script: release:linux
+          - os: macos-latest
+            script: release:mac
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout repository
@@ -37,4 +48,4 @@ jobs:
       - name: Build and publish to GitHub Releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm run release:win
+        run: pnpm run ${{ matrix.script }}
