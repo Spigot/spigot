@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { OAuthAccountPool } from './accountPool';
+import {
+  OAuthAccountPool,
+  parseDurationToMs,
+  extractResetDelayFromError,
+} from './accountPool';
 
 describe('OAuthAccountPool', () => {
   it('adds accounts and sets the latest added as active', () => {
@@ -91,5 +95,43 @@ describe('OAuthAccountPool', () => {
     expect(publicList[0].isCoolingDown).toBe(true);
     expect(publicList[0].cooldownRemainingSeconds).toBeGreaterThan(0);
     expect(publicList[0].cooldownReason).toBe('RATE_LIMIT_EXCEEDED');
+  });
+
+  it('parses duration strings into milliseconds accurately', () => {
+    expect(parseDurationToMs('10s')).toBe(10_000);
+    expect(parseDurationToMs('5m')).toBe(300_000);
+    expect(parseDurationToMs('5h')).toBe(18_000_000);
+    expect(parseDurationToMs('17940s')).toBe(17_940_000);
+    expect(parseDurationToMs('1h30m')).toBe(5_400_000);
+    expect(parseDurationToMs('invalid')).toBeNull();
+  });
+
+  it('extracts real reset delay from Google 429 quota metadata', () => {
+    const googleErr = JSON.stringify({
+      error: {
+        code: 429,
+        status: 'RESOURCE_EXHAUSTED',
+        message: 'Quota exceeded for model. Your quota will reset after 4h59m.',
+        details: [
+          {
+            metadata: {
+              quotaResetDelay: '17940s',
+            },
+          },
+        ],
+      },
+    });
+
+    const delay = extractResetDelayFromError(googleErr);
+    expect(delay).toBe(17_940_000); // 4.98 hours
+
+    // From retry-after header
+    expect(extractResetDelayFromError('', '120')).toBe(120_000);
+
+    // From message regex fallback
+    const msgErr = JSON.stringify({
+      error: { message: 'Capacity exhausted. Resets in 5h.' },
+    });
+    expect(extractResetDelayFromError(msgErr)).toBe(18_000_000);
   });
 });

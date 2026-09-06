@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useLayoutStore } from '../../store/layoutStore';
 import { useTerminalStore } from '../../store/terminalStore';
-import { useAIStore } from '../../store/aiStore';
 import { useSystemDialogStore } from '../../components/ui/systemDialogStore';
 import logoSpigotUrl from '../../assets/logoSpigot.png';
 import { 
@@ -36,11 +35,6 @@ export const TitleBar: React.FC = () => {
     setSidebarTab, activeSidebarTab, isSidebarOpen,
   } = useLayoutStore();
   const { createSshSession } = useTerminalStore();
-  const oauthAccounts = useAIStore(state => state.oauthAccounts);
-  const providers = useAIStore(state => state.providers);
-  const isGoogleConnected =
-    oauthAccounts.length > 0 ||
-    Boolean(providers.gemini?.authType === 'oauth' && providers.gemini?.key?.trim());
   
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [recentProjects, setRecentProjects] = useState<string[]>([]);
@@ -623,26 +617,24 @@ export const TitleBar: React.FC = () => {
             <Terminal className="w-3.5 h-3.5" />
           </button>
 
-          {isGoogleConnected && (
-            <button 
-              onClick={() => {
-                setSidebarTab('quota');
-              }}
-              title="Cuota y Límites (Antigravity)"
-              className={`p-1 rounded hover:bg-white/10 hover:text-white transition-colors mr-0.5 ${
-                activeSidebarTab === 'quota' && isSidebarOpen ? 'text-amber-400 bg-white/15' : ''
-              }`}
+          <button 
+            onClick={() => {
+              setSidebarTab('quota');
+            }}
+            title="Cuota y Límites (Antigravity)"
+            className={`p-1 rounded hover:bg-white/10 hover:text-white transition-colors mr-0.5 ${
+              activeSidebarTab === 'quota' && isSidebarOpen ? 'text-amber-400 bg-white/15' : ''
+            }`}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="w-3.5 h-3.5"
+              fill="currentColor"
+              style={{ display: 'block', width: '14px', height: '14px' }}
             >
-              <svg
-                viewBox="0 0 24 24"
-                className="w-3.5 h-3.5"
-                fill="currentColor"
-                style={{ display: 'block', width: '14px', height: '14px' }}
-              >
-                <path d="M12,6a1,1,0,0,0-1,1V17a1,1,0,0,0,2,0V7A1,1,0,0,0,12,6ZM7,12a1,1,0,0,0-1,1v4a1,1,0,0,0,2,0V13A1,1,0,0,0,7,12Zm10-2a1,1,0,0,0-1,1v6a1,1,0,0,0,2,0V11A1,1,0,0,0,17,10Zm2-8H5A3,3,0,0,0,2,5V19a3,3,0,0,0,3,3H19a3,3,0,0,0,3-3V5A3,3,0,0,0,19,2Zm1,17a1,1,0,0,1-1,1H5a1,1,0,0,1-1-1V5A1,1,0,0,1,5,4H19a1,1,0,0,1,1,1Z" />
-              </svg>
-            </button>
-          )}
+              <path d="M12,6a1,1,0,0,0-1,1V17a1,1,0,0,0,2,0V7A1,1,0,0,0,12,6ZM7,12a1,1,0,0,0-1,1v4a1,1,0,0,0,2,0V13A1,1,0,0,0,7,12Zm10-2a1,1,0,0,0-1,1v6a1,1,0,0,0,2,0V11A1,1,0,0,0,17,10Zm2-8H5A3,3,0,0,0,2,5V19a3,3,0,0,0,3,3H19a3,3,0,0,0,3-3V5A3,3,0,0,0,19,2Zm1,17a1,1,0,0,1-1,1H5a1,1,0,0,1-1-1V5A1,1,0,0,1,5,4H19a1,1,0,0,1,1,1Z" />
+            </svg>
+          </button>
 
           {!isAgentModeOpen && (
             <button 

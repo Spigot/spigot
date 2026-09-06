@@ -26,6 +26,106 @@ export interface OAuthAccountPublic {
   cooldownReason?: string;
 }
 
+/**
+ * Parses duration strings like "17940s", "4h59m", "5m30s", "10s" into milliseconds.
+ */
+export function parseDurationToMs(duration: string): number | null {
+  if (!duration || typeof duration !== 'string') return null;
+  const simpleMatch = duration.trim().match(/^(\d+(?:\.\d+)?)(ms|s|m|h|d)?$/i);
+  if (simpleMatch) {
+    const value = parseFloat(simpleMatch[1]);
+    const unit = (simpleMatch[2] || 's').toLowerCase();
+    switch (unit) {
+      case 'd': return value * 86400 * 1000;
+      case 'h': return value * 3600 * 1000;
+      case 'm': return value * 60 * 1000;
+      case 's': return value * 1000;
+      case 'ms': return value;
+      default: return value * 1000;
+    }
+  }
+
+  const compoundRegex = /(\d+(?:\.\d+)?)(d|h|m(?!s)|s|ms)/gi;
+  let totalMs = 0;
+  let matchFound = false;
+  let match: RegExpExecArray | null;
+  while ((match = compoundRegex.exec(duration)) !== null) {
+    matchFound = true;
+    const value = parseFloat(match[1]);
+    const unit = match[2].toLowerCase();
+    switch (unit) {
+      case 'd': totalMs += value * 86400 * 1000; break;
+      case 'h': totalMs += value * 3600 * 1000; break;
+      case 'm': totalMs += value * 60 * 1000; break;
+      case 's': totalMs += value * 1000; break;
+      case 'ms': totalMs += value; break;
+    }
+  }
+
+  return matchFound ? totalMs : null;
+}
+
+/**
+ * Extracts the real reset delay in ms from Google or other provider error payloads/headers.
+ */
+export function extractResetDelayFromError(errText?: string, retryAfterHeader?: string | null): number | null {
+  if (retryAfterHeader) {
+    const parsed = Number(retryAfterHeader);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed * 1000;
+    }
+  }
+
+  if (!errText || typeof errText !== 'string') return null;
+
+  try {
+    const parsed = JSON.parse(errText);
+    const details = parsed?.error?.details || [];
+    if (Array.isArray(details)) {
+      for (const detail of details) {
+        if (!detail || typeof detail !== 'object') continue;
+
+        if (detail.retryDelay && typeof detail.retryDelay === 'string') {
+          const ms = parseDurationToMs(detail.retryDelay);
+          if (ms !== null && ms > 0) return ms;
+        }
+
+        const metadata = detail.metadata;
+        if (metadata && typeof metadata === 'object') {
+          if (metadata.quotaResetDelay && typeof metadata.quotaResetDelay === 'string') {
+            const ms = parseDurationToMs(metadata.quotaResetDelay);
+            if (ms !== null && ms > 0) return ms;
+          }
+          if (metadata.quotaResetTimeStamp && typeof metadata.quotaResetTimeStamp === 'string') {
+            const date = Date.parse(metadata.quotaResetTimeStamp);
+            if (Number.isFinite(date)) {
+              const diff = date - Date.now();
+              if (diff > 0) return diff;
+            }
+          }
+        }
+      }
+    }
+
+    const message = parsed?.error?.message;
+    if (typeof message === 'string') {
+      const match = message.match(/reset after\s+([0-9hmsd.]+)/i) || message.match(/resets in\s+([0-9hmsd.]+)/i);
+      if (match?.[1]) {
+        const ms = parseDurationToMs(match[1]);
+        if (ms !== null && ms > 0) return ms;
+      }
+    }
+  } catch {
+    const match = errText.match(/reset after\s+([0-9hmsd.]+)/i) || errText.match(/resets in\s+([0-9hmsd.]+)/i);
+    if (match?.[1]) {
+      const ms = parseDurationToMs(match[1]);
+      if (ms !== null && ms > 0) return ms;
+    }
+  }
+
+  return null;
+}
+
 export class OAuthAccountPool {
   private accounts: OAuthAccount[] = [];
   private activeAccountId: string | null = null;
@@ -201,7 +301,7 @@ export class OAuthAccountPool {
           break;
         case 'QUOTA_EXHAUSTED':
         default:
-          backoff = 60_000 * 5; // 5m
+          backoff = 3600_000 * 5; // 5 hours default quota reset window
           break;
       }
     }

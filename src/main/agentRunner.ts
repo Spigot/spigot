@@ -22,7 +22,7 @@ import {
   recoverMessageHistory,
 } from './engine/providers';
 import { getValidAccessToken } from './oauth/antigravityOAuth';
-import { getGlobalOAuthAccountPool } from './oauth/accountPool';
+import { getGlobalOAuthAccountPool, extractResetDelayFromError } from './oauth/accountPool';
 import { modelsCatalogService } from './engine/modelsCatalog';
 import { terminalManager } from './terminal';
 
@@ -1023,7 +1023,13 @@ export async function runAgentLoop({
           body: JSON.stringify(requestPayload.body),
           signal,
         });
-        if (response.ok || signal.aborted || attempt >= MAX_PROVIDER_RETRIES || !RETRYABLE_HTTP_STATUSES.has(response.status)) {
+        if (
+          response.ok ||
+          signal.aborted ||
+          attempt >= MAX_PROVIDER_RETRIES ||
+          !RETRYABLE_HTTP_STATUSES.has(response.status) ||
+          (usedOAuthAccountId && response.status === 429)
+        ) {
           break;
         }
         const retryAfterHeader = Number(response.headers.get('retry-after'));
@@ -1037,10 +1043,32 @@ export async function runAgentLoop({
 
       if (!response.ok) {
         const errText = await response.text().catch(() => '');
-        // Capacity/unavailability is the provider's problem; only quota errors
-        // should cool down an OAuth account for future turns.
         if (usedOAuthAccountId && isQuotaError(response.status, errText)) {
-          getGlobalOAuthAccountPool().markAccountCooldown(usedOAuthAccountId, 'QUOTA_EXHAUSTED');
+          const retryAfter = response.headers?.get?.('retry-after');
+          const realResetMs = extractResetDelayFromError(errText, retryAfter) || (5 * 3600 * 1000);
+          const pool = getGlobalOAuthAccountPool();
+          pool.markAccountCooldown(usedOAuthAccountId, 'QUOTA_EXHAUSTED', realResetMs);
+          chatLog('warn', logContext, 'main.provider', 'oauth.account_quota_cooldown', {
+            accountId: usedOAuthAccountId,
+            cooldownHours: Math.round((realResetMs / 3600000) * 10) / 10,
+          });
+
+          const nextAccount = pool.getNextAvailableAccount();
+          if (
+            nextAccount &&
+            nextAccount.id !== usedOAuthAccountId &&
+            (!nextAccount.cooldownUntil || nextAccount.cooldownUntil <= Date.now())
+          ) {
+            chatLog('info', logContext, 'main.provider', 'oauth.switching_to_next_account', {
+              exhaustedAccount: usedOAuthAccountId,
+              nextAccount: nextAccount.id,
+            });
+            sendReasoning(
+              `[Sistema] Cuota agotada en la cuenta actual (${Math.round((realResetMs / 3600000) * 10) / 10}h de espera). Rotando en caliente a ${nextAccount.email}...\n`,
+            );
+            turn--;
+            continue;
+          }
         }
         throw new Error(describeProviderHttpError(response.status, errText));
       }

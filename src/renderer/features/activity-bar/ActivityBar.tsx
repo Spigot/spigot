@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useLayoutStore, SidebarTab } from '../../store/layoutStore';
 import { useAIStore } from '../../store/aiStore';
 import { Files, Search, Terminal, GitBranch, Bot, GitPullRequest, Settings } from 'lucide-react';
@@ -16,18 +16,17 @@ export const ActivityBar: React.FC = () => {
     isAIPanelOpen, toggleAIPanel,
     setSettingsModalOpen
   } = useLayoutStore();
-  const oauthAccounts = useAIStore((state) => state.oauthAccounts);
-  const providers = useAIStore((state) => state.providers);
-  const isGoogleConnected =
-    oauthAccounts.length > 0 ||
-    Boolean(providers.gemini?.authType === 'oauth' && providers.gemini?.key?.trim());
+
+  useEffect(() => {
+    useAIStore.getState().fetchOAuthAccounts().catch(() => {});
+  }, []);
 
   const menuItems = [
     { id: 'explorer' as SidebarTab, icon: Files, label: 'Explorador' },
     { id: 'search' as SidebarTab, icon: Search, label: 'Buscar' },
     { id: 'source-control' as SidebarTab, icon: GitBranch, label: 'Control de Código Fuente' },
     { id: 'pull-request' as SidebarTab, icon: GitPullRequest, label: 'Crear pull request' },
-    ...(isGoogleConnected ? [{ id: 'quota' as SidebarTab, icon: QuotaIcon as any, label: 'Cuota y Límites (Antigravity)' }] : []),
+    { id: 'quota' as SidebarTab, icon: QuotaIcon as any, label: 'Cuotas y Límites' },
   ];
 
   return (
