@@ -5,6 +5,7 @@ import { ChevronDown } from 'lucide-react';
 export interface SelectOption {
   value: string;
   label: string;
+  subLabel?: string;
   ariaLabel?: string;
 }
 
@@ -221,13 +222,18 @@ export const StyledSelect: React.FC<StyledSelectProps> = ({
                 aria-label={option.ariaLabel}
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => select(option)}
-                className={`block w-full truncate px-3 py-2 text-left text-xs transition-colors ${
+                className={`flex items-center justify-between gap-4 w-full px-3 py-2 text-left text-xs transition-colors ${
                   isSelected || isActive
                     ? 'bg-editor-active text-editor-text'
                     : 'text-editor-text hover:bg-editor-hover'
                 } ${optionClassName}`}
               >
-                {option.label}
+                <span className="truncate">{option.label}</span>
+                {option.subLabel && (
+                  <span className="text-[11px] text-[#858585] opacity-75 shrink-0 font-normal">
+                    {option.subLabel}
+                  </span>
+                )}
               </button>
             );
           })}

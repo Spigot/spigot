@@ -1086,7 +1086,9 @@ ipcMain.handle('ai:fetch-models', async (_event, provider: string, apiKey?: stri
           json.data?.forEach((m: any) => m.id && results.add(m.id));
         }
       } else if (provider === 'xai' || provider === 'grok') {
-        const res = await fetch('https://api.x.ai/v1/models', {
+        const isGroqKey = apiKey.startsWith('gsk_');
+        const endpoint = isGroqKey ? 'https://api.groq.com/openai/v1/models' : 'https://api.x.ai/v1/models';
+        const res = await fetch(endpoint, {
           headers: { 'Authorization': `Bearer ${apiKey}` }
         });
         if (res.ok) {
@@ -1099,7 +1101,11 @@ ipcMain.handle('ai:fetch-models', async (_event, provider: string, apiKey?: stri
         });
         if (res.ok) {
           const json = await res.json() as any;
-          json.data?.forEach((m: any) => m.id && results.add(m.id));
+          json.data?.forEach((m: any) => {
+            if (m.id && !m.id.includes('whisper')) {
+              results.add(m.id);
+            }
+          });
         }
       }
     } catch (_err) {
@@ -1178,8 +1184,12 @@ ipcMain.handle('changes:summary', (_event, changeSetId: unknown) => {
 
 ipcMain.handle('changes:entry', (_event, args: { changeSetId?: unknown; relativePath?: unknown }) => {
   if (!args || typeof args.changeSetId !== 'string' || typeof args.relativePath !== 'string') throw new Error('A staged file identity is required.');
-  const entry = workspaceChangeSetService.entry(args.changeSetId, args.relativePath);
-  return { relativePath: entry.relativePath, operation: entry.operation, before: entry.before.content, after: entry.after.content };
+  try {
+    const entry = workspaceChangeSetService.entry(args.changeSetId, args.relativePath);
+    return { relativePath: entry.relativePath, operation: entry.operation, before: entry.before.content, after: entry.after.content };
+  } catch (_err) {
+    return { relativePath: args.relativePath, operation: 'modify', before: '', after: '' };
+  }
 });
 
 ipcMain.handle('changes:accept', async (_event, args: { changeSetId?: unknown; dirtyPaths?: unknown }) => {

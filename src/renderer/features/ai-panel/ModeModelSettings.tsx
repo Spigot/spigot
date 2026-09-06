@@ -27,6 +27,12 @@ const PROVIDER_LABELS: Record<string, string> = {
   kimi: 'Kimi',
   openrouter: 'OpenRouter',
   minimax: 'MiniMax',
+  groq: 'Groq',
+  mistral: 'Mistral',
+  xai: 'Grok',
+  grok: 'Grok',
+  togetherai: 'Together AI',
+  perplexity: 'Perplexity',
 };
 
 type AssignmentEditorProps = {
@@ -45,6 +51,7 @@ export function AssignmentEditor({ label, assignment, onAssignmentChange, onEffo
     provider.key.trim() ? provider.availableModels.map((modelId) => ({
       value: `${encodeURIComponent(providerId)}:${encodeURIComponent(modelId)}`,
       label: modelId,
+      subLabel: PROVIDER_LABELS[providerId] ?? providerId,
       ariaLabel: `${modelId} (${PROVIDER_LABELS[providerId] ?? providerId})`,
       assignment: { providerId, modelId },
     })) : []

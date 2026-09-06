@@ -86,6 +86,9 @@ export class OpenAIAdapter implements AIProviderAdapter {
         return 'https://openrouter.ai/api/v1/chat/completions';
       case 'xai':
       case 'grok':
+        if (apiKey && apiKey.startsWith('gsk_')) {
+          return 'https://api.groq.com/openai/v1/chat/completions';
+        }
         return 'https://api.x.ai/v1/chat/completions';
       case 'groq':
         return 'https://api.groq.com/openai/v1/chat/completions';
