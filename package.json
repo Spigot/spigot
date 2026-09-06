@@ -2,6 +2,10 @@
   "name": "spigot",
   "version": "0.0.8",
   "description": "Premium multi-platform code editor inspired by VS Code using screaming architecture.",
+  "author": {
+    "name": "Edwin Estrella",
+    "email": "edwinestrella67@gmail.com"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Spigot/spigot.git"
@@ -119,6 +123,7 @@
         "AppImage",
         "deb"
       ],
+      "maintainer": "Edwin Estrella <edwinestrella67@gmail.com>",
       "category": "Development",
       "artifactName": "Spigot-Linux.${ext}"
     },
