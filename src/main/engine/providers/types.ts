@@ -106,6 +106,8 @@ export interface StreamParseResult {
   textContent: string;
   reasoningContent?: string;
   toolCalls: ToolCall[];
+  /** Why the provider stopped ('max_tokens'/'length' means the output was truncated). */
+  finishReason?: string;
 }
 
 export interface ToolSchemaSanitizer {

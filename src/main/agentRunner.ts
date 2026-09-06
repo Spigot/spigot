@@ -159,6 +159,7 @@ Core Directives:
 3. SURGICAL EXECUTION:
    - Execute changes using 'edit_file' for surgical edits and 'write_file' for new components or tests.
    - Maintain strict workspace containment and consistent code style.
+   - NEVER end the turn with a promise of future work: if your message announces a change, call the tool in the same turn. Ending right after 'I will now...' without executing it is a failure.
 4. SELF-VERIFICATION LOOP:
    - Always run tests and typechecks using 'run_command' (e.g. 'pnpm test', 'npm test', 'tsc --noEmit') to verify changes before concluding. If your edits are staged in a ChangeSet (the tool result says so), run verification AFTER the user accepts them, when the '[Sistema]' confirmation message arrives.
 5. CHANGE REVIEW WORKFLOW (ChangeSet):
@@ -187,7 +188,9 @@ Key Instructions:
    - You can use 'run_command' to run tests, typechecks, linters, or build scripts to verify your changes.
 4. CONCISENESS & CLEAN FORMATTING:
    - Keep responses direct, structured, and beautifully formatted with Markdown headings, lists, and tables. Avoid conversational filler.
-5. CHANGE REVIEW WORKFLOW (ChangeSet):
+5. NEVER END THE TURN WITH A PROMISE:
+   - If your message says you are about to create, modify, or run something, you MUST call the tool in the SAME turn. Ending the turn right after announcing pending work (e.g. 'Lo voy a reemplazar por...') without executing it is a failure. Keep calling tools until the task is done, and only then write your final summary.
+6. CHANGE REVIEW WORKFLOW (ChangeSet):
    - When a review session is active, 'write_file' and 'edit_file' REGISTER changes in a ChangeSet instead of writing them to disk immediately; the tool result tells you which happened. Read the result carefully and NEVER claim a file was created on disk when the result says it was staged.
    - Run verification commands ('run_command') BEFORE the user accepts is pointless for staged files (disk is stale): after registering all your changes, end your turn with a brief summary. The UI shows the user an Accept/Reject review automatically when your turn ends; do NOT ask for permission or tell the user to do anything else.
    - When the user accepts or rejects, you receive a '[Sistema]' message. If ACCEPTED, continue the task: run tests/typechecks now that the files are on disk, fix issues, and summarize. If REJECTED, propose a different approach.`;
@@ -894,6 +897,7 @@ export async function runAgentLoop({
   requestToolPermission,
 }: AgentRunOptions): Promise<boolean> {
   let turn = 0;
+  let truncationContinuations = 0;
   const logContext = { conversationId: sessionId, turnId, mode, providerModelId: `${provider}/${model}`, startedAt: Date.now() };
   let executingToolName: string | undefined;
   const maxTurns = 25;
@@ -1067,7 +1071,7 @@ export async function runAgentLoop({
         }
       } : undefined;
 
-      const { originalContent, textContent, reasoningContent, toolCalls } = await adapter.parseStream(response, {
+      const { originalContent, textContent, reasoningContent, toolCalls, finishReason } = await adapter.parseStream(response, {
         sendChunk: wrappedSendChunk,
         signal,
         provider,
@@ -1218,6 +1222,16 @@ export async function runAgentLoop({
         });
 
         // Continue to the next turn in the loop!
+      } else if ((finishReason === 'max_tokens' || finishReason === 'length') && truncationContinuations < 2 && !signal.aborted) {
+        // The provider cut the output mid-generation: keep the turn alive and
+        // ask the model to continue exactly where it stopped.
+        truncationContinuations += 1;
+        chatLog('warn', logContext, 'main.provider', 'stream.truncated_continue', { turn, finishReason, attempt: truncationContinuations });
+        sendReasoning('La respuesta se cortó por el límite de salida del modelo. Continuando automáticamente...\n');
+        messages.push({
+          role: 'user',
+          content: 'Tu respuesta anterior fue cortada por el límite de salida del modelo. Continuá EXACTAMENTE desde donde la cortaste, sin repetir contenido, sin saludar y sin recapitular. Si tenías pendiente ejecutar herramientas, ejecutalas ahora.',
+        });
       } else {
         // No tool calls requested, we are done!
         sendEnd();

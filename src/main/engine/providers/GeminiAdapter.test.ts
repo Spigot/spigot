@@ -160,8 +160,48 @@ describe('GeminiAdapter', () => {
 
     const body = req.body as any;
     expect(body.project).toBe('custom-project-999');
-    expect(body.model).toBe('gemini-3.7-flash');
+    expect(body.model).toBe('gemini-3.7-flash-tiered');
+    expect(body.request.generationConfig.thinkingConfig).toEqual({
+      includeThoughts: true,
+      thinkingLevel: 'low',
+    });
     expect(body.request.contents[0].parts[0].text).toBe('Hello Antigravity');
+  });
+
+  it('builds Antigravity OAuth request for gemini-3.8-flash resolving to tiered model', () => {
+    const options: ProviderRequestOptions = {
+      provider: 'gemini',
+      model: 'gemini-3.8-flash',
+      apiKey: 'ya29.a0AfH6SMB...|custom-project-999',
+      prompt: 'Hello Antigravity 3.8',
+      systemPrompt: 'System',
+      messages: [{ role: 'user', content: 'Hello Antigravity 3.8' }],
+      effort: 'medium',
+    };
+
+    const req = adapter.buildRequest(options);
+    const body = req.body as any;
+    expect(body.model).toBe('gemini-3.8-flash-tiered');
+    expect(body.request.generationConfig.thinkingConfig).toEqual({
+      includeThoughts: true,
+      thinkingLevel: 'medium',
+    });
+  });
+
+  it('resolves antigravity-gemini-3-pro to gemini-3-pro-low', () => {
+    const options: ProviderRequestOptions = {
+      provider: 'gemini',
+      model: 'antigravity-gemini-3-pro',
+      apiKey: 'ya29.a0AfH6SMB...|custom-project-999',
+      prompt: 'Hello Pro',
+      systemPrompt: 'System',
+      messages: [{ role: 'user', content: 'Hello Pro' }],
+    };
+
+    const req = adapter.buildRequest(options);
+    const body = req.body as any;
+    expect(body.model).toBe('gemini-3-pro-low');
+    expect(body.request.generationConfig.thinkingConfig.thinkingLevel).toBe('low');
   });
 
   it('parses Antigravity wrapped response SSE stream', async () => {

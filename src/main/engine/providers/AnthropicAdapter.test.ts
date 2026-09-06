@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AnthropicAdapter } from './AnthropicAdapter';
+import { anthropicMaxTokens, AnthropicAdapter } from './AnthropicAdapter';
 import type { ProviderRequestOptions, ToolDefinition } from './types';
 
 describe('AnthropicAdapter', () => {
@@ -141,5 +141,35 @@ describe('AnthropicAdapter', () => {
       name: 'write_file',
       input: { filePath: 'foo.ts', content: 'code' },
     });
+  });
+
+  it('reports max_tokens stop_reason so truncated turns can continue', async () => {
+    const streamData = [
+      'data: {"type":"message_start","message":{"usage":{"output_tokens":1}}}\n\n',
+      'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n',
+      'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Lo voy a reemplazar"}}\n\n',
+      'data: {"type":"content_block_stop","index":0}\n\n',
+      'data: {"type":"message_delta","delta":{"stop_reason":"max_tokens","stop_sequence":null}}\n\n',
+    ].join('');
+
+    const encoder = new TextEncoder();
+    const response = new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(streamData));
+        controller.close();
+      },
+    }));
+
+    const result = await adapter.parseStream(response, { sendChunk: () => {} });
+
+    expect(result.finishReason).toBe('max_tokens');
+    expect(result.textContent).toBe('Lo voy a reemplazar');
+  });
+
+  it('scales max_tokens with the catalog output limit and clamps to sane bounds', () => {
+    expect(anthropicMaxTokens(undefined)).toBe(8192);
+    expect(anthropicMaxTokens(131072)).toBe(64000);
+    expect(anthropicMaxTokens(16384)).toBe(16384);
+    expect(anthropicMaxTokens(512)).toBe(1024);
   });
 });

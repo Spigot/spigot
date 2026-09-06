@@ -21,6 +21,7 @@ import {
   refreshAccessToken,
 } from './oauth/antigravityOAuth';
 import { getGlobalOAuthAccountPool } from './oauth/accountPool';
+import { checkAllQuotas } from './oauth/quotaService';
 import { SDDPipelineService } from './engine/sddPipeline';
 import { GENTLE_SKILLS } from './engine/gentleSkills';
 import { gentleAgentBuilder, type CustomAgentRoleSpec } from './engine/gentleAgentBuilder';
@@ -932,6 +933,12 @@ ipcMain.handle('oauth:remove-account', async (_event, accountId: string) => {
 ipcMain.handle('oauth:set-active-account', async (_event, accountId: string) => {
   const success = oauthAccountPool.setActiveAccount(accountId);
   return { success, accounts: oauthAccountPool.listPublic() };
+});
+
+ipcMain.handle('oauth:check-google-quota', async () => {
+  const keys = await getDecryptedKeys();
+  const openaiKey = keys['openai'];
+  return await checkAllQuotas(openaiKey);
 });
 
 ipcMain.handle('oauth:openai-login', async () => {

@@ -1,4 +1,5 @@
 import { getModelEffortCapability } from '../../../shared/modelConfiguration';
+import { modelsCatalogService } from '../modelsCatalog';
 import { emitStreamPart } from './types';
 import type {
   AIProviderAdapter,
@@ -9,6 +10,19 @@ import type {
   ToolCall,
   ToolDefinition,
 } from './types';
+
+const DEFAULT_MAX_TOKENS = 8192;
+const MAX_TOKENS_CEILING = 64000;
+
+/**
+ * Anthropic-protocol requests must carry max_tokens, and a small value silently
+ * truncates long reasoning generations mid-plan. Use the catalog's advertised
+ * output limit (MiniMax-M3 allows far more than 8k) with a safe ceiling.
+ */
+export function anthropicMaxTokens(outputLimit?: number): number {
+  const cap = Math.min(outputLimit ?? DEFAULT_MAX_TOKENS, MAX_TOKENS_CEILING);
+  return Math.max(1024, Math.floor(cap));
+}
 
 export class AnthropicAdapter implements AIProviderAdapter {
   readonly id = 'anthropic';
@@ -83,7 +97,7 @@ export class AnthropicAdapter implements AIProviderAdapter {
       model: options.model,
       system: options.systemPrompt,
       messages: anthropicMessages,
-      max_tokens: 4000,
+      max_tokens: anthropicMaxTokens(modelsCatalogService.getCachedModelOutputLimit(options.provider, options.model)),
       stream: true,
     };
 
@@ -118,6 +132,7 @@ export class AnthropicAdapter implements AIProviderAdapter {
 
     let textContent = '';
     let reasoningContent = '';
+    let finishReason: string | undefined;
     let reasoningPartId: string | undefined;
     let textPartId: string | undefined;
     const toolCalls: ToolCall[] = [];
@@ -144,6 +159,10 @@ export class AnthropicAdapter implements AIProviderAdapter {
 
         try {
           const parsed = JSON.parse(dataStr);
+
+          if (parsed.type === 'message_delta' && parsed.delta?.stop_reason) {
+            finishReason = String(parsed.delta.stop_reason);
+          }
 
           if (parsed.type === 'content_block_start') {
             if (parsed.content_block?.type === 'tool_use') {
@@ -229,6 +248,7 @@ export class AnthropicAdapter implements AIProviderAdapter {
       textContent,
       reasoningContent: reasoningContent || undefined,
       toolCalls,
+      finishReason,
     };
   }
 }

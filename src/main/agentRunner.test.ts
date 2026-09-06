@@ -198,6 +198,34 @@ describe('agentRunner - code editing tools', () => {
       expect(errors[0]).toContain('capacidad');
       expect(errors[0]).not.toContain('type.googleapis');
     });
+
+    it('auto-continues when the provider truncates the output at the length limit', async () => {
+      const requests: any[] = [];
+      const responses = [
+        responseFrom('data: {"choices":[{"delta":{"content":"Voy a reemplazar el archivo"},"finish_reason":"length"}]}\n\n'),
+        responseFrom('data: {"choices":[{"delta":{"content":" Listo."},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'),
+      ];
+      vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+        requests.push(JSON.parse(String(init?.body)));
+        return responses.shift()!;
+      }));
+
+      const result = await runAgentLoop({
+        provider: 'openai', model: 'gpt-4o', apiKey: 'test-key', prompt: 'Hello', contextText: null, history: [], image: null,
+        workspacePath: process.cwd(), signal: new AbortController().signal, sendChunk: vi.fn(), sendPart: vi.fn(),
+        sendError: vi.fn(), sendEnd: vi.fn(), customTools: [],
+      });
+
+      expect(result).toBe(true);
+      expect(requests).toHaveLength(2);
+      const continuation = requests[1].messages;
+      expect(continuation[continuation.length - 1]).toEqual(expect.objectContaining({
+        role: 'user',
+        content: expect.stringContaining('límite de salida'),
+      }));
+      // The truncated assistant message stays in history exactly once.
+      expect(continuation.filter((message: any) => message.role === 'assistant')).toHaveLength(1);
+    });
   });
 
   describe('normalizeQuotes', () => {

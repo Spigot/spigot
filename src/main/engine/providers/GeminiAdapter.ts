@@ -50,6 +50,61 @@ export function sanitizeGeminiSchema(schema: any): any {
   return sanitized;
 }
 
+/**
+ * Resolves model names and thinking configuration for Google Antigravity OAuth requests.
+ */
+export function resolveAntigravityModel(
+  model: string,
+  effort?: string,
+): {
+  resolvedModel: string;
+  thinkingConfig?: Record<string, unknown>;
+  maxOutputTokens?: number;
+} {
+  let cleanModel = model.replace(/^antigravity-/i, '');
+  const tierMatch = cleanModel.match(/-(minimal|low|medium|high)$/i);
+  const tier = tierMatch ? tierMatch[1].toLowerCase() : undefined;
+  const baseName = tier ? cleanModel.replace(/-(minimal|low|medium|high)$/i, '') : cleanModel;
+
+  let actualModel = baseName;
+  const thinkingLevel: string = tier || (effort && ['minimal', 'low', 'medium', 'high'].includes(effort) ? effort : 'low');
+
+  if (baseName === 'gemini-3.7-flash' || baseName === 'gemini-3.8-flash') {
+    actualModel = `${baseName}-tiered`;
+  } else if (
+    baseName === 'gemini-3-pro' ||
+    baseName === 'gemini-3.1-pro' ||
+    baseName === 'gemini-3-pro-preview' ||
+    baseName === 'gemini-3.1-pro-preview'
+  ) {
+    const rootName = baseName.replace(/-preview$/, '');
+    actualModel = tier ? `${rootName}-${tier}` : `${rootName}-low`;
+  } else if (baseName === 'gemini-3-flash-preview') {
+    actualModel = 'gemini-3-flash';
+  } else if (tier) {
+    actualModel = baseName;
+  }
+
+  let thinkingConfig: Record<string, unknown> | undefined;
+  let maxOutputTokens: number | undefined;
+  const lowerActual = actualModel.toLowerCase();
+
+  if (lowerActual.includes('claude') && lowerActual.includes('thinking')) {
+    thinkingConfig = {
+      include_thoughts: true,
+      thinking_budget: 32768,
+    };
+    maxOutputTokens = 64000;
+  } else if (lowerActual.includes('gemini-3') || lowerActual.includes('-tiered')) {
+    thinkingConfig = {
+      includeThoughts: true,
+      thinkingLevel,
+    };
+  }
+
+  return { resolvedModel: actualModel, thinkingConfig, maxOutputTokens };
+}
+
 export class GeminiAdapter implements AIProviderAdapter {
   readonly id = 'gemini';
 
@@ -95,7 +150,12 @@ export class GeminiAdapter implements AIProviderAdapter {
     }
 
     let resolvedModel = options.model || 'gemini-2.5-flash';
-    if (resolvedModel.startsWith('antigravity-')) {
+    let antigravityConfig: ReturnType<typeof resolveAntigravityModel> | undefined;
+
+    if (isOAuth) {
+      antigravityConfig = resolveAntigravityModel(resolvedModel, options.effort);
+      resolvedModel = antigravityConfig.resolvedModel;
+    } else if (resolvedModel.startsWith('antigravity-')) {
       resolvedModel = resolvedModel.replace(/^antigravity-/, '');
     }
 
@@ -163,6 +223,15 @@ export class GeminiAdapter implements AIProviderAdapter {
 
     const sanitizedTools = options.tools && options.tools.length > 0 ? this.sanitizeTools(options.tools) : undefined;
 
+    const generationConfig: Record<string, unknown> = {};
+    if (antigravityConfig?.thinkingConfig) {
+      generationConfig.thinkingConfig = antigravityConfig.thinkingConfig;
+    }
+    if (antigravityConfig?.maxOutputTokens) {
+      generationConfig.maxOutputTokens = antigravityConfig.maxOutputTokens;
+    }
+    const hasGenerationConfig = Object.keys(generationConfig).length > 0;
+
     const body: Record<string, unknown> = isOAuth
       ? {
           project: projectId,
@@ -173,6 +242,7 @@ export class GeminiAdapter implements AIProviderAdapter {
             },
             contents,
             ...(sanitizedTools ? { tools: sanitizedTools } : {}),
+            ...(hasGenerationConfig ? { generationConfig } : {}),
           },
         }
       : {

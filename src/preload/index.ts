@@ -101,6 +101,7 @@ contextBridge.exposeInMainWorld('api', {
     listAccounts: () => ipcRenderer.invoke('oauth:list-accounts'),
     removeAccount: (accountId: string) => ipcRenderer.invoke('oauth:remove-account', accountId),
     setActiveAccount: (accountId: string) => ipcRenderer.invoke('oauth:set-active-account', accountId),
+    checkGoogleQuota: () => ipcRenderer.invoke('oauth:check-google-quota'),
   },
   gentle: {
     getSDDState: (workspacePath: string) => ipcRenderer.invoke('gentle:sdd-get-state', workspacePath),

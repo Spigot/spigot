@@ -12,6 +12,8 @@ export interface OpenCodeModelInfo {
   name: string;
   family?: string;
   reasoning?: boolean;
+  /** Token limits advertised by the catalog, when present. */
+  limit?: { context?: number; output?: number };
 }
 
 export interface OpenCodeProviderInfo {
@@ -178,6 +180,18 @@ export class ModelsCatalogService {
   /** Hot-path variant: uses only the warm cache, never fetches. */
   resolveCachedProviderRouting(providerId: string): ProviderRouting | null {
     return this.resolveRoutingFrom(this.cachedCatalog(), providerId);
+  }
+
+  /** Output token cap advertised by the cached catalog for a model, when known. */
+  getCachedModelOutputLimit(providerId: string, modelId: string): number | undefined {
+    const catalog = this.cachedCatalog();
+    const catalogId = catalogIdFor(providerId);
+    const provider = catalog[catalogId] || catalog[providerId.toLowerCase().trim()];
+    if (!provider?.models) return undefined;
+    const model = provider.models[modelId]
+      ?? Object.values(provider.models).find(candidate => candidate.id?.toLowerCase() === modelId.toLowerCase());
+    const output = model?.limit?.output;
+    return typeof output === 'number' && output > 0 ? output : undefined;
   }
 
   private resolveRoutingFrom(

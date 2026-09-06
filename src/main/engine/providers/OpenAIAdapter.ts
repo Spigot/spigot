@@ -259,6 +259,7 @@ export class OpenAIAdapter implements AIProviderAdapter {
     let textContent = '';
     let originalContent = '';
     let reasoningContent = '';
+    let finishReason: string | undefined;
     let reasoningPartId: string | undefined;
     let textPartId: string | undefined;
     let reasoningPartIndex = 0;
@@ -404,7 +405,10 @@ export class OpenAIAdapter implements AIProviderAdapter {
           // 2. Standard Chat Completions format
           const choice = parsed.choices?.[0];
           const delta = choice?.delta;
-          if (choice?.finish_reason) diagnostics.finishMarkerCount++;
+          if (choice?.finish_reason) {
+            diagnostics.finishMarkerCount++;
+            finishReason = String(choice.finish_reason);
+          }
 
           const reasoningDeltas = [delta?.reasoning_content, delta?.reasoning]
             .filter((value): value is string => typeof value === 'string' && value.length > 0);
@@ -480,6 +484,7 @@ export class OpenAIAdapter implements AIProviderAdapter {
       textContent,
       reasoningContent: reasoningContent || undefined,
       toolCalls,
+      finishReason,
     };
   }
 }
