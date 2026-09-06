@@ -3,6 +3,7 @@ import { useLayoutStore } from '../../store/layoutStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { FileTree } from './FileTree';
 import { SourceControlView } from './SourceControlView';
+import { QuotaSidebarView } from './QuotaSidebarView';
 import { GitPullRequest, Loader2, Search, Replace, FileCode, Check, Folder, RefreshCw } from 'lucide-react';
 import { buildSearchRegex, collectSearchableFilePaths, MAX_SEARCH_FILE_BYTES, MAX_SEARCH_RESULTS, searchInContent } from './searchEngine';
 import type { SearchMatch } from './searchEngine';
@@ -306,6 +307,7 @@ export const Sidebar: React.FC = () => {
           {activeSidebarTab === 'search' && 'BUSCAR'}
           {activeSidebarTab === 'source-control' && 'CONTROL DE CÓDIGO'}
           {activeSidebarTab === 'pull-request' && 'PULL REQUEST'}
+          {activeSidebarTab === 'quota' && 'CUOTA Y LÍMITES'}
         </span>
         {activeSidebarTab === 'explorer' && (
           <button 
@@ -592,6 +594,12 @@ export const Sidebar: React.FC = () => {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {activeSidebarTab === 'quota' && (
+        <div className="flex-1 flex flex-col overflow-hidden bg-editor-sidebar">
+          <QuotaSidebarView />
         </div>
       )}
     </aside>

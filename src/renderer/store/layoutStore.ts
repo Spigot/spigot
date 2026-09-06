@@ -4,7 +4,7 @@ import { create } from 'zustand';
 export const AI_PANEL_MIN_WIDTH = 400;
 export const AI_PANEL_MAX_WIDTH = 700;
 
-export type SidebarTab = 'explorer' | 'search' | 'source-control' | 'pull-request';
+export type SidebarTab = 'explorer' | 'search' | 'source-control' | 'pull-request' | 'quota';
 export type SettingsCategory = 'appearance' | 'editor' | 'terminal' | 'git' | 'ai' | 'orchestrator' | 'shortcuts';
 
 interface LayoutState {

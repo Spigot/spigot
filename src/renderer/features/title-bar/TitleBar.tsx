@@ -5,7 +5,6 @@ import { useTerminalStore } from '../../store/terminalStore';
 import { useAIStore } from '../../store/aiStore';
 import { useSystemDialogStore } from '../../components/ui/systemDialogStore';
 import logoSpigotUrl from '../../assets/logoSpigot.png';
-import { GoogleQuotaModal } from '../ai-panel/GoogleQuotaModal';
 import { 
   Minus, Square, X, Plus, Folder, Save, LogOut,
   Terminal, Settings,
@@ -33,7 +32,8 @@ export const TitleBar: React.FC = () => {
     isAIPanelOpen, toggleAIPanel,
     setConsoleOpen,
     isAgentModeOpen, toggleAgentMode,
-    setSettingsModalOpen
+    setSettingsModalOpen,
+    setSidebarTab, activeSidebarTab, isSidebarOpen,
   } = useLayoutStore();
   const { createSshSession } = useTerminalStore();
   const oauthAccounts = useAIStore(state => state.oauthAccounts);
@@ -47,7 +47,6 @@ export const TitleBar: React.FC = () => {
   const [updateReady, setUpdateReady] = useState<{ version?: string } | null>(null);
   const [appInfo, setAppInfo] = useState<any>(null);
   const [isSshFormOpen, setIsSshFormOpen] = useState(false);
-  const [isQuotaModalOpen, setIsQuotaModalOpen] = useState(false);
   const [sshDraft, setSshDraft] = useState({
     name: '',
     host: '',
@@ -626,10 +625,12 @@ export const TitleBar: React.FC = () => {
 
           {isGoogleConnected && (
             <button 
-              onClick={() => setIsQuotaModalOpen(true)}
-              title="Uso y Cuotas de Google (Antigravity)"
+              onClick={() => {
+                setSidebarTab('quota');
+              }}
+              title="Cuota y Límites (Antigravity)"
               className={`p-1 rounded hover:bg-white/10 hover:text-white transition-colors mr-0.5 ${
-                isQuotaModalOpen ? 'text-amber-400 bg-white/15' : ''
+                activeSidebarTab === 'quota' && isSidebarOpen ? 'text-amber-400 bg-white/15' : ''
               }`}
             >
               <svg
@@ -730,12 +731,6 @@ export const TitleBar: React.FC = () => {
           </form>
         </div>
       )}
-
-      {/* Google Antigravity Quota Modal */}
-      <GoogleQuotaModal
-        isOpen={isQuotaModalOpen}
-        onClose={() => setIsQuotaModalOpen(false)}
-      />
 
     </header>
   );
